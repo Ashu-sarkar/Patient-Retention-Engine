@@ -1,0 +1,17 @@
+services:
+  n8n:
+    build: .
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=strongpass
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - DB_TYPE=sqlite
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  n8n_data:
