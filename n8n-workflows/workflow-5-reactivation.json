@@ -1,0 +1,353 @@
+{
+  "name": "WF5 — Patient Reactivation (30-Day)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Workflow 5: Patient Reactivation\n\n**Trigger:** Every Monday at 9:00 AM\n\n**Logic:** Finds patients who have been inactive for 30+ days (last message sent 30+ days ago or never messaged), haven't received a reactivation message yet, and are not already inactive/completed.\n\nSets `reactivation_sent = TRUE` after sending — ensures one-time delivery.\n\n**Before activating:**\n1. Set credential on all Google Sheets nodes → Google Sheets account\n2. Set credential on Send Reactivation node → Twilio Basic Auth\n\n**Note:** Meta category for this template is MARKETING — ensure opt-in compliance.",
+        "height": 300,
+        "width": 440
+      },
+      "id": "55555555-5555-5555-5555-000000000001",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [240, 60]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "55555555-5555-5555-5555-000000000002",
+      "name": "Weekly Monday 9AM Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 380]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Patients",
+          "mode": "name"
+        },
+        "filtersUI": {},
+        "options": {}
+      },
+      "id": "55555555-5555-5555-5555-000000000003",
+      "name": "Read Patients",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [460, 380],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter patients inactive for 30+ days who haven't been reactivated\nconst items = $input.all();\nconst tz = $env.TIMEZONE || 'Asia/Kolkata';\nconst inactivityDays = 30;\n\nconst now = new Date();\nconst thresholdDate = new Date(now);\nthresholdDate.setDate(thresholdDate.getDate() - inactivityDays);\n\nconst filtered = items.filter(item => {\n  const p = item.json;\n\n  // Must not already be inactive or completed\n  if (p.status === 'inactive' || p.status === 'completed') return false;\n\n  // Must not have already received reactivation message\n  const reactivationSent = p.reactivation_sent;\n  if (reactivationSent === true || reactivationSent === 'TRUE' || reactivationSent === '1') return false;\n\n  // Must have a valid phone number\n  if (!p.phone || !/^\\+[1-9]\\d{6,14}$/.test(p.phone.replace(/[\\s\\-().]/g, ''))) return false;\n\n  // Check inactivity: either never messaged, or last message > 30 days ago\n  if (p.last_message_sent) {\n    const lastSent = new Date(p.last_message_sent);\n    if (lastSent > thresholdDate) return false; // messaged within 30 days — skip\n  }\n  // If last_message_sent is blank, patient was never messaged — include them\n\n  return true;\n});\n\nif (filtered.length === 0) {\n  return [{ json: { _skip: true, reason: 'No inactive patients to reactivate this week' } }];\n}\n\nreturn filtered.map(item => ({\n  json: {\n    ...item.json,\n    _workflow: 'workflow-5-reactivation',\n    _message_type: 'reactivation',\n    _to_phone: 'whatsapp:' + item.json.phone.replace(/[\\s\\-().]/g, ''),\n    _message_body: `Hi ${item.json.name || 'there'}! 👋 It's been a while since we last saw you at ${item.json.clinic_name || ($env.DEFAULT_CLINIC_NAME || 'our clinic')}, and we just wanted to check in.\\n\\nRegular health check-ups with ${item.json.doctor_name || ($env.DEFAULT_DOCTOR_NAME || 'your doctor')} are the best way to stay ahead of any concerns. If you'd like to book an appointment, reply *BOOK* and our team will reach out.\\n\\nTake care! 💙`\n  }\n}));"
+      },
+      "id": "55555555-5555-5555-5555-000000000004",
+      "name": "Filter Inactive Patients",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 380]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "skip-check-wf5",
+              "leftValue": "={{ $json._skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "55555555-5555-5555-5555-000000000005",
+      "name": "Skip if No Patients",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 380]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.twilio.com/2010-04-01/Accounts/' + $env.TWILIO_ACCOUNT_SID + '/Messages.json' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $json._to_phone }}"
+            },
+            {
+              "name": "From",
+              "value": "={{ $env.TWILIO_WHATSAPP_NUMBER }}"
+            },
+            {
+              "name": "Body",
+              "value": "={{ $json._message_body }}"
+            }
+          ]
+        },
+        "options": {
+          "retry": {
+            "maxTries": 3,
+            "waitBetweenTries": 30000
+          }
+        }
+      },
+      "id": "55555555-5555-5555-5555-000000000006",
+      "name": "Send Reactivation Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 280],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "REPLACE_WITH_TWILIO_CREDENTIAL_ID",
+          "name": "Twilio Basic Auth"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Patients",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $('Filter Inactive Patients').item.json.id }}",
+            "reactivation_sent": "TRUE",
+            "last_message_sent": "={{ new Date().toISOString() }}",
+            "message_count": "={{ (parseInt($('Filter Inactive Patients').item.json.message_count) || 0) + 1 }}",
+            "updated_at": "={{ new Date().toISOString() }}"
+          },
+          "matchingColumns": ["id"],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "55555555-5555-5555-5555-000000000007",
+      "name": "Update Patient Record",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [1340, 180],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Message_Logs",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "log_id": "={{ $now.toMillis() + '-' + Math.random().toString(36).substr(2,6) }}",
+            "patient_id": "={{ $('Filter Inactive Patients').item.json.id }}",
+            "patient_name": "={{ $('Filter Inactive Patients').item.json.name }}",
+            "phone": "={{ $('Filter Inactive Patients').item.json.phone }}",
+            "workflow_name": "workflow-5-reactivation",
+            "message_type": "reactivation",
+            "message_sent": "={{ $('Filter Inactive Patients').item.json._message_body }}",
+            "sent_at": "={{ new Date().toISOString() }}",
+            "delivery_status": "sent",
+            "error_message": "",
+            "twilio_sid": "={{ $json.sid || '' }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "55555555-5555-5555-5555-000000000008",
+      "name": "Log to Message_Logs",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [1340, 380],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "System_Logs",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "log_id": "={{ $now.toMillis() + '-err-' + Math.random().toString(36).substr(2,6) }}",
+            "timestamp": "={{ new Date().toISOString() }}",
+            "workflow_name": "workflow-5-reactivation",
+            "execution_id": "={{ $execution.id }}",
+            "log_level": "ERROR",
+            "message": "Failed to send reactivation message",
+            "details": "={{ JSON.stringify({ patient_id: $('Filter Inactive Patients').item.json.id, phone: $('Filter Inactive Patients').item.json.phone, error: $json.error?.message || 'HTTP request failed' }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "55555555-5555-5555-5555-000000000009",
+      "name": "Log Send Failure",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [1340, 520],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Monday 9AM Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Patients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Patients": {
+      "main": [
+        [
+          {
+            "node": "Filter Inactive Patients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Inactive Patients": {
+      "main": [
+        [
+          {
+            "node": "Skip if No Patients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip if No Patients": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Send Reactivation Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Reactivation Message": {
+      "main": [
+        [
+          {
+            "node": "Update Patient Record",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log to Message_Logs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Send Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "55555555-5555-5555-5555-555555555505",
+  "id": "wf5-reactivation",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [
+    { "name": "patient-retention" },
+    { "name": "reactivation" }
+  ]
+}

@@ -1,0 +1,245 @@
+{
+  "name": "WF8 — Global Error Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Workflow 8: Global Error Handler\n\n**Trigger:** n8n Error Trigger (automatically fires when ANY other workflow fails)\n\n**How to link this workflow to other workflows:**\n1. Open each workflow (WF1–WF7)\n2. Click the three-dot menu (⋮) → Settings\n3. Under \"Error Workflow\", select \"WF8 — Global Error Handler\"\n4. Save\n\nThis makes n8n automatically call this workflow whenever an unhandled error occurs in any of the other workflows.\n\n**What it does:**\n1. Receives error details from n8n\n2. Logs the error to System_Logs sheet\n3. Sends an alert to the admin WhatsApp number\n\n**Before activating:**\nSet credentials on all nodes. This workflow must be activated BEFORE the others.",
+        "height": 360,
+        "width": 440
+      },
+      "id": "88888888-8888-8888-8888-000000000001",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [240, 60]
+    },
+    {
+      "parameters": {},
+      "id": "88888888-8888-8888-8888-000000000002",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [240, 480]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build a structured error report from n8n's error payload\nconst errorData = $input.first().json;\n\n// n8n error trigger provides these fields:\n// execution.id, execution.url, execution.mode, execution.retryOf\n// error.message, error.stack\n// workflow.id, workflow.name\n\nconst workflowName = errorData.workflow?.name || errorData.workflow?.id || 'unknown';\nconst executionId = errorData.execution?.id || 'unknown';\nconst executionUrl = errorData.execution?.url || '';\nconst errorMessage = errorData.error?.message || 'Unknown error';\nconst errorStack = errorData.error?.stack || '';\nconst timestamp = new Date().toISOString();\n\n// Build short summary for WhatsApp (must be readable on mobile)\nconst adminAlert = `⚠️ *Patient Retention Engine Alert*\\n\\nWorkflow: ${workflowName}\\nError: ${errorMessage}\\nTime: ${timestamp}\\nExecution ID: ${executionId}\\n\\nPlease check the n8n dashboard and System_Logs sheet.${executionUrl ? '\\n\\nExecution: ' + executionUrl : ''}`;\n\n// Build detailed log entry for System_Logs\nconst details = JSON.stringify({\n  workflow: workflowName,\n  execution_id: executionId,\n  execution_url: executionUrl,\n  error_message: errorMessage,\n  error_stack: errorStack.substr(0, 500), // limit stack trace length\n  raw: JSON.stringify(errorData).substr(0, 1000)\n});\n\nreturn [{\n  json: {\n    _workflow_name: workflowName,\n    _execution_id: executionId,\n    _error_message: errorMessage,\n    _timestamp: timestamp,\n    _admin_alert: adminAlert,\n    _details: details\n  }\n}];"
+      },
+      "id": "88888888-8888-8888-8888-000000000003",
+      "name": "Build Error Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 480]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "System_Logs",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "log_id": "={{ $now.toMillis() + '-err-' + Math.random().toString(36).substr(2,6) }}",
+            "timestamp": "={{ $json._timestamp }}",
+            "workflow_name": "={{ $json._workflow_name }}",
+            "execution_id": "={{ $json._execution_id }}",
+            "log_level": "ERROR",
+            "message": "={{ $json._error_message }}",
+            "details": "={{ $json._details }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "88888888-8888-8888-8888-000000000004",
+      "name": "Log Error to System_Logs",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [680, 380],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "admin-phone-check",
+              "leftValue": "={{ $env.ADMIN_WHATSAPP_NUMBER }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "88888888-8888-8888-8888-000000000005",
+      "name": "Admin Phone Configured?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 580]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.twilio.com/2010-04-01/Accounts/' + $env.TWILIO_ACCOUNT_SID + '/Messages.json' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $env.ADMIN_WHATSAPP_NUMBER }}"
+            },
+            {
+              "name": "From",
+              "value": "={{ $env.TWILIO_WHATSAPP_NUMBER }}"
+            },
+            {
+              "name": "Body",
+              "value": "={{ $('Build Error Report').item.json._admin_alert }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "88888888-8888-8888-8888-000000000006",
+      "name": "Send Admin Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 480],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "REPLACE_WITH_TWILIO_CREDENTIAL_ID",
+          "name": "Twilio Basic Auth"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "System_Logs",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "log_id": "={{ $now.toMillis() + '-' + Math.random().toString(36).substr(2,6) }}",
+            "timestamp": "={{ new Date().toISOString() }}",
+            "workflow_name": "workflow-8-error-handler",
+            "execution_id": "={{ $execution.id }}",
+            "log_level": "WARN",
+            "message": "Admin alert skipped — ADMIN_WHATSAPP_NUMBER not configured",
+            "details": "={{ JSON.stringify({ original_workflow: $('Build Error Report').item.json._workflow_name, original_execution: $('Build Error Report').item.json._execution_id }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "88888888-8888-8888-8888-000000000007",
+      "name": "Log Admin Alert Skipped",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [900, 680],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build Error Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Error Report": {
+      "main": [
+        [
+          {
+            "node": "Log Error to System_Logs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Admin Phone Configured?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Admin Phone Configured?": {
+      "main": [
+        [
+          {
+            "node": "Send Admin Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Admin Alert Skipped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "88888888-8888-8888-8888-888888888808",
+  "id": "wf8-error-handler",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [
+    { "name": "patient-retention" },
+    { "name": "monitoring" }
+  ]
+}

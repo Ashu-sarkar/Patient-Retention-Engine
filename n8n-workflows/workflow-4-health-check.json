@@ -1,0 +1,353 @@
+{
+  "name": "WF4 — Post-Visit Health Check",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Workflow 4: Post-Visit Health Check\n\n**Trigger:** Daily at 10:15 AM\n\n**Logic:** Finds patients who visited 2–3 days ago and haven't received a health check message yet. Sends a caring \"how are you feeling?\" message with structured reply options (GOOD / OKAY / HELP).\n\n`health_check_sent` is set to `TRUE` after sending — ensures one-time delivery per patient per visit cycle.\n\n**Before activating:**\n1. Set credential on all Google Sheets nodes → Google Sheets account\n2. Set credential on Send Health Check node → Twilio Basic Auth",
+        "height": 260,
+        "width": 400
+      },
+      "id": "44444444-4444-4444-4444-000000000001",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [240, 60]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "15 10 * * *"
+            }
+          ]
+        }
+      },
+      "id": "44444444-4444-4444-4444-000000000002",
+      "name": "Daily 10:15AM Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 380]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Patients",
+          "mode": "name"
+        },
+        "filtersUI": {},
+        "options": {}
+      },
+      "id": "44444444-4444-4444-4444-000000000003",
+      "name": "Read Patients",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [460, 380],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter patients who visited 2-3 days ago and haven't received health check\nconst items = $input.all();\nconst tz = $env.TIMEZONE || 'Asia/Kolkata';\n\nconst now = new Date();\nconst todayStr = now.toLocaleDateString('en-CA', { timeZone: tz });\nconst todayDate = new Date(todayStr);\n\nconst filtered = items.filter(item => {\n  const p = item.json;\n\n  // Must have a visit date\n  if (!p.visit_date || p.visit_date.trim() === '') return false;\n\n  const visitDate = new Date(p.visit_date);\n  if (isNaN(visitDate.getTime())) return false;\n\n  // Calculate days since visit\n  const diffMs = todayDate - visitDate;\n  const daysSinceVisit = Math.floor(diffMs / (1000 * 60 * 60 * 24));\n\n  // Only send 2–3 days after visit\n  if (daysSinceVisit < 2 || daysSinceVisit > 3) return false;\n\n  // Must not have received health check yet\n  const hcSent = p.health_check_sent;\n  if (hcSent === true || hcSent === 'TRUE' || hcSent === '1') return false;\n\n  // Must not be inactive\n  if (p.status === 'inactive') return false;\n\n  // Must have a valid phone number\n  if (!p.phone || !/^\\+[1-9]\\d{6,14}$/.test(p.phone.replace(/[\\s\\-().]/g, ''))) return false;\n\n  return true;\n});\n\nif (filtered.length === 0) {\n  return [{ json: { _skip: true, reason: 'No patients due for health check', todayStr } }];\n}\n\nreturn filtered.map(item => ({\n  json: {\n    ...item.json,\n    _workflow: 'workflow-4-health-check',\n    _message_type: 'health_check',\n    _to_phone: 'whatsapp:' + item.json.phone.replace(/[\\s\\-().]/g, ''),\n    _message_body: `Hi ${item.json.name || 'there'}! 😊 Hope you're feeling better after your visit with ${item.json.doctor_name || ($env.DEFAULT_DOCTOR_NAME || 'your doctor')}.\\n\\nHow are you doing today? Reply with:\\n*GOOD* — feeling well\\n*OKAY* — some discomfort\\n*HELP* — need to speak with the doctor\\n\\nWe're here if you need anything!`\n  }\n}));"
+      },
+      "id": "44444444-4444-4444-4444-000000000004",
+      "name": "Filter Health Check Due",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 380]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "skip-check-wf4",
+              "leftValue": "={{ $json._skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "44444444-4444-4444-4444-000000000005",
+      "name": "Skip if No Patients",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 380]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.twilio.com/2010-04-01/Accounts/' + $env.TWILIO_ACCOUNT_SID + '/Messages.json' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $json._to_phone }}"
+            },
+            {
+              "name": "From",
+              "value": "={{ $env.TWILIO_WHATSAPP_NUMBER }}"
+            },
+            {
+              "name": "Body",
+              "value": "={{ $json._message_body }}"
+            }
+          ]
+        },
+        "options": {
+          "retry": {
+            "maxTries": 3,
+            "waitBetweenTries": 30000
+          }
+        }
+      },
+      "id": "44444444-4444-4444-4444-000000000006",
+      "name": "Send Health Check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 280],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "REPLACE_WITH_TWILIO_CREDENTIAL_ID",
+          "name": "Twilio Basic Auth"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Patients",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $('Filter Health Check Due').item.json.id }}",
+            "health_check_sent": "TRUE",
+            "last_message_sent": "={{ new Date().toISOString() }}",
+            "message_count": "={{ (parseInt($('Filter Health Check Due').item.json.message_count) || 0) + 1 }}",
+            "updated_at": "={{ new Date().toISOString() }}"
+          },
+          "matchingColumns": ["id"],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "44444444-4444-4444-4444-000000000007",
+      "name": "Update Patient Record",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [1340, 180],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Message_Logs",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "log_id": "={{ $now.toMillis() + '-' + Math.random().toString(36).substr(2,6) }}",
+            "patient_id": "={{ $('Filter Health Check Due').item.json.id }}",
+            "patient_name": "={{ $('Filter Health Check Due').item.json.name }}",
+            "phone": "={{ $('Filter Health Check Due').item.json.phone }}",
+            "workflow_name": "workflow-4-health-check",
+            "message_type": "health_check",
+            "message_sent": "={{ $('Filter Health Check Due').item.json._message_body }}",
+            "sent_at": "={{ new Date().toISOString() }}",
+            "delivery_status": "sent",
+            "error_message": "",
+            "twilio_sid": "={{ $json.sid || '' }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "44444444-4444-4444-4444-000000000008",
+      "name": "Log to Message_Logs",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [1340, 380],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "System_Logs",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "log_id": "={{ $now.toMillis() + '-err-' + Math.random().toString(36).substr(2,6) }}",
+            "timestamp": "={{ new Date().toISOString() }}",
+            "workflow_name": "workflow-4-health-check",
+            "execution_id": "={{ $execution.id }}",
+            "log_level": "ERROR",
+            "message": "Failed to send health check message",
+            "details": "={{ JSON.stringify({ patient_id: $('Filter Health Check Due').item.json.id, phone: $('Filter Health Check Due').item.json.phone, error: $json.error?.message || 'HTTP request failed' }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "44444444-4444-4444-4444-000000000009",
+      "name": "Log Send Failure",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [1340, 520],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily 10:15AM Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Patients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Patients": {
+      "main": [
+        [
+          {
+            "node": "Filter Health Check Due",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Health Check Due": {
+      "main": [
+        [
+          {
+            "node": "Skip if No Patients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip if No Patients": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Send Health Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Health Check": {
+      "main": [
+        [
+          {
+            "node": "Update Patient Record",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log to Message_Logs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Send Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "44444444-4444-4444-4444-444444444404",
+  "id": "wf4-health-check",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [
+    { "name": "patient-retention" },
+    { "name": "engagement" }
+  ]
+}

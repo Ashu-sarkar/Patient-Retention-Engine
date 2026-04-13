@@ -1,0 +1,353 @@
+{
+  "name": "WF1 — Follow-Up Reminder (Day Before)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Workflow 1: Follow-Up Reminder\n\n**Trigger:** Daily at 9:00 AM\n\n**Logic:** Finds all patients whose `follow_up_date` is tomorrow, `status = pending`, and `message_count < 5`. Sends a WhatsApp reminder, updates the patient record, and logs the send.\n\n**Before activating:**\n1. Set credential on \"Read Patients\" node → Google Sheets account\n2. Set credential on \"Send WhatsApp Reminder\" node → Twilio Basic Auth\n3. Set credential on \"Update Patient Record\" node → Google Sheets account\n4. Set credential on \"Log to Message_Logs\" node → Google Sheets account",
+        "height": 280,
+        "width": 420
+      },
+      "id": "11111111-1111-1111-1111-000000000001",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [240, 60]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "11111111-1111-1111-1111-000000000002",
+      "name": "Daily 9AM Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 380]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Patients",
+          "mode": "name"
+        },
+        "filtersUI": {},
+        "options": {}
+      },
+      "id": "11111111-1111-1111-1111-000000000003",
+      "name": "Read Patients",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [460, 380],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter patients whose follow-up is tomorrow, status is pending, and haven't been over-messaged\nconst items = $input.all();\nconst tz = $env.TIMEZONE || 'Asia/Kolkata';\nconst maxMessages = parseInt($env.MAX_MESSAGE_COUNT) || 5;\nconst minHours = parseInt($env.MIN_HOURS_BETWEEN_MESSAGES) || 23;\n\n// Get tomorrow's date in local timezone (YYYY-MM-DD)\nconst now = new Date();\nconst tomorrow = new Date(now);\ntomorrow.setDate(tomorrow.getDate() + 1);\nconst tomorrowStr = tomorrow.toLocaleDateString('en-CA', { timeZone: tz }); // en-CA = YYYY-MM-DD\n\nconst filtered = items.filter(item => {\n  const p = item.json;\n\n  // Must have a follow-up date matching tomorrow\n  if (!p.follow_up_date || p.follow_up_date.trim() !== tomorrowStr) return false;\n\n  // Must be in pending state\n  if (p.status && p.status !== 'pending') return false;\n\n  // Must not exceed message limit\n  const msgCount = parseInt(p.message_count) || 0;\n  if (msgCount >= maxMessages) return false;\n\n  // Must have a valid phone number\n  if (!p.phone || !/^\\+[1-9]\\d{6,14}$/.test(p.phone.replace(/[\\s\\-().]/g, ''))) return false;\n\n  // Must not have been messaged within the last minHours hours\n  if (p.last_message_sent) {\n    const lastSent = new Date(p.last_message_sent);\n    const hoursSince = (now - lastSent) / (1000 * 60 * 60);\n    if (hoursSince < minHours) return false;\n  }\n\n  return true;\n});\n\nif (filtered.length === 0) {\n  // Return a no-op item so the workflow ends cleanly\n  return [{ json: { _skip: true, reason: 'No patients to message today', tomorrowStr } }];\n}\n\nreturn filtered.map(item => ({\n  json: {\n    ...item.json,\n    _workflow: 'workflow-1-followup-reminder',\n    _message_type: 'follow_up_reminder',\n    _to_phone: 'whatsapp:' + item.json.phone.replace(/[\\s\\-().]/g, ''),\n    _message_body: `Hi ${item.json.name || 'there'}, just a friendly reminder that your follow-up appointment with ${item.json.doctor_name || 'your doctor'} at ${item.json.clinic_name || ($env.DEFAULT_CLINIC_NAME || 'our clinic')} is scheduled for *tomorrow*. We look forward to seeing you! 🏥\\n\\nReply *YES* to confirm or *RESCHEDULE* if you need to change the date.`\n  }\n}));"
+      },
+      "id": "11111111-1111-1111-1111-000000000004",
+      "name": "Filter Tomorrow Follow-ups",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 380]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "skip-check",
+              "leftValue": "={{ $json._skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "11111111-1111-1111-1111-000000000005",
+      "name": "Skip if No Patients",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 380]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.twilio.com/2010-04-01/Accounts/' + $env.TWILIO_ACCOUNT_SID + '/Messages.json' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $json._to_phone }}"
+            },
+            {
+              "name": "From",
+              "value": "={{ $env.TWILIO_WHATSAPP_NUMBER }}"
+            },
+            {
+              "name": "Body",
+              "value": "={{ $json._message_body }}"
+            }
+          ]
+        },
+        "options": {
+          "retry": {
+            "maxTries": 3,
+            "waitBetweenTries": 30000
+          }
+        }
+      },
+      "id": "11111111-1111-1111-1111-000000000006",
+      "name": "Send WhatsApp Reminder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 280],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "REPLACE_WITH_TWILIO_CREDENTIAL_ID",
+          "name": "Twilio Basic Auth"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Patients",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $('Filter Tomorrow Follow-ups').item.json.id }}",
+            "last_message_sent": "={{ new Date().toISOString() }}",
+            "message_count": "={{ (parseInt($('Filter Tomorrow Follow-ups').item.json.message_count) || 0) + 1 }}",
+            "updated_at": "={{ new Date().toISOString() }}"
+          },
+          "matchingColumns": ["id"],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "11111111-1111-1111-1111-000000000007",
+      "name": "Update Patient Record",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [1340, 180],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Message_Logs",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "log_id": "={{ $now.toMillis() + '-' + Math.random().toString(36).substr(2,6) }}",
+            "patient_id": "={{ $('Filter Tomorrow Follow-ups').item.json.id }}",
+            "patient_name": "={{ $('Filter Tomorrow Follow-ups').item.json.name }}",
+            "phone": "={{ $('Filter Tomorrow Follow-ups').item.json.phone }}",
+            "workflow_name": "workflow-1-followup-reminder",
+            "message_type": "follow_up_reminder",
+            "message_sent": "={{ $('Filter Tomorrow Follow-ups').item.json._message_body }}",
+            "sent_at": "={{ new Date().toISOString() }}",
+            "delivery_status": "sent",
+            "error_message": "",
+            "twilio_sid": "={{ $json.sid || '' }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "11111111-1111-1111-1111-000000000008",
+      "name": "Log to Message_Logs",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [1340, 380],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "System_Logs",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "log_id": "={{ $now.toMillis() + '-err-' + Math.random().toString(36).substr(2,6) }}",
+            "timestamp": "={{ new Date().toISOString() }}",
+            "workflow_name": "workflow-1-followup-reminder",
+            "execution_id": "={{ $execution.id }}",
+            "log_level": "ERROR",
+            "message": "Failed to send follow-up reminder",
+            "details": "={{ JSON.stringify({ patient_id: $('Filter Tomorrow Follow-ups').item.json.id, phone: $('Filter Tomorrow Follow-ups').item.json.phone, error: $json.error?.message || 'HTTP request failed' }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "11111111-1111-1111-1111-000000000009",
+      "name": "Log Send Failure",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [1340, 520],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily 9AM Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Patients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Patients": {
+      "main": [
+        [
+          {
+            "node": "Filter Tomorrow Follow-ups",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Tomorrow Follow-ups": {
+      "main": [
+        [
+          {
+            "node": "Skip if No Patients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip if No Patients": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Send WhatsApp Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp Reminder": {
+      "main": [
+        [
+          {
+            "node": "Update Patient Record",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log to Message_Logs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Send Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "={{ $env.TIMEZONE || 'Asia/Kolkata' }}"
+  },
+  "versionId": "11111111-1111-1111-1111-111111111101",
+  "id": "wf1-followup-reminder",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [
+    { "name": "patient-retention" },
+    { "name": "reminder" }
+  ]
+}

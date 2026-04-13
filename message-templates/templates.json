@@ -1,0 +1,117 @@
+{
+  "version": "1.0",
+  "description": "WhatsApp message templates for the Patient Retention Engine. All templates use {{name}}, {{doctor_name}}, and {{clinic_name}} as placeholders — replaced at runtime with patient data.",
+  "templates": [
+    {
+      "id": "welcome",
+      "meta_template_name": "patient_welcome",
+      "workflow": "workflow-7-new-patient",
+      "trigger": "New patient record created",
+      "category": "UTILITY",
+      "message": "Hi {{name}}! 👋 Welcome to {{clinic_name}}. We've noted your visit with {{doctor_name}} and will keep you updated on your follow-up appointment. If you have any questions, feel free to reply to this message.",
+      "placeholders": ["name", "clinic_name", "doctor_name"],
+      "notes": "Sent once when a patient is added. Establishes the messaging channel."
+    },
+    {
+      "id": "follow_up_reminder",
+      "meta_template_name": "patient_followup_reminder",
+      "workflow": "workflow-1-followup-reminder",
+      "trigger": "follow_up_date = tomorrow",
+      "category": "UTILITY",
+      "message": "Hi {{name}}, just a friendly reminder that your follow-up appointment with {{doctor_name}} at {{clinic_name}} is scheduled for *tomorrow*. We look forward to seeing you! 🏥\n\nReply *YES* to confirm or *RESCHEDULE* if you need to change the date.",
+      "placeholders": ["name", "doctor_name", "clinic_name"],
+      "notes": "Sent the day before the follow-up. Include a clear call-to-action for confirmation."
+    },
+    {
+      "id": "same_day_reminder",
+      "meta_template_name": "patient_sameday_reminder",
+      "workflow": "workflow-2-sameday-reminder",
+      "trigger": "follow_up_date = today",
+      "category": "UTILITY",
+      "message": "Good morning {{name}}! 🌅 This is a reminder that your appointment with {{doctor_name}} is *today*. Please arrive on time and bring any documents or test reports from your previous visit.\n\nSee you soon at {{clinic_name}}!",
+      "placeholders": ["name", "doctor_name", "clinic_name"],
+      "notes": "Sent on the morning of the appointment. Keep it warm and practical."
+    },
+    {
+      "id": "missed_appointment_recovery",
+      "meta_template_name": "patient_missed_recovery",
+      "workflow": "workflow-3-missed-appointment",
+      "trigger": "follow_up_date + 1 day, status != completed",
+      "category": "UTILITY",
+      "message": "Hi {{name}}, we noticed you missed your follow-up appointment with {{doctor_name}} yesterday. We completely understand that things come up! 😊\n\nYour health is important to us. Would you like to reschedule? Reply *RESCHEDULE* and our team will get back to you shortly.",
+      "placeholders": ["name", "doctor_name"],
+      "notes": "Day +1 recovery message. Empathetic tone — avoid making the patient feel blamed."
+    },
+    {
+      "id": "missed_appointment_nudge",
+      "meta_template_name": "patient_missed_nudge",
+      "workflow": "workflow-3-missed-appointment",
+      "trigger": "follow_up_date + 3 days, status != completed",
+      "category": "UTILITY",
+      "message": "Hi {{name}}, {{doctor_name}} wanted us to check in on you. It's been a few days since your scheduled follow-up at {{clinic_name}}.\n\nSkipping follow-up care can sometimes delay recovery. If you'd like to book a new appointment, just reply *BOOK* and we'll arrange it for you. 💙",
+      "placeholders": ["name", "doctor_name", "clinic_name"],
+      "notes": "Day +3 nudge. References the doctor to add authority. Explains the clinical reason."
+    },
+    {
+      "id": "health_check",
+      "meta_template_name": "patient_health_check",
+      "workflow": "workflow-4-health-check",
+      "trigger": "visit_date + 2-3 days, health_check_sent = false",
+      "category": "UTILITY",
+      "message": "Hi {{name}}! 😊 Hope you're feeling better after your visit with {{doctor_name}}.\n\nHow are you doing today? Reply with:\n*GOOD* — feeling well\n*OKAY* — some discomfort\n*HELP* — need to speak with the doctor\n\nWe're here if you need anything!",
+      "placeholders": ["name", "doctor_name"],
+      "notes": "Sent 2–3 days post-visit. Captures response signals. HELP keyword can trigger staff alert in future phase."
+    },
+    {
+      "id": "reactivation",
+      "meta_template_name": "patient_reactivation",
+      "workflow": "workflow-5-reactivation",
+      "trigger": "last_message_sent > 30 days ago, reactivation_sent = false",
+      "category": "MARKETING",
+      "message": "Hi {{name}}! 👋 It's been a while since we last saw you at {{clinic_name}}, and we just wanted to check in.\n\nRegular health check-ups with {{doctor_name}} are the best way to stay ahead of any concerns. If you'd like to book an appointment, reply *BOOK* and our team will reach out.\n\nTake care! 💙",
+      "placeholders": ["name", "clinic_name", "doctor_name"],
+      "notes": "Sent once after 30 days of inactivity. Category is MARKETING — requires opt-in for Meta template approval."
+    },
+    {
+      "id": "confirmed_auto_reply",
+      "meta_template_name": null,
+      "workflow": "workflow-6-feedback-listener",
+      "trigger": "Patient replies with confirmation keyword",
+      "category": "SESSION",
+      "message": "Thank you, {{name}}! ✅ We've noted that you'll be coming in for your appointment. See you then!\n\nIf anything changes, feel free to message us.",
+      "placeholders": ["name"],
+      "notes": "Auto-reply sent within 24h session window (no template approval needed). Sent only when patient confirms."
+    },
+    {
+      "id": "reschedule_auto_reply",
+      "meta_template_name": null,
+      "workflow": "workflow-6-feedback-listener",
+      "trigger": "Patient replies with cancellation/reschedule keyword",
+      "category": "SESSION",
+      "message": "Hi {{name}}, no problem at all! 😊 We've noted that you'd like to reschedule. A member of our team will reach out to you shortly to arrange a new time.\n\nThank you for letting us know!",
+      "placeholders": ["name"],
+      "notes": "Auto-reply for cancellations. Notifies patient that staff will follow up. Does NOT auto-schedule."
+    },
+    {
+      "id": "error_admin_alert",
+      "meta_template_name": null,
+      "workflow": "workflow-8-error-handler",
+      "trigger": "Any workflow failure",
+      "category": "SESSION",
+      "message": "⚠️ *Patient Retention Engine Alert*\n\nWorkflow: {{workflow_name}}\nError: {{error_message}}\nTime: {{timestamp}}\nExecution ID: {{execution_id}}\n\nPlease check the n8n dashboard and System_Logs sheet.",
+      "placeholders": ["workflow_name", "error_message", "timestamp", "execution_id"],
+      "notes": "Sent to admin WhatsApp number only. Not patient-facing."
+    }
+  ],
+  "response_keywords": {
+    "confirmed": ["yes", "confirm", "confirmed", "will come", "coming", "ok", "okay", "sure", "yep", "yup", "absolutely", "definitely", "i'll be there", "see you"],
+    "cancelled": ["no", "cancel", "cancelled", "reschedule", "can't make it", "cannot come", "not coming", "postpone", "change date"],
+    "book": ["book", "schedule", "appointment", "fix appointment", "want to book"],
+    "help": ["help", "not well", "pain", "emergency", "urgent", "need doctor", "call me"]
+  },
+  "meta_template_categories": {
+    "UTILITY": "For transactional messages tied to a specific user action or request. Easier to get approved.",
+    "MARKETING": "For promotional or re-engagement messages. Requires user opt-in and stricter review.",
+    "AUTHENTICATION": "For OTP / verification messages only."
+  }
+}
