@@ -3,9 +3,9 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Workflow 2: Same-Day Reminder\n\n**Trigger:** Daily at 8:00 AM\n\n**Logic:** Finds all patients whose `follow_up_date` is today, `status = pending`, and `message_count < 5`. Sends a morning reminder, updates the patient record, and logs the send.\n\n**Before activating:**\n1. Set credential on \"Read Patients\" → Google Sheets account\n2. Set credential on \"Send Same-Day Reminder\" → Twilio Basic Auth\n3. Set credential on \"Update Patient Record\" → Google Sheets account\n4. Set credential on \"Log to Message_Logs\" → Google Sheets account",
-        "height": 260,
-        "width": 400
+        "content": "## Workflow 2: Same-Day Reminder\n\n**Trigger:** Daily at 8:00 AM\n\n**Logic:** Reads from Supabase. Finds all patients whose `follow_up_date` is today, `status = pending`, and `message_count < 5`. Sends a morning reminder and updates Supabase.\n\n**Data source:** Supabase `public.patients` (NOT Google Sheets)\n\n**Before activating:**\n1. Set credential on all Postgres nodes → Supabase DB\n2. Set credential on Send node → Twilio Basic Auth",
+        "height": 220,
+        "width": 380
       },
       "id": "22222222-2222-2222-2222-000000000001",
       "name": "Sticky Note",
@@ -32,35 +32,25 @@
     },
     {
       "parameters": {
-        "operation": "read",
-        "documentId": {
-          "__rl": true,
-          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Patients",
-          "mode": "name"
-        },
-        "filtersUI": {},
+        "operation": "executeQuery",
+        "query": "SELECT * FROM public.patients WHERE status = 'pending' AND follow_up_date = CURRENT_DATE",
         "options": {}
       },
       "id": "22222222-2222-2222-2222-000000000003",
-      "name": "Read Patients",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.2,
+      "name": "Read Patients from Supabase",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
       "position": [460, 380],
       "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
-          "name": "Google Sheets account"
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
         }
       }
     },
     {
       "parameters": {
-        "jsCode": "// Filter patients whose follow-up is today and haven't been messaged recently\nconst items = $input.all();\nconst tz = $env.TIMEZONE || 'Asia/Kolkata';\nconst maxMessages = parseInt($env.MAX_MESSAGE_COUNT) || 5;\nconst minHours = parseInt($env.MIN_HOURS_BETWEEN_MESSAGES) || 23;\n\n// Get today's date in local timezone (YYYY-MM-DD)\nconst now = new Date();\nconst todayStr = now.toLocaleDateString('en-CA', { timeZone: tz }); // en-CA = YYYY-MM-DD\n\nconst filtered = items.filter(item => {\n  const p = item.json;\n\n  // Must have a follow-up date matching today\n  if (!p.follow_up_date || p.follow_up_date.trim() !== todayStr) return false;\n\n  // Must be in pending state\n  if (p.status && p.status !== 'pending') return false;\n\n  // Must not exceed message limit\n  const msgCount = parseInt(p.message_count) || 0;\n  if (msgCount >= maxMessages) return false;\n\n  // Must have a valid phone number\n  if (!p.phone || !/^\\+[1-9]\\d{6,14}$/.test(p.phone.replace(/[\\s\\-().]/g, ''))) return false;\n\n  // Must not have been messaged within the last minHours hours\n  if (p.last_message_sent) {\n    const lastSent = new Date(p.last_message_sent);\n    const hoursSince = (now - lastSent) / (1000 * 60 * 60);\n    if (hoursSince < minHours) return false;\n  }\n\n  return true;\n});\n\nif (filtered.length === 0) {\n  return [{ json: { _skip: true, reason: 'No same-day appointments today', todayStr } }];\n}\n\nreturn filtered.map(item => ({\n  json: {\n    ...item.json,\n    _workflow: 'workflow-2-sameday-reminder',\n    _message_type: 'same_day_reminder',\n    _to_phone: 'whatsapp:' + item.json.phone.replace(/[\\s\\-().]/g, ''),\n    _message_body: `Good morning ${item.json.name || 'there'}! 🌅 This is a reminder that your appointment with ${item.json.doctor_name || 'your doctor'} is *today*. Please arrive on time and bring any documents or test reports from your previous visit.\\n\\nSee you soon at ${item.json.clinic_name || ($env.DEFAULT_CLINIC_NAME || 'our clinic')}!`\n  }\n}));"
+        "jsCode": "// Filter patients whose follow-up is today and haven't been messaged recently\nconst items = $input.all();\nconst tz = $env.TIMEZONE || 'Asia/Kolkata';\nconst maxMessages = parseInt($env.MAX_MESSAGE_COUNT) || 5;\nconst minHours = parseInt($env.MIN_HOURS_BETWEEN_MESSAGES) || 23;\n\nconst now = new Date();\nconst todayStr = now.toLocaleDateString('en-CA', { timeZone: tz });\n\nconst filtered = items.filter(item => {\n  const p = item.json;\n\n  const fuDate = p.follow_up_date ? new Date(p.follow_up_date).toLocaleDateString('en-CA', { timeZone: tz }) : null;\n  if (!fuDate || fuDate !== todayStr) return false;\n\n  if (p.status && p.status !== 'pending') return false;\n\n  const msgCount = parseInt(p.message_count) || 0;\n  if (msgCount >= maxMessages) return false;\n\n  if (!p.phone || !/^\\+[1-9]\\d{6,14}$/.test(p.phone)) return false;\n\n  if (p.last_message_sent) {\n    const lastSent = new Date(p.last_message_sent);\n    const hoursSince = (now - lastSent) / (1000 * 60 * 60);\n    if (hoursSince < minHours) return false;\n  }\n\n  return true;\n});\n\nif (filtered.length === 0) {\n  return [{ json: { _skip: true, reason: 'No same-day appointments today', todayStr } }];\n}\n\nreturn filtered.map(item => ({\n  json: {\n    ...item.json,\n    _workflow: 'workflow-2-sameday-reminder',\n    _message_type: 'same_day_reminder',\n    _to_phone: 'whatsapp:' + item.json.phone,\n    _message_body: `Good morning ${item.json.name || 'there'}! 🌅 This is a reminder that your appointment with ${item.json.doctor_name || 'your doctor'} is *today*. Please arrive on time and bring any documents or test reports from your previous visit.\\n\\nSee you soon at ${item.json.clinic_name || ($env.DEFAULT_CLINIC_NAME || 'our clinic')}!`\n  }\n}));"
       },
       "id": "22222222-2222-2222-2222-000000000004",
       "name": "Filter Today's Appointments",
@@ -71,20 +61,13 @@
     {
       "parameters": {
         "conditions": {
-          "options": {
-            "caseSensitive": false,
-            "leftValue": "",
-            "typeValidation": "loose"
-          },
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
           "conditions": [
             {
               "id": "skip-check-wf2",
               "leftValue": "={{ $json._skip }}",
               "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "true"
-              }
+              "operator": { "type": "boolean", "operation": "true" }
             }
           ],
           "combinator": "and"
@@ -107,26 +90,12 @@
         "contentType": "form-urlencoded",
         "bodyParameters": {
           "parameters": [
-            {
-              "name": "To",
-              "value": "={{ $json._to_phone }}"
-            },
-            {
-              "name": "From",
-              "value": "={{ $env.TWILIO_WHATSAPP_NUMBER }}"
-            },
-            {
-              "name": "Body",
-              "value": "={{ $json._message_body }}"
-            }
+            { "name": "To", "value": "={{ $json._to_phone }}" },
+            { "name": "From", "value": "={{ $env.TWILIO_WHATSAPP_NUMBER }}" },
+            { "name": "Body", "value": "={{ $json._message_body }}" }
           ]
         },
-        "options": {
-          "retry": {
-            "maxTries": 3,
-            "waitBetweenTries": 30000
-          }
-        }
+        "options": { "retry": { "maxTries": 3, "waitBetweenTries": 30000 } }
       },
       "id": "22222222-2222-2222-2222-000000000006",
       "name": "Send Same-Day Reminder",
@@ -143,164 +112,15 @@
     },
     {
       "parameters": {
-        "operation": "update",
-        "documentId": {
-          "__rl": true,
-          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Patients",
-          "mode": "name"
-        },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "id": "={{ $('Filter Today\\'s Appointments').item.json.id }}",
-            "last_message_sent": "={{ new Date().toISOString() }}",
-            "message_count": "={{ (parseInt($('Filter Today\\'s Appointments').item.json.message_count) || 0) + 1 }}",
-            "updated_at": "={{ new Date().toISOString() }}"
-          },
-          "matchingColumns": ["id"],
-          "schema": []
-        },
+        "operation": "executeQuery",
+        "query": "=UPDATE public.patients SET last_message_sent = NOW(), message_count = message_count + 1, updated_at = NOW() WHERE id = '{{ $('Filter Today\\'s Appointments').item.json.id }}'",
         "options": {}
       },
       "id": "22222222-2222-2222-2222-000000000007",
-      "name": "Update Patient Record",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.2,
-      "position": [1340, 180],
-      "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
-          "name": "Google Sheets account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "append",
-        "documentId": {
-          "__rl": true,
-          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Message_Logs",
-          "mode": "name"
-        },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "log_id": "={{ $now.toMillis() + '-' + Math.random().toString(36).substr(2,6) }}",
-            "patient_id": "={{ $('Filter Today\\'s Appointments').item.json.id }}",
-            "patient_name": "={{ $('Filter Today\\'s Appointments').item.json.name }}",
-            "phone": "={{ $('Filter Today\\'s Appointments').item.json.phone }}",
-            "workflow_name": "workflow-2-sameday-reminder",
-            "message_type": "same_day_reminder",
-            "message_sent": "={{ $('Filter Today\\'s Appointments').item.json._message_body }}",
-            "sent_at": "={{ new Date().toISOString() }}",
-            "delivery_status": "sent",
-            "error_message": "",
-            "twilio_sid": "={{ $json.sid || '' }}"
-          },
-          "matchingColumns": [],
-          "schema": []
-        },
-        "options": {}
-      },
-      "id": "22222222-2222-2222-2222-000000000008",
-      "name": "Log to Message_Logs",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.2,
-      "position": [1340, 380],
-      "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
-          "name": "Google Sheets account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "append",
-        "documentId": {
-          "__rl": true,
-          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "System_Logs",
-          "mode": "name"
-        },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "log_id": "={{ $now.toMillis() + '-err-' + Math.random().toString(36).substr(2,6) }}",
-            "timestamp": "={{ new Date().toISOString() }}",
-            "workflow_name": "workflow-2-sameday-reminder",
-            "execution_id": "={{ $execution.id }}",
-            "log_level": "ERROR",
-            "message": "Failed to send same-day reminder",
-            "details": "={{ JSON.stringify({ patient_id: $('Filter Today\\'s Appointments').item.json.id, phone: $('Filter Today\\'s Appointments').item.json.phone, error: $json.error?.message || 'HTTP request failed' }) }}"
-          },
-          "matchingColumns": [],
-          "schema": []
-        },
-        "options": {}
-      },
-      "id": "22222222-2222-2222-2222-000000000009",
-      "name": "Log Send Failure",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.2,
-      "position": [1340, 520],
-      "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
-          "name": "Google Sheets account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "upsert",
-        "schema": { "__rl": true, "value": "public", "mode": "list" },
-        "table": { "__rl": true, "value": "patients", "mode": "list" },
-        "conflictTarget": "phone",
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "id": "={{ $('Filter Today\\'s Appointments').item.json.id }}",
-            "name": "={{ $('Filter Today\\'s Appointments').item.json.name }}",
-            "phone": "={{ $('Filter Today\\'s Appointments').item.json.phone }}",
-            "doctor_name": "={{ $('Filter Today\\'s Appointments').item.json.doctor_name || '' }}",
-            "clinic_name": "={{ $('Filter Today\\'s Appointments').item.json.clinic_name || '' }}",
-            "visit_date": "={{ $('Filter Today\\'s Appointments').item.json.visit_date || null }}",
-            "follow_up_date": "={{ $('Filter Today\\'s Appointments').item.json.follow_up_date || null }}",
-            "status": "={{ $('Filter Today\\'s Appointments').item.json.status || 'pending' }}",
-            "last_message_sent": "={{ new Date().toISOString() }}",
-            "message_count": "={{ (parseInt($('Filter Today\\'s Appointments').item.json.message_count) || 0) + 1 }}",
-            "response_status": "={{ $('Filter Today\\'s Appointments').item.json.response_status || 'none' }}",
-            "health_check_sent": "={{ $('Filter Today\\'s Appointments').item.json.health_check_sent === 'TRUE' || $('Filter Today\\'s Appointments').item.json.health_check_sent === true }}",
-            "reactivation_sent": "={{ $('Filter Today\\'s Appointments').item.json.reactivation_sent === 'TRUE' || $('Filter Today\\'s Appointments').item.json.reactivation_sent === true }}",
-            "notes": "={{ $('Filter Today\\'s Appointments').item.json.notes || '' }}",
-            "created_at": "={{ $('Filter Today\\'s Appointments').item.json.created_at || new Date().toISOString() }}",
-            "updated_at": "={{ new Date().toISOString() }}"
-          },
-          "matchingColumns": ["phone"],
-          "schema": []
-        },
-        "options": {}
-      },
-      "id": "wf2-sb-001",
-      "name": "Supabase Upsert Patient",
+      "name": "Update Patient in Supabase",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
-      "position": [1560, 180],
+      "position": [1340, 180],
       "credentials": {
         "postgres": {
           "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
@@ -324,18 +144,18 @@
             "message_sent": "={{ $('Filter Today\\'s Appointments').item.json._message_body }}",
             "sent_at": "={{ new Date().toISOString() }}",
             "delivery_status": "sent",
-            "twilio_sid": "={{ $('Send Same-Day Reminder').item.json.sid || '' }}"
+            "twilio_sid": "={{ $json.sid || '' }}"
           },
           "matchingColumns": [],
           "schema": []
         },
         "options": {}
       },
-      "id": "wf2-sb-002",
-      "name": "Supabase Insert Message Log",
+      "id": "22222222-2222-2222-2222-000000000008",
+      "name": "Log Message to Supabase",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
-      "position": [1560, 380],
+      "position": [1340, 380],
       "credentials": {
         "postgres": {
           "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
@@ -355,18 +175,18 @@
             "execution_id": "={{ $execution.id }}",
             "log_level": "ERROR",
             "message": "Failed to send same-day reminder",
-            "details": "={{ JSON.stringify({ patient_id: $('Filter Today\\'s Appointments').item.json.id, phone: $('Filter Today\\'s Appointments').item.json.phone, error: $('Send Same-Day Reminder').item.json.error?.message || 'HTTP request failed' }) }}"
+            "details": "={{ JSON.stringify({ patient_id: $('Filter Today\\'s Appointments').item.json.id, phone: $('Filter Today\\'s Appointments').item.json.phone, error: $json.error?.message || 'HTTP request failed' }) }}"
           },
           "matchingColumns": [],
           "schema": []
         },
         "options": {}
       },
-      "id": "wf2-sb-003",
-      "name": "Supabase Insert Error Log",
+      "id": "22222222-2222-2222-2222-000000000009",
+      "name": "Log Send Failure to Supabase",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
-      "position": [1560, 520],
+      "position": [1340, 520],
       "credentials": {
         "postgres": {
           "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
@@ -377,116 +197,35 @@
   ],
   "connections": {
     "Daily 8AM Trigger": {
-      "main": [
-        [
-          {
-            "node": "Read Patients",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Read Patients from Supabase", "type": "main", "index": 0 }]]
     },
-    "Read Patients": {
-      "main": [
-        [
-          {
-            "node": "Filter Today's Appointments",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+    "Read Patients from Supabase": {
+      "main": [[{ "node": "Filter Today's Appointments", "type": "main", "index": 0 }]]
     },
     "Filter Today's Appointments": {
-      "main": [
-        [
-          {
-            "node": "Skip if No Patients",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Skip if No Patients", "type": "main", "index": 0 }]]
     },
     "Skip if No Patients": {
       "main": [
         [],
-        [
-          {
-            "node": "Send Same-Day Reminder",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        [{ "node": "Send Same-Day Reminder", "type": "main", "index": 0 }]
       ]
     },
     "Send Same-Day Reminder": {
       "main": [
         [
-          {
-            "node": "Update Patient Record",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Log to Message_Logs",
-            "type": "main",
-            "index": 0
-          }
+          { "node": "Update Patient in Supabase", "type": "main", "index": 0 },
+          { "node": "Log Message to Supabase", "type": "main", "index": 0 }
         ],
-        [
-          {
-            "node": "Log Send Failure",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Update Patient Record": {
-      "main": [
-        [
-          {
-            "node": "Supabase Upsert Patient",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Log to Message_Logs": {
-      "main": [
-        [
-          {
-            "node": "Supabase Insert Message Log",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Log Send Failure": {
-      "main": [
-        [
-          {
-            "node": "Supabase Insert Error Log",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        [{ "node": "Log Send Failure to Supabase", "type": "main", "index": 0 }]
       ]
     }
   },
   "active": false,
-  "settings": {
-    "executionOrder": "v1"
-  },
+  "settings": { "executionOrder": "v1" },
   "versionId": "22222222-2222-2222-2222-222222222202",
   "id": "wf2-sameday-reminder",
-  "meta": {
-    "templateCredsSetupCompleted": false
-  },
+  "meta": { "templateCredsSetupCompleted": false },
   "tags": [
     { "name": "patient-retention" },
     { "name": "reminder" }

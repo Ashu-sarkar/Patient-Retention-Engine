@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Workflow 6: Feedback Listener\n\n**Trigger:** Webhook POST (always active)\n\n**Webhook URL:** Copy from the Webhook node → Production URL\nRegister this URL in:\n- Twilio: Console → Messaging → Sandbox Settings → \"When a message comes in\"\n- Meta: Developer App → WhatsApp → Configuration → Webhook\n\n**Logic:**\n1. Receives inbound WhatsApp message from Twilio or Meta\n2. Extracts sender phone + message body\n3. Finds matching patient in Patients sheet\n4. Classifies response (confirmed / cancelled / help / responded)\n5. Updates patient record\n6. Sends appropriate auto-reply (within 24h session window)\n7. Logs to System_Logs\n\n**Before activating:**\nSet credentials on all Google Sheets nodes and HTTP Request node.",
+        "content": "## Workflow 6: Feedback Listener\n\n**Trigger:** Webhook POST (always active)\n\n**Webhook URL:** Copy from the Webhook node → Production URL\nRegister this URL in:\n- Twilio: Console → Messaging → Sandbox Settings → \"When a message comes in\"\n- Meta: Developer App → WhatsApp → Configuration → Webhook\n\n**Logic:**\n1. Receives inbound WhatsApp message from Twilio or Meta\n2. Extracts sender phone + message body\n3. Finds matching patient in Supabase by phone number\n4. Classifies response (confirmed / cancelled / help / responded)\n5. Updates patient record in Supabase\n6. Sends appropriate auto-reply\n7. Logs to Supabase system_logs\n\n**Data source:** Supabase `public.patients` (NOT Google Sheets)\n\n**Before activating:**\n1. Set credential on Postgres nodes → Supabase DB\n2. Set credential on HTTP Request node → Twilio Basic Auth",
         "height": 360,
         "width": 440
       },
@@ -29,7 +29,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Extract and normalise inbound message data\n// Handles both Twilio and Meta Cloud API webhook formats\nconst body = $input.first().json.body || $input.first().json;\n\nlet fromPhone = '';\nlet messageBody = '';\nlet source = 'unknown';\n\n// Twilio format: body.From = 'whatsapp:+919876543210', body.Body = 'text'\nif (body.From && body.Body !== undefined) {\n  source = 'twilio';\n  fromPhone = body.From.replace(/^whatsapp:/i, '').replace(/[\\s\\-().]/g, '');\n  messageBody = String(body.Body || '').trim();\n}\n// Meta Cloud API format: body.entry[0].changes[0].value.messages[0]\nelse if (body.entry && Array.isArray(body.entry)) {\n  source = 'meta';\n  try {\n    const msg = body.entry[0].changes[0].value.messages[0];\n    fromPhone = '+' + msg.from.replace(/^\\+/, '');\n    messageBody = msg.text?.body || '';\n  } catch (e) {\n    // Not a message event (could be status update) — skip\n    return [{ json: { _skip: true, reason: 'Not a message event (Meta webhook ping or status update)', source: 'meta' } }];\n  }\n}\nelse {\n  return [{ json: { _skip: true, reason: 'Unrecognised webhook format', rawBody: JSON.stringify(body).substr(0, 200) } }];\n}\n\nif (!fromPhone || !fromPhone.startsWith('+')) {\n  return [{ json: { _skip: true, reason: 'Could not extract valid phone from webhook', rawFrom: fromPhone } }];\n}\n\n// Classify the message\nconst lowerMsg = messageBody.toLowerCase();\nlet classification = 'responded';\n\nconst confirmedKeywords = ['yes', 'confirm', 'confirmed', 'will come', 'coming', 'ok', 'okay', 'sure', 'yep', 'yup', 'absolutely', 'definitely', \"i'll be there\", 'see you', 'good', 'well'];\nconst cancelledKeywords = ['no', 'cancel', 'cancelled', 'reschedule', \"can't make it\", 'cannot come', 'not coming', 'postpone', 'change date'];\nconst bookKeywords = ['book', 'schedule', 'appointment', 'want to book', 'fix appointment'];\nconst helpKeywords = ['help', 'not well', 'pain', 'emergency', 'urgent', 'need doctor', 'call me', 'okay', 'okay'];\n\nif (helpKeywords.some(k => lowerMsg.includes(k)) && lowerMsg.includes('help') || lowerMsg === 'help') {\n  classification = 'help';\n} else if (bookKeywords.some(k => lowerMsg.includes(k))) {\n  classification = 'book';\n} else if (confirmedKeywords.some(k => lowerMsg.includes(k))) {\n  classification = 'confirmed';\n} else if (cancelledKeywords.some(k => lowerMsg.includes(k))) {\n  classification = 'cancelled';\n}\n\nreturn [{\n  json: {\n    _from_phone: fromPhone,\n    _message_body: messageBody,\n    _classification: classification,\n    _source: source,\n    _received_at: new Date().toISOString()\n  }\n}];"
+        "jsCode": "// Extract and normalise inbound message data\n// Handles both Twilio and Meta Cloud API webhook formats\nconst body = $input.first().json.body || $input.first().json;\n\nlet fromPhone = '';\nlet messageBody = '';\nlet source = 'unknown';\n\nif (body.From && body.Body !== undefined) {\n  source = 'twilio';\n  fromPhone = body.From.replace(/^whatsapp:/i, '').replace(/[\\s\\-().]/g, '');\n  messageBody = String(body.Body || '').trim();\n}\nelse if (body.entry && Array.isArray(body.entry)) {\n  source = 'meta';\n  try {\n    const msg = body.entry[0].changes[0].value.messages[0];\n    fromPhone = '+' + msg.from.replace(/^\\+/, '');\n    messageBody = msg.text?.body || '';\n  } catch (e) {\n    return [{ json: { _skip: true, reason: 'Not a message event (Meta webhook ping or status update)', source: 'meta' } }];\n  }\n}\nelse {\n  return [{ json: { _skip: true, reason: 'Unrecognised webhook format', rawBody: JSON.stringify(body).substr(0, 200) } }];\n}\n\nif (!fromPhone || !fromPhone.startsWith('+')) {\n  return [{ json: { _skip: true, reason: 'Could not extract valid phone from webhook', rawFrom: fromPhone } }];\n}\n\nconst lowerMsg = messageBody.toLowerCase();\nlet classification = 'responded';\n\nconst confirmedKeywords = ['yes', 'confirm', 'confirmed', 'will come', 'coming', 'ok', 'okay', 'sure', 'yep', 'yup', 'absolutely', 'definitely', \"i'll be there\", 'see you', 'good'];\nconst cancelledKeywords = ['no', 'cancel', 'cancelled', 'reschedule', \"can't make it\", 'cannot come', 'not coming', 'postpone', 'change date'];\nconst bookKeywords = ['book', 'schedule', 'appointment', 'want to book', 'fix appointment'];\n\nif (lowerMsg === 'help' || lowerMsg.includes('help') || ['not well','pain','emergency','urgent','need doctor','call me'].some(k => lowerMsg.includes(k))) {\n  classification = 'help';\n} else if (bookKeywords.some(k => lowerMsg.includes(k))) {\n  classification = 'book';\n} else if (confirmedKeywords.some(k => lowerMsg.includes(k))) {\n  classification = 'confirmed';\n} else if (cancelledKeywords.some(k => lowerMsg.includes(k))) {\n  classification = 'cancelled';\n}\n\nreturn [{\n  json: {\n    _from_phone: fromPhone,\n    _message_body: messageBody,\n    _classification: classification,\n    _source: source,\n    _received_at: new Date().toISOString()\n  }\n}];"
       },
       "id": "66666666-6666-6666-6666-000000000003",
       "name": "Parse and Classify Message",
@@ -40,20 +40,13 @@
     {
       "parameters": {
         "conditions": {
-          "options": {
-            "caseSensitive": false,
-            "leftValue": "",
-            "typeValidation": "loose"
-          },
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
           "conditions": [
             {
               "id": "skip-parse-check",
               "leftValue": "={{ $json._skip }}",
               "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "true"
-              }
+              "operator": { "type": "boolean", "operation": "true" }
             }
           ],
           "combinator": "and"
@@ -70,9 +63,7 @@
       "parameters": {
         "respondWith": "json",
         "responseBody": "={ \"status\": \"ok\" }",
-        "options": {
-          "responseCode": 200
-        }
+        "options": { "responseCode": 200 }
       },
       "id": "66666666-6666-6666-6666-000000000005",
       "name": "Respond 200 OK (Early)",
@@ -82,38 +73,28 @@
     },
     {
       "parameters": {
-        "operation": "read",
-        "documentId": {
-          "__rl": true,
-          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Patients",
-          "mode": "name"
-        },
-        "filtersUI": {},
+        "operation": "executeQuery",
+        "query": "=SELECT * FROM public.patients WHERE phone = '{{ $('Parse and Classify Message').item.json._from_phone }}' LIMIT 1",
         "options": {}
       },
       "id": "66666666-6666-6666-6666-000000000006",
-      "name": "Read Patients",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.2,
+      "name": "Find Patient in Supabase",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
       "position": [900, 580],
       "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
-          "name": "Google Sheets account"
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
         }
       }
     },
     {
       "parameters": {
-        "jsCode": "// Find patient matching the inbound phone number and prepare update\nconst allPatients = $input.all();\n\n// Retrieve the classified message data from the Parse node\nconst parsed = $('Parse and Classify Message').first().json;\nconst inboundPhone = parsed._from_phone;\nconst classification = parsed._classification;\nconst messageBody = parsed._message_body;\nconst receivedAt = parsed._received_at;\n\n// Normalise phone for comparison (strip non-digits, add + if needed)\nfunction normalisePhone(phone) {\n  if (!phone) return '';\n  const stripped = phone.replace(/[\\s\\-().]/g, '').replace(/^whatsapp:/i, '');\n  return stripped.startsWith('+') ? stripped : '+' + stripped;\n}\n\nconst normInbound = normalisePhone(inboundPhone);\n\n// Find matching patient\nconst matchedPatient = allPatients.find(item => {\n  const normPatient = normalisePhone(item.json.phone || '');\n  return normPatient === normInbound;\n});\n\nif (!matchedPatient) {\n  return [{\n    json: {\n      _found: false,\n      _from_phone: inboundPhone,\n      _classification: classification,\n      _message_body: messageBody,\n      _received_at: receivedAt,\n      _log_message: `Unrecognised sender: ${inboundPhone}`\n    }\n  }];\n}\n\n// Determine auto-reply text based on classification\nconst patientName = matchedPatient.json.name || 'there';\nlet autoReply = null;\n\nif (classification === 'confirmed') {\n  autoReply = `Thank you, ${patientName}! ✅ We've noted that you'll be coming in for your appointment. See you then!\\n\\nIf anything changes, feel free to message us.`;\n} else if (classification === 'cancelled' || messageBody.toLowerCase().includes('reschedule')) {\n  autoReply = `Hi ${patientName}, no problem at all! 😊 We've noted that you'd like to reschedule. A member of our team will reach out to you shortly to arrange a new time.\\n\\nThank you for letting us know!`;\n} else if (classification === 'help') {\n  autoReply = `Hi ${patientName}, we're sorry to hear that. 🙏 Please stay calm — we've flagged this for our team and someone will reach out to you very soon. If this is an emergency, please call your nearest hospital.`;\n}\n\nreturn [{\n  json: {\n    _found: true,\n    _patient_id: matchedPatient.json.id,\n    _patient_name: patientName,\n    _from_phone: inboundPhone,\n    _to_phone: 'whatsapp:' + normInbound,\n    _classification: classification,\n    _message_body: messageBody,\n    _received_at: receivedAt,\n    _auto_reply: autoReply,\n    _should_reply: autoReply !== null\n  }\n}];"
+        "jsCode": "// Determine if patient was found and prepare auto-reply\nconst patientRows = $input.all();\nconst parsed = $('Parse and Classify Message').first().json;\nconst inboundPhone = parsed._from_phone;\nconst classification = parsed._classification;\nconst messageBody = parsed._message_body;\nconst receivedAt = parsed._received_at;\n\nconst matchedPatient = patientRows.length > 0 && patientRows[0].json.id ? patientRows[0].json : null;\n\nif (!matchedPatient) {\n  return [{\n    json: {\n      _found: false,\n      _from_phone: inboundPhone,\n      _classification: classification,\n      _message_body: messageBody,\n      _received_at: receivedAt,\n      _log_message: `Unrecognised sender: ${inboundPhone}`\n    }\n  }];\n}\n\nconst patientName = matchedPatient.name || 'there';\nlet autoReply = null;\n\nif (classification === 'confirmed') {\n  autoReply = `Thank you, ${patientName}! ✅ We've noted that you'll be coming in for your appointment. See you then!\\n\\nIf anything changes, feel free to message us.`;\n} else if (classification === 'cancelled') {\n  autoReply = `Hi ${patientName}, no problem at all! 😊 We've noted that you'd like to reschedule. A member of our team will reach out to you shortly to arrange a new time.\\n\\nThank you for letting us know!`;\n} else if (classification === 'help') {\n  autoReply = `Hi ${patientName}, we're sorry to hear that. 🙏 Please stay calm — we've flagged this for our team and someone will reach out to you very soon. If this is an emergency, please call your nearest hospital.`;\n}\n\nreturn [{\n  json: {\n    _found: true,\n    _patient_id: matchedPatient.id,\n    _patient_name: patientName,\n    _from_phone: inboundPhone,\n    _to_phone: 'whatsapp:' + inboundPhone,\n    _classification: classification,\n    _message_body: messageBody,\n    _received_at: receivedAt,\n    _auto_reply: autoReply,\n    _should_reply: autoReply !== null\n  }\n}];"
       },
       "id": "66666666-6666-6666-6666-000000000007",
-      "name": "Find Patient and Prepare Reply",
+      "name": "Prepare Reply",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [1120, 580]
@@ -121,20 +102,13 @@
     {
       "parameters": {
         "conditions": {
-          "options": {
-            "caseSensitive": false,
-            "leftValue": "",
-            "typeValidation": "loose"
-          },
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
           "conditions": [
             {
               "id": "patient-found-check",
               "leftValue": "={{ $json._found }}",
               "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "true"
-              }
+              "operator": { "type": "boolean", "operation": "true" }
             }
           ],
           "combinator": "and"
@@ -149,59 +123,32 @@
     },
     {
       "parameters": {
-        "operation": "update",
-        "documentId": {
-          "__rl": true,
-          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Patients",
-          "mode": "name"
-        },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "id": "={{ $json._patient_id }}",
-            "response_status": "={{ $json._classification === 'confirmed' ? 'confirmed' : $json._classification === 'cancelled' ? 'cancelled' : 'responded' }}",
-            "last_response": "={{ $json._message_body }}",
-            "updated_at": "={{ new Date().toISOString() }}"
-          },
-          "matchingColumns": ["id"],
-          "schema": []
-        },
+        "operation": "executeQuery",
+        "query": "=UPDATE public.patients SET response_status = '{{ $json._classification === 'confirmed' ? 'confirmed' : $json._classification === 'cancelled' ? 'cancelled' : 'responded' }}', last_response = '{{ $json._message_body.replace(/'/g, \"''\") }}', updated_at = NOW() WHERE id = '{{ $json._patient_id }}'",
         "options": {}
       },
       "id": "66666666-6666-6666-6666-000000000009",
-      "name": "Update Patient Response",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.2,
+      "name": "Update Patient Response in Supabase",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
       "position": [1560, 460],
       "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
-          "name": "Google Sheets account"
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
         }
       }
     },
     {
       "parameters": {
         "conditions": {
-          "options": {
-            "caseSensitive": false,
-            "leftValue": "",
-            "typeValidation": "loose"
-          },
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
           "conditions": [
             {
               "id": "should-reply-check",
-              "leftValue": "={{ $('Find Patient and Prepare Reply').item.json._should_reply }}",
+              "leftValue": "={{ $('Prepare Reply').item.json._should_reply }}",
               "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "true"
-              }
+              "operator": { "type": "boolean", "operation": "true" }
             }
           ],
           "combinator": "and"
@@ -224,18 +171,9 @@
         "contentType": "form-urlencoded",
         "bodyParameters": {
           "parameters": [
-            {
-              "name": "To",
-              "value": "={{ $('Find Patient and Prepare Reply').item.json._to_phone }}"
-            },
-            {
-              "name": "From",
-              "value": "={{ $env.TWILIO_WHATSAPP_NUMBER }}"
-            },
-            {
-              "name": "Body",
-              "value": "={{ $('Find Patient and Prepare Reply').item.json._auto_reply }}"
-            }
+            { "name": "To", "value": "={{ $('Prepare Reply').item.json._to_phone }}" },
+            { "name": "From", "value": "={{ $env.TWILIO_WHATSAPP_NUMBER }}" },
+            { "name": "Body", "value": "={{ $('Prepare Reply').item.json._auto_reply }}" }
           ]
         },
         "options": {}
@@ -255,27 +193,17 @@
     },
     {
       "parameters": {
-        "operation": "append",
-        "documentId": {
-          "__rl": true,
-          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "System_Logs",
-          "mode": "name"
-        },
+        "operation": "insert",
+        "schema": { "__rl": true, "value": "public", "mode": "list" },
+        "table": { "__rl": true, "value": "system_logs", "mode": "list" },
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "log_id": "={{ $now.toMillis() + '-' + Math.random().toString(36).substr(2,6) }}",
-            "timestamp": "={{ new Date().toISOString() }}",
             "workflow_name": "workflow-6-feedback-listener",
             "execution_id": "={{ $execution.id }}",
             "log_level": "WARN",
             "message": "Inbound message from unrecognised number",
-            "details": "={{ JSON.stringify({ phone: $json._from_phone, message: $json._message_body, classification: $json._classification }) }}"
+            "details": "={{ JSON.stringify({ phone: $('Prepare Reply').item.json._from_phone, message: $('Prepare Reply').item.json._message_body, classification: $('Prepare Reply').item.json._classification }) }}"
           },
           "matchingColumns": [],
           "schema": []
@@ -283,40 +211,30 @@
         "options": {}
       },
       "id": "66666666-6666-6666-6666-000000000012",
-      "name": "Log Unknown Sender",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.2,
+      "name": "Log Unknown Sender to Supabase",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
       "position": [1560, 720],
       "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
-          "name": "Google Sheets account"
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
         }
       }
     },
     {
       "parameters": {
-        "operation": "append",
-        "documentId": {
-          "__rl": true,
-          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "System_Logs",
-          "mode": "name"
-        },
+        "operation": "insert",
+        "schema": { "__rl": true, "value": "public", "mode": "list" },
+        "table": { "__rl": true, "value": "system_logs", "mode": "list" },
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "log_id": "={{ $now.toMillis() + '-' + Math.random().toString(36).substr(2,6) }}",
-            "timestamp": "={{ new Date().toISOString() }}",
             "workflow_name": "workflow-6-feedback-listener",
             "execution_id": "={{ $execution.id }}",
             "log_level": "INFO",
             "message": "Patient response received and classified",
-            "details": "={{ JSON.stringify({ patient_id: $('Find Patient and Prepare Reply').item.json._patient_id, phone: $('Find Patient and Prepare Reply').item.json._from_phone, classification: $('Find Patient and Prepare Reply').item.json._classification, message: $('Find Patient and Prepare Reply').item.json._message_body }) }}"
+            "details": "={{ JSON.stringify({ patient_id: $('Prepare Reply').item.json._patient_id, phone: $('Prepare Reply').item.json._from_phone, classification: $('Prepare Reply').item.json._classification, message: $('Prepare Reply').item.json._message_body }) }}"
           },
           "matchingColumns": [],
           "schema": []
@@ -324,14 +242,14 @@
         "options": {}
       },
       "id": "66666666-6666-6666-6666-000000000013",
-      "name": "Log Patient Response",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.2,
+      "name": "Log Patient Response to Supabase",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
       "position": [2220, 460],
       "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
-          "name": "Google Sheets account"
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
         }
       }
     },
@@ -339,280 +257,61 @@
       "parameters": {
         "respondWith": "json",
         "responseBody": "={ \"status\": \"ok\" }",
-        "options": {
-          "responseCode": 200
-        }
+        "options": { "responseCode": 200 }
       },
       "id": "66666666-6666-6666-6666-000000000014",
       "name": "Respond 200 OK (Skip Path)",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [900, 360]
-    },
-    {
-      "parameters": {
-        "operation": "upsert",
-        "schema": { "__rl": true, "value": "public", "mode": "list" },
-        "table": { "__rl": true, "value": "patients", "mode": "list" },
-        "conflictTarget": "phone",
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "id": "={{ $('Find Patient and Prepare Reply').item.json._patient_id }}",
-            "phone": "={{ $('Find Patient and Prepare Reply').item.json._from_phone }}",
-            "response_status": "={{ $('Find Patient and Prepare Reply').item.json._classification === 'confirmed' ? 'confirmed' : $('Find Patient and Prepare Reply').item.json._classification === 'cancelled' ? 'cancelled' : 'responded' }}",
-            "last_response": "={{ $('Find Patient and Prepare Reply').item.json._message_body }}",
-            "updated_at": "={{ new Date().toISOString() }}"
-          },
-          "matchingColumns": ["phone"],
-          "schema": []
-        },
-        "options": {}
-      },
-      "id": "wf6-sb-001",
-      "name": "Supabase Upsert Patient Response",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.4,
-      "position": [1780, 460],
-      "credentials": {
-        "postgres": {
-          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
-          "name": "Supabase DB"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "insert",
-        "schema": { "__rl": true, "value": "public", "mode": "list" },
-        "table": { "__rl": true, "value": "system_logs", "mode": "list" },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "workflow_name": "workflow-6-feedback-listener",
-            "execution_id": "={{ $execution.id }}",
-            "log_level": "WARN",
-            "message": "Inbound message from unrecognised number",
-            "details": "={{ JSON.stringify({ phone: $('Find Patient and Prepare Reply').item.json._from_phone, message: $('Find Patient and Prepare Reply').item.json._message_body, classification: $('Find Patient and Prepare Reply').item.json._classification }) }}"
-          },
-          "matchingColumns": [],
-          "schema": []
-        },
-        "options": {}
-      },
-      "id": "wf6-sb-002",
-      "name": "Supabase Log Unknown Sender",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.4,
-      "position": [1780, 720],
-      "credentials": {
-        "postgres": {
-          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
-          "name": "Supabase DB"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "insert",
-        "schema": { "__rl": true, "value": "public", "mode": "list" },
-        "table": { "__rl": true, "value": "system_logs", "mode": "list" },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "workflow_name": "workflow-6-feedback-listener",
-            "execution_id": "={{ $execution.id }}",
-            "log_level": "INFO",
-            "message": "Patient response received and classified",
-            "details": "={{ JSON.stringify({ patient_id: $('Find Patient and Prepare Reply').item.json._patient_id, phone: $('Find Patient and Prepare Reply').item.json._from_phone, classification: $('Find Patient and Prepare Reply').item.json._classification, message: $('Find Patient and Prepare Reply').item.json._message_body }) }}"
-          },
-          "matchingColumns": [],
-          "schema": []
-        },
-        "options": {}
-      },
-      "id": "wf6-sb-003",
-      "name": "Supabase Log Patient Response",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.4,
-      "position": [2440, 460],
-      "credentials": {
-        "postgres": {
-          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
-          "name": "Supabase DB"
-        }
-      }
     }
   ],
   "connections": {
     "Webhook — Inbound WhatsApp": {
-      "main": [
-        [
-          {
-            "node": "Parse and Classify Message",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Parse and Classify Message", "type": "main", "index": 0 }]]
     },
     "Parse and Classify Message": {
-      "main": [
-        [
-          {
-            "node": "Skip if Invalid Message",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Skip if Invalid Message", "type": "main", "index": 0 }]]
     },
     "Skip if Invalid Message": {
       "main": [
+        [{ "node": "Respond 200 OK (Skip Path)", "type": "main", "index": 0 }],
         [
-          {
-            "node": "Respond 200 OK (Skip Path)",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Respond 200 OK (Early)",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Read Patients",
-            "type": "main",
-            "index": 0
-          }
+          { "node": "Respond 200 OK (Early)", "type": "main", "index": 0 },
+          { "node": "Find Patient in Supabase", "type": "main", "index": 0 }
         ]
       ]
     },
-    "Read Patients": {
-      "main": [
-        [
-          {
-            "node": "Find Patient and Prepare Reply",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+    "Find Patient in Supabase": {
+      "main": [[{ "node": "Prepare Reply", "type": "main", "index": 0 }]]
     },
-    "Find Patient and Prepare Reply": {
-      "main": [
-        [
-          {
-            "node": "Patient Found?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+    "Prepare Reply": {
+      "main": [[{ "node": "Patient Found?", "type": "main", "index": 0 }]]
     },
     "Patient Found?": {
       "main": [
-        [
-          {
-            "node": "Update Patient Response",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Log Unknown Sender",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        [{ "node": "Update Patient Response in Supabase", "type": "main", "index": 0 }],
+        [{ "node": "Log Unknown Sender to Supabase", "type": "main", "index": 0 }]
       ]
     },
-    "Update Patient Response": {
-      "main": [
-        [
-          {
-            "node": "Should Send Auto-Reply?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+    "Update Patient Response in Supabase": {
+      "main": [[{ "node": "Should Send Auto-Reply?", "type": "main", "index": 0 }]]
     },
     "Should Send Auto-Reply?": {
       "main": [
-        [
-          {
-            "node": "Send Auto-Reply",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Log Patient Response",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        [{ "node": "Send Auto-Reply", "type": "main", "index": 0 }],
+        [{ "node": "Log Patient Response to Supabase", "type": "main", "index": 0 }]
       ]
     },
     "Send Auto-Reply": {
-      "main": [
-        [
-          {
-            "node": "Log Patient Response",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Update Patient Response": {
-      "main": [
-        [
-          {
-            "node": "Supabase Upsert Patient Response",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Log Unknown Sender": {
-      "main": [
-        [
-          {
-            "node": "Supabase Log Unknown Sender",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Log Patient Response": {
-      "main": [
-        [
-          {
-            "node": "Supabase Log Patient Response",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Log Patient Response to Supabase", "type": "main", "index": 0 }]]
     }
   },
   "active": false,
-  "settings": {
-    "executionOrder": "v1"
-  },
+  "settings": { "executionOrder": "v1" },
   "versionId": "66666666-6666-6666-6666-666666666606",
   "id": "wf6-feedback-listener",
-  "meta": {
-    "templateCredsSetupCompleted": false
-  },
+  "meta": { "templateCredsSetupCompleted": false },
   "tags": [
     { "name": "patient-retention" },
     { "name": "feedback" }

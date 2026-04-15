@@ -6,16 +6,22 @@
 
 -- -------------------------
 -- Table: patients
--- Primary record store. One row per patient.
--- Upserted by n8n on conflict with phone (unique).
+-- Primary record store. One row per patient (keyed on phone number).
+-- Upserted by n8n WF10 (sheet sync) on conflict with phone.
+-- WF1–WF8 read exclusively from this table (Supabase = source of truth).
 -- -------------------------
 CREATE TABLE IF NOT EXISTS public.patients (
   id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_code      TEXT,                          -- Human-readable ID from intake sheet (PAT-0001)
   name              TEXT        NOT NULL,
   phone             TEXT        NOT NULL,
   doctor_name       TEXT,
   clinic_name       TEXT,
+  dob               DATE,                          -- Date of birth (optional)
+  sex               TEXT        CHECK (sex IN ('Male','Female','Other') OR sex IS NULL),
   visit_date        DATE,
+  follow_up_required TEXT       DEFAULT 'No'
+                    CHECK (follow_up_required IN ('Yes','No')),
   follow_up_date    DATE,
   status            TEXT        NOT NULL DEFAULT 'pending'
                     CHECK (status IN ('pending','completed','missed','inactive','data_error')),
@@ -26,18 +32,47 @@ CREATE TABLE IF NOT EXISTS public.patients (
   last_response     TEXT,
   health_check_sent BOOLEAN     NOT NULL DEFAULT FALSE,
   reactivation_sent BOOLEAN     NOT NULL DEFAULT FALSE,
+  intake_sheet_id   TEXT,                          -- Spreadsheet ID of the intake sheet this patient came from
   notes             TEXT,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Unique constraint so n8n can do ON CONFLICT (phone) DO UPDATE
+-- Unique constraints
 ALTER TABLE public.patients
   ADD CONSTRAINT patients_phone_unique UNIQUE (phone);
 
-CREATE INDEX IF NOT EXISTS idx_patients_follow_up_date ON public.patients (follow_up_date);
-CREATE INDEX IF NOT EXISTS idx_patients_status          ON public.patients (status);
-CREATE INDEX IF NOT EXISTS idx_patients_phone           ON public.patients (phone);
+ALTER TABLE public.patients
+  ADD CONSTRAINT patients_patient_code_unique UNIQUE (patient_code);
+
+CREATE INDEX IF NOT EXISTS idx_patients_follow_up_date    ON public.patients (follow_up_date);
+CREATE INDEX IF NOT EXISTS idx_patients_status             ON public.patients (status);
+CREATE INDEX IF NOT EXISTS idx_patients_phone              ON public.patients (phone);
+CREATE INDEX IF NOT EXISTS idx_patients_follow_up_required ON public.patients (follow_up_required);
+CREATE INDEX IF NOT EXISTS idx_patients_visit_date         ON public.patients (visit_date);
+
+-- -------------------------
+-- Table: daily_intake_sheets
+-- Tracks the Google Spreadsheet created each morning by WF9.
+-- WF10 queries this table to know which sheet to poll for new patients.
+-- -------------------------
+CREATE TABLE IF NOT EXISTS public.daily_intake_sheets (
+  id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  sheet_date       DATE        NOT NULL,
+  spreadsheet_id   TEXT        NOT NULL,
+  spreadsheet_url  TEXT,
+  email_sent_to    TEXT,
+  rows_synced      INTEGER     NOT NULL DEFAULT 0,
+  rows_errored     INTEGER     NOT NULL DEFAULT 0,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_synced_at   TIMESTAMPTZ
+);
+
+-- One sheet per calendar date
+ALTER TABLE public.daily_intake_sheets
+  ADD CONSTRAINT daily_sheets_date_unique UNIQUE (sheet_date);
+
+CREATE INDEX IF NOT EXISTS idx_daily_sheets_date ON public.daily_intake_sheets (sheet_date DESC);
 
 -- Auto-update updated_at on every row change
 CREATE OR REPLACE FUNCTION public.set_updated_at()

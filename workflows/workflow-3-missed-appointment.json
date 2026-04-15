@@ -3,9 +3,9 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Workflow 3: Missed Appointment Recovery\n\n**Trigger:** Daily at 10:00 AM\n\n**Logic:**\n- Day +1: Sends empathetic recovery message\n- Day +3: Sends second nudge referencing the doctor\n- Day +7: Marks patient status as `missed` (stops messaging)\n\nPatients must have `follow_up_date < today` AND `status != completed` AND `status != inactive`.\n\n**Before activating:**\n1. Set credential on all Google Sheets nodes → Google Sheets account\n2. Set credential on HTTP Request nodes → Twilio Basic Auth",
-        "height": 280,
-        "width": 420
+        "content": "## Workflow 3: Missed Appointment Recovery\n\n**Trigger:** Daily at 10:00 AM\n\n**Logic (from Supabase):**\n- Day +1: Empathetic recovery message\n- Day +3: Second nudge referencing the doctor\n- Day +7: Marks patient status as `missed` in Supabase (stops messaging)\n\nReads ONLY from Supabase `public.patients`.\n\n**Before activating:**\n1. Set credential on all Postgres nodes → Supabase DB\n2. Set credential on HTTP nodes → Twilio Basic Auth",
+        "height": 260,
+        "width": 400
       },
       "id": "33333333-3333-3333-3333-000000000001",
       "name": "Sticky Note",
@@ -32,35 +32,25 @@
     },
     {
       "parameters": {
-        "operation": "read",
-        "documentId": {
-          "__rl": true,
-          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Patients",
-          "mode": "name"
-        },
-        "filtersUI": {},
+        "operation": "executeQuery",
+        "query": "SELECT * FROM public.patients WHERE follow_up_date < CURRENT_DATE AND status NOT IN ('completed','inactive')",
         "options": {}
       },
       "id": "33333333-3333-3333-3333-000000000003",
-      "name": "Read Patients",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.2,
+      "name": "Read Patients from Supabase",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
       "position": [460, 380],
       "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
-          "name": "Google Sheets account"
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
         }
       }
     },
     {
       "parameters": {
-        "jsCode": "// Filter patients with missed appointments and calculate days overdue\nconst items = $input.all();\nconst tz = $env.TIMEZONE || 'Asia/Kolkata';\nconst maxMessages = parseInt($env.MAX_MESSAGE_COUNT) || 5;\nconst minHours = parseInt($env.MIN_HOURS_BETWEEN_MESSAGES) || 23;\n\nconst now = new Date();\nconst todayStr = now.toLocaleDateString('en-CA', { timeZone: tz });\nconst todayDate = new Date(todayStr);\n\nconst actionable = [];\n\nfor (const item of items) {\n  const p = item.json;\n\n  // Must have a follow-up date that has passed\n  if (!p.follow_up_date || p.follow_up_date.trim() === '') continue;\n\n  const followUpDate = new Date(p.follow_up_date);\n  if (isNaN(followUpDate.getTime())) continue;\n\n  // follow_up_date must be strictly before today\n  if (followUpDate >= todayDate) continue;\n\n  // Must not be completed or inactive\n  const status = p.status || 'pending';\n  if (status === 'completed' || status === 'inactive') continue;\n\n  // Calculate days overdue (floor of difference)\n  const diffMs = todayDate - followUpDate;\n  const daysOverdue = Math.floor(diffMs / (1000 * 60 * 60 * 24));\n\n  // Must have a valid phone number for messaging actions\n  const hasValidPhone = p.phone && /^\\+[1-9]\\d{6,14}$/.test(p.phone.replace(/[\\s\\-().]/g, ''));\n\n  // Must not exceed message limit (for messaging actions)\n  const msgCount = parseInt(p.message_count) || 0;\n\n  // Must not have been messaged within minHours (for messaging actions)\n  let recentlyMessaged = false;\n  if (p.last_message_sent) {\n    const lastSent = new Date(p.last_message_sent);\n    const hoursSince = (now - lastSent) / (1000 * 60 * 60);\n    recentlyMessaged = hoursSince < minHours;\n  }\n\n  const doctorName = p.doctor_name || $env.DEFAULT_DOCTOR_NAME || 'your doctor';\n  const clinicName = p.clinic_name || $env.DEFAULT_CLINIC_NAME || 'our clinic';\n  const patientName = p.name || 'there';\n  const toPhone = hasValidPhone ? 'whatsapp:' + p.phone.replace(/[\\s\\-().]/g, '') : null;\n\n  if (daysOverdue >= 7) {\n    // Mark as missed — no message needed\n    actionable.push({\n      json: {\n        ...p,\n        _action: 'mark_missed',\n        _days_overdue: daysOverdue,\n        _workflow: 'workflow-3-missed-appointment'\n      }\n    });\n  } else if (daysOverdue === 3 && hasValidPhone && msgCount < maxMessages && !recentlyMessaged) {\n    actionable.push({\n      json: {\n        ...p,\n        _action: 'send_nudge',\n        _days_overdue: daysOverdue,\n        _workflow: 'workflow-3-missed-appointment',\n        _message_type: 'missed_appointment_nudge',\n        _to_phone: toPhone,\n        _message_body: `Hi ${patientName}, ${doctorName} wanted us to check in on you. It's been a few days since your scheduled follow-up at ${clinicName}.\\n\\nSkipping follow-up care can sometimes delay recovery. If you'd like to book a new appointment, just reply *BOOK* and we'll arrange it for you. 💙`\n      }\n    });\n  } else if (daysOverdue === 1 && hasValidPhone && msgCount < maxMessages && !recentlyMessaged) {\n    actionable.push({\n      json: {\n        ...p,\n        _action: 'send_recovery',\n        _days_overdue: daysOverdue,\n        _workflow: 'workflow-3-missed-appointment',\n        _message_type: 'missed_appointment_recovery',\n        _to_phone: toPhone,\n        _message_body: `Hi ${patientName}, we noticed you missed your follow-up appointment with ${doctorName} yesterday. We completely understand that things come up! 😊\\n\\nYour health is important to us. Would you like to reschedule? Reply *RESCHEDULE* and our team will get back to you shortly.`\n      }\n    });\n  }\n}\n\nif (actionable.length === 0) {\n  return [{ json: { _skip: true, reason: 'No missed appointments to process', todayStr } }];\n}\n\nreturn actionable;"
+        "jsCode": "// Filter patients with missed appointments and calculate days overdue\nconst items = $input.all();\nconst tz = $env.TIMEZONE || 'Asia/Kolkata';\nconst maxMessages = parseInt($env.MAX_MESSAGE_COUNT) || 5;\nconst minHours = parseInt($env.MIN_HOURS_BETWEEN_MESSAGES) || 23;\n\nconst now = new Date();\nconst todayStr = now.toLocaleDateString('en-CA', { timeZone: tz });\nconst todayDate = new Date(todayStr);\n\nconst actionable = [];\n\nfor (const item of items) {\n  const p = item.json;\n\n  if (!p.follow_up_date) continue;\n\n  const followUpDate = new Date(p.follow_up_date);\n  if (isNaN(followUpDate.getTime())) continue;\n\n  if (followUpDate >= todayDate) continue;\n\n  const status = p.status || 'pending';\n  if (status === 'completed' || status === 'inactive') continue;\n\n  const diffMs = todayDate - followUpDate;\n  const daysOverdue = Math.floor(diffMs / (1000 * 60 * 60 * 24));\n\n  const hasValidPhone = p.phone && /^\\+[1-9]\\d{6,14}$/.test(p.phone);\n  const msgCount = parseInt(p.message_count) || 0;\n\n  let recentlyMessaged = false;\n  if (p.last_message_sent) {\n    const lastSent = new Date(p.last_message_sent);\n    const hoursSince = (now - lastSent) / (1000 * 60 * 60);\n    recentlyMessaged = hoursSince < minHours;\n  }\n\n  const doctorName = p.doctor_name || $env.DEFAULT_DOCTOR_NAME || 'your doctor';\n  const clinicName = p.clinic_name || $env.DEFAULT_CLINIC_NAME || 'our clinic';\n  const patientName = p.name || 'there';\n  const toPhone = hasValidPhone ? 'whatsapp:' + p.phone : null;\n\n  if (daysOverdue >= 7) {\n    actionable.push({\n      json: {\n        ...p,\n        _action: 'mark_missed',\n        _days_overdue: daysOverdue,\n        _workflow: 'workflow-3-missed-appointment'\n      }\n    });\n  } else if (daysOverdue === 3 && hasValidPhone && msgCount < maxMessages && !recentlyMessaged) {\n    actionable.push({\n      json: {\n        ...p,\n        _action: 'send_nudge',\n        _days_overdue: daysOverdue,\n        _workflow: 'workflow-3-missed-appointment',\n        _message_type: 'missed_appointment_nudge',\n        _to_phone: toPhone,\n        _message_body: `Hi ${patientName}, ${doctorName} wanted us to check in on you. It's been a few days since your scheduled follow-up at ${clinicName}.\\n\\nSkipping follow-up care can sometimes delay recovery. If you'd like to book a new appointment, just reply *BOOK* and we'll arrange it for you. 💙`\n      }\n    });\n  } else if (daysOverdue === 1 && hasValidPhone && msgCount < maxMessages && !recentlyMessaged) {\n    actionable.push({\n      json: {\n        ...p,\n        _action: 'send_recovery',\n        _days_overdue: daysOverdue,\n        _workflow: 'workflow-3-missed-appointment',\n        _message_type: 'missed_appointment_recovery',\n        _to_phone: toPhone,\n        _message_body: `Hi ${patientName}, we noticed you missed your follow-up appointment with ${doctorName} yesterday. We completely understand that things come up! 😊\\n\\nYour health is important to us. Would you like to reschedule? Reply *RESCHEDULE* and our team will get back to you shortly.`\n      }\n    });\n  }\n}\n\nif (actionable.length === 0) {\n  return [{ json: { _skip: true, reason: 'No missed appointments to process', todayStr } }];\n}\n\nreturn actionable;"
       },
       "id": "33333333-3333-3333-3333-000000000004",
       "name": "Filter Missed Appointments",
@@ -71,20 +61,13 @@
     {
       "parameters": {
         "conditions": {
-          "options": {
-            "caseSensitive": false,
-            "leftValue": "",
-            "typeValidation": "loose"
-          },
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
           "conditions": [
             {
               "id": "skip-check-wf3",
               "leftValue": "={{ $json._skip }}",
               "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "true"
-              }
+              "operator": { "type": "boolean", "operation": "true" }
             }
           ],
           "combinator": "and"
@@ -103,20 +86,13 @@
           "values": [
             {
               "conditions": {
-                "options": {
-                  "caseSensitive": false,
-                  "leftValue": "",
-                  "typeValidation": "loose"
-                },
+                "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
                 "conditions": [
                   {
                     "id": "action-mark-missed",
                     "leftValue": "={{ $json._action }}",
                     "rightValue": "mark_missed",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    }
+                    "operator": { "type": "string", "operation": "equals" }
                   }
                 ],
                 "combinator": "and"
@@ -126,20 +102,13 @@
             },
             {
               "conditions": {
-                "options": {
-                  "caseSensitive": false,
-                  "leftValue": "",
-                  "typeValidation": "loose"
-                },
+                "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
                 "conditions": [
                   {
                     "id": "action-send-recovery",
                     "leftValue": "={{ $json._action }}",
                     "rightValue": "send_recovery",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    }
+                    "operator": { "type": "string", "operation": "equals" }
                   }
                 ],
                 "combinator": "and"
@@ -149,20 +118,13 @@
             },
             {
               "conditions": {
-                "options": {
-                  "caseSensitive": false,
-                  "leftValue": "",
-                  "typeValidation": "loose"
-                },
+                "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
                 "conditions": [
                   {
                     "id": "action-send-nudge",
                     "leftValue": "={{ $json._action }}",
                     "rightValue": "send_nudge",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    }
+                    "operator": { "type": "string", "operation": "equals" }
                   }
                 ],
                 "combinator": "and"
@@ -182,38 +144,19 @@
     },
     {
       "parameters": {
-        "operation": "update",
-        "documentId": {
-          "__rl": true,
-          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Patients",
-          "mode": "name"
-        },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "id": "={{ $json.id }}",
-            "status": "missed",
-            "updated_at": "={{ new Date().toISOString() }}"
-          },
-          "matchingColumns": ["id"],
-          "schema": []
-        },
+        "operation": "executeQuery",
+        "query": "=UPDATE public.patients SET status = 'missed', updated_at = NOW() WHERE id = '{{ $json.id }}'",
         "options": {}
       },
       "id": "33333333-3333-3333-3333-000000000007",
-      "name": "Mark Status as Missed",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.2,
-      "position": [1340, 100],
+      "name": "Mark Missed in Supabase",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1340, 120],
       "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
-          "name": "Google Sheets account"
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
         }
       }
     },
@@ -227,26 +170,12 @@
         "contentType": "form-urlencoded",
         "bodyParameters": {
           "parameters": [
-            {
-              "name": "To",
-              "value": "={{ $json._to_phone }}"
-            },
-            {
-              "name": "From",
-              "value": "={{ $env.TWILIO_WHATSAPP_NUMBER }}"
-            },
-            {
-              "name": "Body",
-              "value": "={{ $json._message_body }}"
-            }
+            { "name": "To", "value": "={{ $json._to_phone }}" },
+            { "name": "From", "value": "={{ $env.TWILIO_WHATSAPP_NUMBER }}" },
+            { "name": "Body", "value": "={{ $json._message_body }}" }
           ]
         },
-        "options": {
-          "retry": {
-            "maxTries": 3,
-            "waitBetweenTries": 30000
-          }
-        }
+        "options": { "retry": { "maxTries": 3, "waitBetweenTries": 30000 } }
       },
       "id": "33333333-3333-3333-3333-000000000008",
       "name": "Send Recovery Message",
@@ -259,7 +188,7 @@
           "name": "Twilio Basic Auth"
         }
       },
-      "onError": "continueErrorOutput"
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -271,133 +200,52 @@
         "contentType": "form-urlencoded",
         "bodyParameters": {
           "parameters": [
-            {
-              "name": "To",
-              "value": "={{ $json._to_phone }}"
-            },
-            {
-              "name": "From",
-              "value": "={{ $env.TWILIO_WHATSAPP_NUMBER }}"
-            },
-            {
-              "name": "Body",
-              "value": "={{ $json._message_body }}"
-            }
+            { "name": "To", "value": "={{ $json._to_phone }}" },
+            { "name": "From", "value": "={{ $env.TWILIO_WHATSAPP_NUMBER }}" },
+            { "name": "Body", "value": "={{ $json._message_body }}" }
           ]
         },
-        "options": {
-          "retry": {
-            "maxTries": 3,
-            "waitBetweenTries": 30000
-          }
-        }
+        "options": { "retry": { "maxTries": 3, "waitBetweenTries": 30000 } }
       },
       "id": "33333333-3333-3333-3333-000000000009",
       "name": "Send Nudge Message",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1340, 500],
+      "position": [1340, 460],
       "credentials": {
         "httpBasicAuth": {
           "id": "REPLACE_WITH_TWILIO_CREDENTIAL_ID",
           "name": "Twilio Basic Auth"
         }
       },
-      "onError": "continueErrorOutput"
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
-        "operation": "update",
-        "documentId": {
-          "__rl": true,
-          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Patients",
-          "mode": "name"
-        },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "id": "={{ $('Filter Missed Appointments').item.json.id }}",
-            "last_message_sent": "={{ new Date().toISOString() }}",
-            "message_count": "={{ (parseInt($('Filter Missed Appointments').item.json.message_count) || 0) + 1 }}",
-            "updated_at": "={{ new Date().toISOString() }}"
-          },
-          "matchingColumns": ["id"],
-          "schema": []
-        },
+        "operation": "executeQuery",
+        "query": "=UPDATE public.patients SET last_message_sent = NOW(), message_count = message_count + 1, updated_at = NOW() WHERE id = '{{ $('Filter Missed Appointments').item.json.id }}'",
         "options": {}
       },
       "id": "33333333-3333-3333-3333-000000000010",
-      "name": "Update After Recovery Send",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.2,
-      "position": [1560, 300],
+      "name": "Update Patient After Send",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1560, 380],
       "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
-          "name": "Google Sheets account"
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
         }
       }
     },
     {
       "parameters": {
-        "operation": "update",
-        "documentId": {
-          "__rl": true,
-          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Patients",
-          "mode": "name"
-        },
+        "operation": "insert",
+        "schema": { "__rl": true, "value": "public", "mode": "list" },
+        "table": { "__rl": true, "value": "message_logs", "mode": "list" },
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "id": "={{ $('Filter Missed Appointments').item.json.id }}",
-            "last_message_sent": "={{ new Date().toISOString() }}",
-            "message_count": "={{ (parseInt($('Filter Missed Appointments').item.json.message_count) || 0) + 1 }}",
-            "updated_at": "={{ new Date().toISOString() }}"
-          },
-          "matchingColumns": ["id"],
-          "schema": []
-        },
-        "options": {}
-      },
-      "id": "33333333-3333-3333-3333-000000000011",
-      "name": "Update After Nudge Send",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.2,
-      "position": [1560, 500],
-      "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
-          "name": "Google Sheets account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "append",
-        "documentId": {
-          "__rl": true,
-          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Message_Logs",
-          "mode": "name"
-        },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "log_id": "={{ $now.toMillis() + '-' + Math.random().toString(36).substr(2,6) }}",
             "patient_id": "={{ $('Filter Missed Appointments').item.json.id }}",
             "patient_name": "={{ $('Filter Missed Appointments').item.json.name }}",
             "phone": "={{ $('Filter Missed Appointments').item.json.phone }}",
@@ -405,9 +253,38 @@
             "message_type": "={{ $('Filter Missed Appointments').item.json._message_type }}",
             "message_sent": "={{ $('Filter Missed Appointments').item.json._message_body }}",
             "sent_at": "={{ new Date().toISOString() }}",
-            "delivery_status": "sent",
-            "error_message": "",
-            "twilio_sid": "={{ $json.sid || '' }}"
+            "delivery_status": "sent"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "33333333-3333-3333-3333-000000000011",
+      "name": "Log Message to Supabase",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1780, 380],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": { "__rl": true, "value": "public", "mode": "list" },
+        "table": { "__rl": true, "value": "system_logs", "mode": "list" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "workflow_name": "workflow-3-missed-appointment",
+            "execution_id": "={{ $execution.id }}",
+            "log_level": "INFO",
+            "message": "=Patient marked as missed after {{ $('Filter Missed Appointments').item.json._days_overdue }} days overdue",
+            "details": "={{ JSON.stringify({ patient_id: $('Filter Missed Appointments').item.json.id, phone: $('Filter Missed Appointments').item.json.phone, days_overdue: $('Filter Missed Appointments').item.json._days_overdue }) }}"
           },
           "matchingColumns": [],
           "schema": []
@@ -415,252 +292,10 @@
         "options": {}
       },
       "id": "33333333-3333-3333-3333-000000000012",
-      "name": "Log Recovery Message",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.2,
-      "position": [1780, 300],
-      "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
-          "name": "Google Sheets account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "append",
-        "documentId": {
-          "__rl": true,
-          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Message_Logs",
-          "mode": "name"
-        },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "log_id": "={{ $now.toMillis() + '-' + Math.random().toString(36).substr(2,6) }}",
-            "patient_id": "={{ $('Filter Missed Appointments').item.json.id }}",
-            "patient_name": "={{ $('Filter Missed Appointments').item.json.name }}",
-            "phone": "={{ $('Filter Missed Appointments').item.json.phone }}",
-            "workflow_name": "workflow-3-missed-appointment",
-            "message_type": "={{ $('Filter Missed Appointments').item.json._message_type }}",
-            "message_sent": "={{ $('Filter Missed Appointments').item.json._message_body }}",
-            "sent_at": "={{ new Date().toISOString() }}",
-            "delivery_status": "sent",
-            "error_message": "",
-            "twilio_sid": "={{ $json.sid || '' }}"
-          },
-          "matchingColumns": [],
-          "schema": []
-        },
-        "options": {}
-      },
-      "id": "33333333-3333-3333-3333-000000000013",
-      "name": "Log Nudge Message",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.2,
-      "position": [1780, 500],
-      "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
-          "name": "Google Sheets account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "upsert",
-        "schema": { "__rl": true, "value": "public", "mode": "list" },
-        "table": { "__rl": true, "value": "patients", "mode": "list" },
-        "conflictTarget": "phone",
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "id": "={{ $('Filter Missed Appointments').item.json.id }}",
-            "name": "={{ $('Filter Missed Appointments').item.json.name }}",
-            "phone": "={{ $('Filter Missed Appointments').item.json.phone }}",
-            "doctor_name": "={{ $('Filter Missed Appointments').item.json.doctor_name || '' }}",
-            "clinic_name": "={{ $('Filter Missed Appointments').item.json.clinic_name || '' }}",
-            "visit_date": "={{ $('Filter Missed Appointments').item.json.visit_date || null }}",
-            "follow_up_date": "={{ $('Filter Missed Appointments').item.json.follow_up_date || null }}",
-            "status": "missed",
-            "response_status": "={{ $('Filter Missed Appointments').item.json.response_status || 'none' }}",
-            "health_check_sent": "={{ $('Filter Missed Appointments').item.json.health_check_sent === 'TRUE' || $('Filter Missed Appointments').item.json.health_check_sent === true }}",
-            "reactivation_sent": "={{ $('Filter Missed Appointments').item.json.reactivation_sent === 'TRUE' || $('Filter Missed Appointments').item.json.reactivation_sent === true }}",
-            "notes": "={{ $('Filter Missed Appointments').item.json.notes || '' }}",
-            "created_at": "={{ $('Filter Missed Appointments').item.json.created_at || new Date().toISOString() }}",
-            "updated_at": "={{ new Date().toISOString() }}"
-          },
-          "matchingColumns": ["phone"],
-          "schema": []
-        },
-        "options": {}
-      },
-      "id": "wf3-sb-001",
-      "name": "Supabase Update Missed Status",
+      "name": "Log Missed Status to Supabase",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
-      "position": [1560, 100],
-      "credentials": {
-        "postgres": {
-          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
-          "name": "Supabase DB"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "upsert",
-        "schema": { "__rl": true, "value": "public", "mode": "list" },
-        "table": { "__rl": true, "value": "patients", "mode": "list" },
-        "conflictTarget": "phone",
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "id": "={{ $('Filter Missed Appointments').item.json.id }}",
-            "name": "={{ $('Filter Missed Appointments').item.json.name }}",
-            "phone": "={{ $('Filter Missed Appointments').item.json.phone }}",
-            "doctor_name": "={{ $('Filter Missed Appointments').item.json.doctor_name || '' }}",
-            "clinic_name": "={{ $('Filter Missed Appointments').item.json.clinic_name || '' }}",
-            "visit_date": "={{ $('Filter Missed Appointments').item.json.visit_date || null }}",
-            "follow_up_date": "={{ $('Filter Missed Appointments').item.json.follow_up_date || null }}",
-            "status": "={{ $('Filter Missed Appointments').item.json.status || 'pending' }}",
-            "last_message_sent": "={{ new Date().toISOString() }}",
-            "message_count": "={{ (parseInt($('Filter Missed Appointments').item.json.message_count) || 0) + 1 }}",
-            "response_status": "={{ $('Filter Missed Appointments').item.json.response_status || 'none' }}",
-            "health_check_sent": "={{ $('Filter Missed Appointments').item.json.health_check_sent === 'TRUE' || $('Filter Missed Appointments').item.json.health_check_sent === true }}",
-            "reactivation_sent": "={{ $('Filter Missed Appointments').item.json.reactivation_sent === 'TRUE' || $('Filter Missed Appointments').item.json.reactivation_sent === true }}",
-            "notes": "={{ $('Filter Missed Appointments').item.json.notes || '' }}",
-            "created_at": "={{ $('Filter Missed Appointments').item.json.created_at || new Date().toISOString() }}",
-            "updated_at": "={{ new Date().toISOString() }}"
-          },
-          "matchingColumns": ["phone"],
-          "schema": []
-        },
-        "options": {}
-      },
-      "id": "wf3-sb-002",
-      "name": "Supabase Upsert Patient Recovery",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.4,
-      "position": [2000, 300],
-      "credentials": {
-        "postgres": {
-          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
-          "name": "Supabase DB"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "insert",
-        "schema": { "__rl": true, "value": "public", "mode": "list" },
-        "table": { "__rl": true, "value": "message_logs", "mode": "list" },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "patient_id": "={{ $('Filter Missed Appointments').item.json.id }}",
-            "patient_name": "={{ $('Filter Missed Appointments').item.json.name }}",
-            "phone": "={{ $('Filter Missed Appointments').item.json.phone }}",
-            "workflow_name": "workflow-3-missed-appointment",
-            "message_type": "={{ $('Filter Missed Appointments').item.json._message_type }}",
-            "message_sent": "={{ $('Filter Missed Appointments').item.json._message_body }}",
-            "sent_at": "={{ new Date().toISOString() }}",
-            "delivery_status": "sent",
-            "twilio_sid": "={{ $('Send Recovery Message').item.json.sid || '' }}"
-          },
-          "matchingColumns": [],
-          "schema": []
-        },
-        "options": {}
-      },
-      "id": "wf3-sb-003",
-      "name": "Supabase Insert Recovery Log",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.4,
-      "position": [2000, 500],
-      "credentials": {
-        "postgres": {
-          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
-          "name": "Supabase DB"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "upsert",
-        "schema": { "__rl": true, "value": "public", "mode": "list" },
-        "table": { "__rl": true, "value": "patients", "mode": "list" },
-        "conflictTarget": "phone",
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "id": "={{ $('Filter Missed Appointments').item.json.id }}",
-            "name": "={{ $('Filter Missed Appointments').item.json.name }}",
-            "phone": "={{ $('Filter Missed Appointments').item.json.phone }}",
-            "doctor_name": "={{ $('Filter Missed Appointments').item.json.doctor_name || '' }}",
-            "clinic_name": "={{ $('Filter Missed Appointments').item.json.clinic_name || '' }}",
-            "visit_date": "={{ $('Filter Missed Appointments').item.json.visit_date || null }}",
-            "follow_up_date": "={{ $('Filter Missed Appointments').item.json.follow_up_date || null }}",
-            "status": "={{ $('Filter Missed Appointments').item.json.status || 'pending' }}",
-            "last_message_sent": "={{ new Date().toISOString() }}",
-            "message_count": "={{ (parseInt($('Filter Missed Appointments').item.json.message_count) || 0) + 1 }}",
-            "response_status": "={{ $('Filter Missed Appointments').item.json.response_status || 'none' }}",
-            "health_check_sent": "={{ $('Filter Missed Appointments').item.json.health_check_sent === 'TRUE' || $('Filter Missed Appointments').item.json.health_check_sent === true }}",
-            "reactivation_sent": "={{ $('Filter Missed Appointments').item.json.reactivation_sent === 'TRUE' || $('Filter Missed Appointments').item.json.reactivation_sent === true }}",
-            "notes": "={{ $('Filter Missed Appointments').item.json.notes || '' }}",
-            "created_at": "={{ $('Filter Missed Appointments').item.json.created_at || new Date().toISOString() }}",
-            "updated_at": "={{ new Date().toISOString() }}"
-          },
-          "matchingColumns": ["phone"],
-          "schema": []
-        },
-        "options": {}
-      },
-      "id": "wf3-sb-004",
-      "name": "Supabase Upsert Patient Nudge",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.4,
-      "position": [2000, 700],
-      "credentials": {
-        "postgres": {
-          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
-          "name": "Supabase DB"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "insert",
-        "schema": { "__rl": true, "value": "public", "mode": "list" },
-        "table": { "__rl": true, "value": "message_logs", "mode": "list" },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "patient_id": "={{ $('Filter Missed Appointments').item.json.id }}",
-            "patient_name": "={{ $('Filter Missed Appointments').item.json.name }}",
-            "phone": "={{ $('Filter Missed Appointments').item.json.phone }}",
-            "workflow_name": "workflow-3-missed-appointment",
-            "message_type": "={{ $('Filter Missed Appointments').item.json._message_type }}",
-            "message_sent": "={{ $('Filter Missed Appointments').item.json._message_body }}",
-            "sent_at": "={{ new Date().toISOString() }}",
-            "delivery_status": "sent",
-            "twilio_sid": "={{ $('Send Nudge Message').item.json.sid || '' }}"
-          },
-          "matchingColumns": [],
-          "schema": []
-        },
-        "options": {}
-      },
-      "id": "wf3-sb-005",
-      "name": "Supabase Insert Nudge Log",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.4,
-      "position": [2000, 900],
+      "position": [1560, 120],
       "credentials": {
         "postgres": {
           "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
@@ -671,178 +306,45 @@
   ],
   "connections": {
     "Daily 10AM Trigger": {
-      "main": [
-        [
-          {
-            "node": "Read Patients",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Read Patients from Supabase", "type": "main", "index": 0 }]]
     },
-    "Read Patients": {
-      "main": [
-        [
-          {
-            "node": "Filter Missed Appointments",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+    "Read Patients from Supabase": {
+      "main": [[{ "node": "Filter Missed Appointments", "type": "main", "index": 0 }]]
     },
     "Filter Missed Appointments": {
-      "main": [
-        [
-          {
-            "node": "Skip if No Patients",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Skip if No Patients", "type": "main", "index": 0 }]]
     },
     "Skip if No Patients": {
       "main": [
         [],
-        [
-          {
-            "node": "Route by Action",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        [{ "node": "Route by Action", "type": "main", "index": 0 }]
       ]
     },
     "Route by Action": {
       "main": [
-        [
-          {
-            "node": "Mark Status as Missed",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Send Recovery Message",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Send Nudge Message",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        [{ "node": "Mark Missed in Supabase", "type": "main", "index": 0 }],
+        [{ "node": "Send Recovery Message", "type": "main", "index": 0 }],
+        [{ "node": "Send Nudge Message", "type": "main", "index": 0 }]
       ]
+    },
+    "Mark Missed in Supabase": {
+      "main": [[{ "node": "Log Missed Status to Supabase", "type": "main", "index": 0 }]]
     },
     "Send Recovery Message": {
-      "main": [
-        [
-          {
-            "node": "Update After Recovery Send",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Update Patient After Send", "type": "main", "index": 0 }]]
     },
     "Send Nudge Message": {
-      "main": [
-        [
-          {
-            "node": "Update After Nudge Send",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Update Patient After Send", "type": "main", "index": 0 }]]
     },
-    "Update After Recovery Send": {
-      "main": [
-        [
-          {
-            "node": "Log Recovery Message",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Update After Nudge Send": {
-      "main": [
-        [
-          {
-            "node": "Log Nudge Message",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Mark Status as Missed": {
-      "main": [
-        [
-          {
-            "node": "Supabase Update Missed Status",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Update After Recovery Send": {
-      "main": [
-        [
-          {
-            "node": "Supabase Upsert Patient Recovery",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Log Recovery Message": {
-      "main": [
-        [
-          {
-            "node": "Supabase Insert Recovery Log",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Log Nudge Message": {
-      "main": [
-        [
-          {
-            "node": "Supabase Upsert Patient Nudge",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Supabase Insert Nudge Log",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+    "Update Patient After Send": {
+      "main": [[{ "node": "Log Message to Supabase", "type": "main", "index": 0 }]]
     }
   },
   "active": false,
-  "settings": {
-    "executionOrder": "v1"
-  },
+  "settings": { "executionOrder": "v1" },
   "versionId": "33333333-3333-3333-3333-333333333303",
   "id": "wf3-missed-appointment",
-  "meta": {
-    "templateCredsSetupCompleted": false
-  },
+  "meta": { "templateCredsSetupCompleted": false },
   "tags": [
     { "name": "patient-retention" },
     { "name": "recovery" }

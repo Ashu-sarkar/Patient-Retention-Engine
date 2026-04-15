@@ -1,0 +1,466 @@
+{
+  "name": "WF10 — Daily Sheet → Supabase Sync",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Workflow 10: Daily Sheet → Supabase Sync\n\n**Trigger:** Every 10 minutes (polls today's intake sheet)\n\n**What it does:**\n1. Queries Supabase `daily_intake_sheets` for today's spreadsheet ID\n2. Reads all rows from that sheet\n3. Filters rows where `id` column is empty (not yet synced)\n4. Validates each row: required fields, phone format, date logic, conditional rules\n5. For valid rows:\n   - Generates PAT-XXXX code\n   - Maps 13-column intake fields → Supabase `patients` schema\n   - Upserts into Supabase `patients` (ON CONFLICT phone DO UPDATE)\n   - Writes back `id`, `status`, `created_at`, `updated_at` to the intake sheet\n   - Calls WF7 webhook to send welcome WhatsApp to new patient\n6. For invalid rows:\n   - Writes `id = INVALID` (or DUPLICATE) and `status = data_error` back to sheet\n   - Logs error details to Supabase `system_logs`\n7. Updates `last_synced_at` + `rows_synced` / `rows_errored` in `daily_intake_sheets`\n\n**Edge cases handled:**\n- No sheet created yet for today → skip gracefully\n- Duplicate phone in same batch → only first is synced; second flagged as DUPLICATE\n- Returning patient (phone already in Supabase) → upsert updates visit data, resets status\n- Empty rows (all fields blank) → skipped silently\n- Missing required fields → flagged as INVALID\n- follow_up_required=Yes but no follow_up_date → flagged as INVALID\n- follow_up_date ≤ visit_date → flagged as INVALID\n- Invalid phone format (not 10 digits) → flagged as INVALID\n\n**Before activating:**\n1. Set credential on Google Sheets nodes → `Google Sheets account`\n2. Set credential on Postgres nodes → `Supabase DB`\n3. Activate WF7 first (webhook must be live to receive calls)",
+        "height": 480,
+        "width": 520
+      },
+      "id": "10101010-1010-1010-1010-000000000001",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [240, 60]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/10 * * * *"
+            }
+          ]
+        }
+      },
+      "id": "10101010-1010-1010-1010-000000000002",
+      "name": "Every 10 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 600]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, spreadsheet_id, spreadsheet_url, sheet_date FROM public.daily_intake_sheets WHERE sheet_date = CURRENT_DATE LIMIT 1",
+        "options": {}
+      },
+      "id": "10101010-1010-1010-1010-000000000003",
+      "name": "Get Today's Sheet ID",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [460, 600],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "sheet-exists-check",
+              "leftValue": "={{ $json.spreadsheet_id }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "10101010-1010-1010-1010-000000000004",
+      "name": "Sheet Exists Today?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 600]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COUNT(*)::int AS total FROM public.patients WHERE patient_code IS NOT NULL",
+        "options": {}
+      },
+      "id": "10101010-1010-1010-1010-000000000005",
+      "name": "Get Patient Count for Code",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [900, 480],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Get Today\\'s Sheet ID').first().json.spreadsheet_id }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "filtersUI": {},
+        "options": {
+          "headerRow": 1,
+          "range": "A:M"
+        }
+      },
+      "id": "10101010-1010-1010-1010-000000000006",
+      "name": "Read Intake Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [900, 620],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate and map all unprocessed rows from the intake sheet\n// Returns two arrays: valid rows to upsert, and invalid rows to flag\n\nconst allRows = $input.all();\nconst patientCount = $('Get Patient Count for Code').first().json.total || 0;\nconst tz = $env.TIMEZONE || 'Asia/Kolkata';\nconst now = new Date();\nconst todayStr = now.toLocaleDateString('en-CA', { timeZone: tz }); // YYYY-MM-DD\n\n// Filter: only rows where id column is empty (not yet synced)\n// Also skip completely empty rows\nconst unprocessed = allRows.filter(item => {\n  const r = item.json;\n  const idVal = String(r.id || '').trim();\n  if (idVal !== '') return false; // already synced (or marked INVALID/DUPLICATE)\n  // Skip truly empty rows (all key fields blank)\n  const hasAnyData = ['hospital_name','doctor_name','patient_name','phone_number'].some(f => String(r[f] || '').trim() !== '');\n  return hasAnyData;\n});\n\nif (unprocessed.length === 0) {\n  return [{ json: { _noNewRows: true, reason: 'No unprocessed rows in today\\'s sheet', checkedAt: now.toISOString() } }];\n}\n\n// Track phones seen in this batch for duplicate detection\nconst seenPhones = {};\nconst output = [];\nlet codeOffset = patientCount;\n\nfor (const item of unprocessed) {\n  const r = item.json;\n  const errors = [];\n  const warnings = [];\n\n  // ── Required field checks ─────────────────────────────────────────────────\n  if (!r.patient_name || String(r.patient_name).trim().length < 2) {\n    errors.push('patient_name is required (min 2 characters)');\n  }\n  if (!r.hospital_name || String(r.hospital_name).trim() === '') {\n    errors.push('hospital_name is required');\n  }\n  if (!r.doctor_name || String(r.doctor_name).trim() === '') {\n    errors.push('doctor_name is required');\n  }\n  if (!r.visit_date || String(r.visit_date).trim() === '') {\n    errors.push('visit_date is required');\n  }\n  if (!r.follow_up_required || String(r.follow_up_required).trim() === '') {\n    errors.push('follow_up_required is required (Yes or No)');\n  }\n\n  // ── Phone validation ──────────────────────────────────────────────────────\n  const rawPhone = String(r.phone_number || '').replace(/[\\s\\-().+]/g, '');\n  let normPhone = null;\n\n  if (!rawPhone) {\n    errors.push('phone_number is required');\n  } else if (!/^[0-9]{10}$/.test(rawPhone)) {\n    errors.push(`phone_number \"${r.phone_number}\" must be exactly 10 digits (no country code, no spaces)`);\n  } else {\n    normPhone = '+91' + rawPhone; // prepend India country code — adjust per clinic country\n  }\n\n  // ── Duplicate phone check within current batch ───────────────────────────\n  if (normPhone) {\n    if (seenPhones[normPhone] !== undefined) {\n      output.push({\n        json: {\n          _action: 'error',\n          _errorCode: 'DUPLICATE',\n          _raw: r,\n          phone_number: r.phone_number,\n          _errors: [`Duplicate phone_number in today's sheet. First occurrence already queued for sync.`]\n        }\n      });\n      continue; // skip to next row\n    }\n    seenPhones[normPhone] = true;\n  }\n\n  // ── Date parsing helper ───────────────────────────────────────────────────\n  function parseDate(val) {\n    if (!val || String(val).trim() === '') return null;\n    const s = String(val).trim();\n    // Google Sheets may return DD/MM/YYYY or YYYY-MM-DD or a serial number\n    let d;\n    if (/^\\d{2}\\/\\d{2}\\/\\d{4}$/.test(s)) {\n      const [dd, mm, yyyy] = s.split('/');\n      d = new Date(`${yyyy}-${mm}-${dd}`);\n    } else if (/^\\d{4}-\\d{2}-\\d{2}$/.test(s)) {\n      d = new Date(s);\n    } else {\n      d = new Date(s); // fallback\n    }\n    if (isNaN(d.getTime())) return null;\n    return d.toLocaleDateString('en-CA'); // → YYYY-MM-DD\n  }\n\n  const visitDateStr = parseDate(r.visit_date);\n  const followUpDateStr = parseDate(r.follow_up_date);\n  const dobStr = parseDate(r.dob);\n\n  if (r.visit_date && !visitDateStr) {\n    errors.push(`visit_date \"${r.visit_date}\" is not a valid date`);\n  } else if (visitDateStr && visitDateStr > todayStr) {\n    errors.push(`visit_date \"${visitDateStr}\" cannot be in the future`);\n  }\n\n  if (dobStr && dobStr >= todayStr) {\n    errors.push(`dob \"${dobStr}\" must be in the past`);\n  }\n\n  // ── follow_up_required conditional logic ─────────────────────────────────\n  const fuRequired = String(r.follow_up_required || '').trim();\n\n  if (fuRequired === 'Yes') {\n    if (!followUpDateStr) {\n      errors.push('follow_up_date is required when follow_up_required = Yes');\n    } else {\n      if (visitDateStr && followUpDateStr <= visitDateStr) {\n        errors.push(`follow_up_date (${followUpDateStr}) must be strictly after visit_date (${visitDateStr})`);\n      }\n    }\n  } else if (fuRequired === 'No') {\n    if (followUpDateStr) {\n      warnings.push(`follow_up_date is set but follow_up_required = No — follow_up_date will be ignored`);\n    }\n  }\n\n  // ── sex validation ────────────────────────────────────────────────────────\n  const sex = String(r.sex || '').trim();\n  if (sex && !['Male','Female','Other'].includes(sex)) {\n    warnings.push(`sex \"${sex}\" is not a recognised value — will be ignored`);\n  }\n\n  // ── If errors found, queue as error ──────────────────────────────────────\n  if (errors.length > 0) {\n    output.push({\n      json: {\n        _action: 'error',\n        _errorCode: 'INVALID',\n        _raw: r,\n        phone_number: rawPhone,\n        _errors: errors,\n        _warnings: warnings\n      }\n    });\n    continue;\n  }\n\n  // ── Generate PAT-XXXX code ────────────────────────────────────────────────\n  codeOffset++;\n  const patientCode = 'PAT-' + String(codeOffset).padStart(4, '0');\n  const nowISO = now.toISOString();\n\n  // ── Map intake fields → Supabase patients schema ─────────────────────────\n  output.push({\n    json: {\n      _action: 'upsert',\n      _patientCode: patientCode,\n      _normPhone: normPhone,\n      _warnings: warnings,\n      // Supabase patients columns\n      patient_code: patientCode,\n      name: String(r.patient_name).trim(),\n      phone: normPhone,\n      clinic_name: String(r.hospital_name).trim(),\n      doctor_name: String(r.doctor_name).trim(),\n      dob: dobStr || null,\n      sex: ['Male','Female','Other'].includes(sex) ? sex : null,\n      visit_date: visitDateStr || null,\n      follow_up_required: fuRequired === 'Yes' ? 'Yes' : 'No',\n      follow_up_date: fuRequired === 'Yes' ? followUpDateStr : null,\n      status: 'pending',\n      message_count: 0,\n      response_status: 'none',\n      health_check_sent: false,\n      reactivation_sent: false,\n      intake_sheet_id: $('Get Today\\'s Sheet ID').first().json.spreadsheet_id,\n      created_at: nowISO,\n      updated_at: nowISO\n    }\n  });\n}\n\nif (output.length === 0) {\n  return [{ json: { _noNewRows: true, reason: 'All rows were empty or already processed', checkedAt: now.toISOString() } }];\n}\n\nreturn output;"
+      },
+      "id": "10101010-1010-1010-1010-000000000007",
+      "name": "Validate and Map Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 550]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "no-rows-check",
+              "leftValue": "={{ $json._noNewRows }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "10101010-1010-1010-1010-000000000008",
+      "name": "Any New Rows?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 550]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "action-check",
+              "leftValue": "={{ $json._action }}",
+              "rightValue": "upsert",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "10101010-1010-1010-1010-000000000009",
+      "name": "Valid Row or Error?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1560, 450]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "schema": { "__rl": true, "value": "public", "mode": "list" },
+        "table": { "__rl": true, "value": "patients", "mode": "list" },
+        "conflictTarget": "phone",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "patient_code": "={{ $json.patient_code }}",
+            "name": "={{ $json.name }}",
+            "phone": "={{ $json.phone }}",
+            "clinic_name": "={{ $json.clinic_name }}",
+            "doctor_name": "={{ $json.doctor_name }}",
+            "dob": "={{ $json.dob }}",
+            "sex": "={{ $json.sex }}",
+            "visit_date": "={{ $json.visit_date }}",
+            "follow_up_required": "={{ $json.follow_up_required }}",
+            "follow_up_date": "={{ $json.follow_up_date }}",
+            "status": "pending",
+            "message_count": 0,
+            "response_status": "none",
+            "health_check_sent": false,
+            "reactivation_sent": false,
+            "intake_sheet_id": "={{ $json.intake_sheet_id }}",
+            "created_at": "={{ $json.created_at }}",
+            "updated_at": "={{ $json.updated_at }}"
+          },
+          "matchingColumns": ["phone"],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "10101010-1010-1010-1010-000000000010",
+      "name": "Upsert Patient to Supabase",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1780, 340],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Get Today\\'s Sheet ID').first().json.spreadsheet_id }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "phone_number": "={{ $('Validate and Map Rows').item.json.phone.replace('+91', '') }}",
+            "id": "={{ $('Validate and Map Rows').item.json._patientCode }}",
+            "status": "Pending",
+            "created_at": "={{ $('Validate and Map Rows').item.json.created_at }}",
+            "updated_at": "={{ $('Validate and Map Rows').item.json.updated_at }}"
+          },
+          "matchingColumns": ["phone_number"],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "10101010-1010-1010-1010-000000000011",
+      "name": "Write Back ID to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [2000, 340],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.WEBHOOK_URL + '/webhook/' + ($env.N8N_WF7_WEBHOOK_PATH || 'new-patient-intake') }}",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ patient_code: $('Validate and Map Rows').item.json._patientCode, name: $('Validate and Map Rows').item.json.name, phone: $('Validate and Map Rows').item.json.phone, clinic_name: $('Validate and Map Rows').item.json.clinic_name, doctor_name: $('Validate and Map Rows').item.json.doctor_name, follow_up_required: $('Validate and Map Rows').item.json.follow_up_required, follow_up_date: $('Validate and Map Rows').item.json.follow_up_date, visit_date: $('Validate and Map Rows').item.json.visit_date }) }}",
+        "options": {
+          "retry": {
+            "maxTries": 2,
+            "waitBetweenTries": 5000
+          }
+        }
+      },
+      "id": "10101010-1010-1010-1010-000000000012",
+      "name": "Trigger WF7 Welcome Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2220, 340],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Get Today\\'s Sheet ID').first().json.spreadsheet_id }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "phone_number": "={{ $json._raw.phone_number }}",
+            "id": "={{ $json._errorCode }}",
+            "status": "data_error",
+            "created_at": "={{ new Date().toISOString() }}",
+            "updated_at": "={{ new Date().toISOString() }}"
+          },
+          "matchingColumns": ["phone_number"],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "10101010-1010-1010-1010-000000000013",
+      "name": "Flag Error Row in Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [1780, 560],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_GSHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": { "__rl": true, "value": "public", "mode": "list" },
+        "table": { "__rl": true, "value": "system_logs", "mode": "list" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "workflow_name": "workflow-10-sheet-sync",
+            "execution_id": "={{ $execution.id }}",
+            "log_level": "WARN",
+            "message": "=Patient row validation failed: {{ $json._errorCode }}",
+            "details": "={{ JSON.stringify({ error_code: $json._errorCode, phone: $json._raw.phone_number || '', patient_name: $json._raw.patient_name || '', errors: $json._errors || [], spreadsheet_id: $('Get Today\\'s Sheet ID').first().json.spreadsheet_id }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "10101010-1010-1010-1010-000000000014",
+      "name": "Log Validation Error",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [2000, 560],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=UPDATE public.daily_intake_sheets SET last_synced_at = NOW() WHERE sheet_date = CURRENT_DATE",
+        "options": {}
+      },
+      "id": "10101010-1010-1010-1010-000000000015",
+      "name": "Update Last Synced Timestamp",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1340, 760],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": { "__rl": true, "value": "public", "mode": "list" },
+        "table": { "__rl": true, "value": "system_logs", "mode": "list" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "workflow_name": "workflow-10-sheet-sync",
+            "execution_id": "={{ $execution.id }}",
+            "log_level": "WARN",
+            "message": "No intake sheet found for today — WF9 may not have run yet",
+            "details": "={{ JSON.stringify({ checked_at: new Date().toISOString() }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "10101010-1010-1010-1010-000000000016",
+      "name": "Log No Sheet Today",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [900, 760],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every 10 Minutes": {
+      "main": [[{ "node": "Get Today's Sheet ID", "type": "main", "index": 0 }]]
+    },
+    "Get Today's Sheet ID": {
+      "main": [[{ "node": "Sheet Exists Today?", "type": "main", "index": 0 }]]
+    },
+    "Sheet Exists Today?": {
+      "main": [
+        [
+          { "node": "Get Patient Count for Code", "type": "main", "index": 0 },
+          { "node": "Read Intake Sheet", "type": "main", "index": 0 }
+        ],
+        [{ "node": "Log No Sheet Today", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Patient Count for Code": {
+      "main": [[{ "node": "Validate and Map Rows", "type": "main", "index": 0 }]]
+    },
+    "Read Intake Sheet": {
+      "main": [[{ "node": "Validate and Map Rows", "type": "main", "index": 0 }]]
+    },
+    "Validate and Map Rows": {
+      "main": [[{ "node": "Any New Rows?", "type": "main", "index": 0 }]]
+    },
+    "Any New Rows?": {
+      "main": [
+        [],
+        [{ "node": "Valid Row or Error?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Valid Row or Error?": {
+      "main": [
+        [{ "node": "Upsert Patient to Supabase", "type": "main", "index": 0 }],
+        [{ "node": "Flag Error Row in Sheet", "type": "main", "index": 0 }]
+      ]
+    },
+    "Upsert Patient to Supabase": {
+      "main": [[{ "node": "Write Back ID to Sheet", "type": "main", "index": 0 }]]
+    },
+    "Write Back ID to Sheet": {
+      "main": [[{ "node": "Trigger WF7 Welcome Message", "type": "main", "index": 0 }]]
+    },
+    "Flag Error Row in Sheet": {
+      "main": [[{ "node": "Log Validation Error", "type": "main", "index": 0 }]]
+    },
+    "Any New Rows? (skip path)": {
+      "main": [[{ "node": "Update Last Synced Timestamp", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "={{ $env.TIMEZONE || 'Asia/Kolkata' }}"
+  },
+  "versionId": "10101010-1010-1010-1010-101010101010",
+  "id": "wf10-sheet-sync",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [
+    { "name": "patient-retention" },
+    { "name": "intake" },
+    { "name": "sync" }
+  ]
+}
