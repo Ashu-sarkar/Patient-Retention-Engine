@@ -265,6 +265,115 @@
           "name": "Google Sheets account"
         }
       }
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "schema": { "__rl": true, "value": "public", "mode": "list" },
+        "table": { "__rl": true, "value": "patients", "mode": "list" },
+        "conflictTarget": "phone",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $('Filter Inactive Patients').item.json.id }}",
+            "name": "={{ $('Filter Inactive Patients').item.json.name }}",
+            "phone": "={{ $('Filter Inactive Patients').item.json.phone }}",
+            "doctor_name": "={{ $('Filter Inactive Patients').item.json.doctor_name || '' }}",
+            "clinic_name": "={{ $('Filter Inactive Patients').item.json.clinic_name || '' }}",
+            "visit_date": "={{ $('Filter Inactive Patients').item.json.visit_date || null }}",
+            "follow_up_date": "={{ $('Filter Inactive Patients').item.json.follow_up_date || null }}",
+            "status": "={{ $('Filter Inactive Patients').item.json.status || 'pending' }}",
+            "last_message_sent": "={{ new Date().toISOString() }}",
+            "message_count": "={{ (parseInt($('Filter Inactive Patients').item.json.message_count) || 0) + 1 }}",
+            "response_status": "={{ $('Filter Inactive Patients').item.json.response_status || 'none' }}",
+            "health_check_sent": "={{ $('Filter Inactive Patients').item.json.health_check_sent === 'TRUE' || $('Filter Inactive Patients').item.json.health_check_sent === true }}",
+            "reactivation_sent": true,
+            "notes": "={{ $('Filter Inactive Patients').item.json.notes || '' }}",
+            "created_at": "={{ $('Filter Inactive Patients').item.json.created_at || new Date().toISOString() }}",
+            "updated_at": "={{ new Date().toISOString() }}"
+          },
+          "matchingColumns": ["phone"],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "wf5-sb-001",
+      "name": "Supabase Upsert Patient",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1560, 180],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": { "__rl": true, "value": "public", "mode": "list" },
+        "table": { "__rl": true, "value": "message_logs", "mode": "list" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "patient_id": "={{ $('Filter Inactive Patients').item.json.id }}",
+            "patient_name": "={{ $('Filter Inactive Patients').item.json.name }}",
+            "phone": "={{ $('Filter Inactive Patients').item.json.phone }}",
+            "workflow_name": "workflow-5-reactivation",
+            "message_type": "reactivation",
+            "message_sent": "={{ $('Filter Inactive Patients').item.json._message_body }}",
+            "sent_at": "={{ new Date().toISOString() }}",
+            "delivery_status": "sent",
+            "twilio_sid": "={{ $('Send Reactivation Message').item.json.sid || '' }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "wf5-sb-002",
+      "name": "Supabase Insert Message Log",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1560, 380],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": { "__rl": true, "value": "public", "mode": "list" },
+        "table": { "__rl": true, "value": "system_logs", "mode": "list" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "workflow_name": "workflow-5-reactivation",
+            "execution_id": "={{ $execution.id }}",
+            "log_level": "ERROR",
+            "message": "Failed to send reactivation message",
+            "details": "={{ JSON.stringify({ patient_id: $('Filter Inactive Patients').item.json.id, phone: $('Filter Inactive Patients').item.json.phone, error: $('Send Reactivation Message').item.json.error?.message || 'HTTP request failed' }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "wf5-sb-003",
+      "name": "Supabase Insert Error Log",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1560, 520],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
+        }
+      }
     }
   ],
   "connections": {
@@ -330,6 +439,39 @@
         [
           {
             "node": "Log Send Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Patient Record": {
+      "main": [
+        [
+          {
+            "node": "Supabase Upsert Patient",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Message_Logs": {
+      "main": [
+        [
+          {
+            "node": "Supabase Insert Message Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Send Failure": {
+      "main": [
+        [
+          {
+            "node": "Supabase Insert Error Log",
             "type": "main",
             "index": 0
           }

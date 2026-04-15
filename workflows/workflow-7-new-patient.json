@@ -351,6 +351,110 @@
           "name": "Google Sheets account"
         }
       }
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "schema": { "__rl": true, "value": "public", "mode": "list" },
+        "table": { "__rl": true, "value": "patients", "mode": "list" },
+        "conflictTarget": "phone",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $('Validate and Initialise').item.json.id }}",
+            "name": "={{ $('Validate and Initialise').item.json.name }}",
+            "phone": "={{ $('Validate and Initialise').item.json.phone }}",
+            "doctor_name": "={{ $('Validate and Initialise').item.json.doctor_name || '' }}",
+            "clinic_name": "={{ $('Validate and Initialise').item.json.clinic_name || '' }}",
+            "visit_date": "={{ $('Validate and Initialise').item.json.visit_date || null }}",
+            "follow_up_date": "={{ $('Validate and Initialise').item.json.follow_up_date || null }}",
+            "status": "={{ $('Validate and Initialise').item.json.status || 'pending' }}",
+            "message_count": 0,
+            "response_status": "none",
+            "health_check_sent": false,
+            "reactivation_sent": false,
+            "notes": "={{ $('Validate and Initialise').item.json.notes || '' }}",
+            "created_at": "={{ $('Validate and Initialise').item.json.created_at }}",
+            "updated_at": "={{ $('Validate and Initialise').item.json.updated_at }}"
+          },
+          "matchingColumns": ["phone"],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "wf7-sb-001",
+      "name": "Supabase Insert New Patient",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1340, 360],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": { "__rl": true, "value": "public", "mode": "list" },
+        "table": { "__rl": true, "value": "system_logs", "mode": "list" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "workflow_name": "workflow-7-new-patient",
+            "execution_id": "={{ $execution.id }}",
+            "log_level": "INFO",
+            "message": "New patient created and welcomed",
+            "details": "={{ JSON.stringify({ patient_id: $('Validate and Initialise').item.json.id, name: $('Validate and Initialise').item.json.name, phone: $('Validate and Initialise').item.json.phone }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "wf7-sb-002",
+      "name": "Supabase Log Patient Created",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1780, 460],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": { "__rl": true, "value": "public", "mode": "list" },
+        "table": { "__rl": true, "value": "system_logs", "mode": "list" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "workflow_name": "workflow-7-new-patient",
+            "execution_id": "={{ $execution.id }}",
+            "log_level": "ERROR",
+            "message": "New patient data validation failed",
+            "details": "={{ JSON.stringify({ name: $json.name, phone: $json.phone, errors: $json._errors }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "wf7-sb-003",
+      "name": "Supabase Log Validation Failure",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1340, 620],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
+        }
+      }
     }
   ],
   "connections": {
@@ -438,6 +542,39 @@
         [
           {
             "node": "Flag Row as Data Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Defaults to Sheet": {
+      "main": [
+        [
+          {
+            "node": "Supabase Insert New Patient",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Patient Created": {
+      "main": [
+        [
+          {
+            "node": "Supabase Log Patient Created",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Flag Row as Data Error": {
+      "main": [
+        [
+          {
+            "node": "Supabase Log Validation Failure",
             "type": "main",
             "index": 0
           }

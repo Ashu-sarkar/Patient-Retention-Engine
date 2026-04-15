@@ -264,6 +264,115 @@
           "name": "Google Sheets account"
         }
       }
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "schema": { "__rl": true, "value": "public", "mode": "list" },
+        "table": { "__rl": true, "value": "patients", "mode": "list" },
+        "conflictTarget": "phone",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $('Filter Tomorrow Follow-ups').item.json.id }}",
+            "name": "={{ $('Filter Tomorrow Follow-ups').item.json.name }}",
+            "phone": "={{ $('Filter Tomorrow Follow-ups').item.json.phone }}",
+            "doctor_name": "={{ $('Filter Tomorrow Follow-ups').item.json.doctor_name || '' }}",
+            "clinic_name": "={{ $('Filter Tomorrow Follow-ups').item.json.clinic_name || '' }}",
+            "visit_date": "={{ $('Filter Tomorrow Follow-ups').item.json.visit_date || null }}",
+            "follow_up_date": "={{ $('Filter Tomorrow Follow-ups').item.json.follow_up_date || null }}",
+            "status": "={{ $('Filter Tomorrow Follow-ups').item.json.status || 'pending' }}",
+            "last_message_sent": "={{ new Date().toISOString() }}",
+            "message_count": "={{ (parseInt($('Filter Tomorrow Follow-ups').item.json.message_count) || 0) + 1 }}",
+            "response_status": "={{ $('Filter Tomorrow Follow-ups').item.json.response_status || 'none' }}",
+            "health_check_sent": "={{ $('Filter Tomorrow Follow-ups').item.json.health_check_sent === 'TRUE' || $('Filter Tomorrow Follow-ups').item.json.health_check_sent === true }}",
+            "reactivation_sent": "={{ $('Filter Tomorrow Follow-ups').item.json.reactivation_sent === 'TRUE' || $('Filter Tomorrow Follow-ups').item.json.reactivation_sent === true }}",
+            "notes": "={{ $('Filter Tomorrow Follow-ups').item.json.notes || '' }}",
+            "created_at": "={{ $('Filter Tomorrow Follow-ups').item.json.created_at || new Date().toISOString() }}",
+            "updated_at": "={{ new Date().toISOString() }}"
+          },
+          "matchingColumns": ["phone"],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "wf1-sb-001",
+      "name": "Supabase Upsert Patient",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1560, 180],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": { "__rl": true, "value": "public", "mode": "list" },
+        "table": { "__rl": true, "value": "message_logs", "mode": "list" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "patient_id": "={{ $('Filter Tomorrow Follow-ups').item.json.id }}",
+            "patient_name": "={{ $('Filter Tomorrow Follow-ups').item.json.name }}",
+            "phone": "={{ $('Filter Tomorrow Follow-ups').item.json.phone }}",
+            "workflow_name": "workflow-1-followup-reminder",
+            "message_type": "follow_up_reminder",
+            "message_sent": "={{ $('Filter Tomorrow Follow-ups').item.json._message_body }}",
+            "sent_at": "={{ new Date().toISOString() }}",
+            "delivery_status": "sent",
+            "twilio_sid": "={{ $('Send WhatsApp Reminder').item.json.sid || '' }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "wf1-sb-002",
+      "name": "Supabase Insert Message Log",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1560, 380],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": { "__rl": true, "value": "public", "mode": "list" },
+        "table": { "__rl": true, "value": "system_logs", "mode": "list" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "workflow_name": "workflow-1-followup-reminder",
+            "execution_id": "={{ $execution.id }}",
+            "log_level": "ERROR",
+            "message": "Failed to send follow-up reminder",
+            "details": "={{ JSON.stringify({ patient_id: $('Filter Tomorrow Follow-ups').item.json.id, phone: $('Filter Tomorrow Follow-ups').item.json.phone, error: $('Send WhatsApp Reminder').item.json.error?.message || 'HTTP request failed' }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "wf1-sb-003",
+      "name": "Supabase Insert Error Log",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1560, 520],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
+        }
+      }
     }
   ],
   "connections": {
@@ -329,6 +438,39 @@
         [
           {
             "node": "Log Send Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Patient Record": {
+      "main": [
+        [
+          {
+            "node": "Supabase Upsert Patient",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Message_Logs": {
+      "main": [
+        [
+          {
+            "node": "Supabase Insert Message Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Send Failure": {
+      "main": [
+        [
+          {
+            "node": "Supabase Insert Error Log",
             "type": "main",
             "index": 0
           }

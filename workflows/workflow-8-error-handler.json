@@ -180,6 +180,68 @@
           "name": "Google Sheets account"
         }
       }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": { "__rl": true, "value": "public", "mode": "list" },
+        "table": { "__rl": true, "value": "system_logs", "mode": "list" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "workflow_name": "={{ $('Build Error Report').item.json._workflow_name }}",
+            "execution_id": "={{ $('Build Error Report').item.json._execution_id }}",
+            "log_level": "ERROR",
+            "message": "={{ $('Build Error Report').item.json._error_message }}",
+            "details": "={{ JSON.parse($('Build Error Report').item.json._details) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "wf8-sb-001",
+      "name": "Supabase Insert Error Log",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [900, 380],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": { "__rl": true, "value": "public", "mode": "list" },
+        "table": { "__rl": true, "value": "system_logs", "mode": "list" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "workflow_name": "workflow-8-error-handler",
+            "execution_id": "={{ $execution.id }}",
+            "log_level": "WARN",
+            "message": "Admin alert skipped — ADMIN_WHATSAPP_NUMBER not configured",
+            "details": "={{ JSON.stringify({ original_workflow: $('Build Error Report').item.json._workflow_name, original_execution: $('Build Error Report').item.json._execution_id }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "wf8-sb-002",
+      "name": "Supabase Log Alert Skipped",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1120, 680],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
+        }
+      }
     }
   ],
   "connections": {
@@ -222,6 +284,28 @@
         [
           {
             "node": "Log Admin Alert Skipped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Error to System_Logs": {
+      "main": [
+        [
+          {
+            "node": "Supabase Insert Error Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Admin Alert Skipped": {
+      "main": [
+        [
+          {
+            "node": "Supabase Log Alert Skipped",
             "type": "main",
             "index": 0
           }

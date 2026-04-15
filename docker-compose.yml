@@ -4,12 +4,42 @@ services:
     ports:
       - "5678:5678"
     environment:
-      - N8N_BASIC_AUTH_ACTIVE=true
-      - N8N_BASIC_AUTH_USER=admin
-      - N8N_BASIC_AUTH_PASSWORD=strongpass
-      - N8N_HOST=localhost
-      - N8N_PORT=5678
-      - DB_TYPE=sqlite
+      # n8n Auth
+      - N8N_BASIC_AUTH_ACTIVE=${N8N_BASIC_AUTH_ACTIVE:-true}
+      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD:-strongpass}
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_PORT=${N8N_PORT:-5678}
+      - WEBHOOK_URL=${WEBHOOK_URL:-http://localhost:5678}
+
+      # n8n internal DB — upgraded from SQLite to Supabase PostgreSQL
+      # Comment these 6 lines out and set DB_TYPE=sqlite to revert to SQLite
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=${SUPABASE_DB_HOST}
+      - DB_POSTGRESDB_PORT=${SUPABASE_DB_PORT:-5432}
+      - DB_POSTGRESDB_DATABASE=${SUPABASE_DB_NAME:-postgres}
+      - DB_POSTGRESDB_USER=${SUPABASE_DB_USER:-postgres}
+      - DB_POSTGRESDB_PASSWORD=${SUPABASE_DB_PASSWORD}
+      - DB_POSTGRESDB_SSL_ENABLED=true
+      - DB_POSTGRESDB_SSL_REJECT_UNAUTHORIZED=true
+
+      # Supabase — available as $env.SUPABASE_URL / $env.SUPABASE_SERVICE_ROLE_KEY
+      # inside n8n workflow Code nodes and HTTP Request nodes
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+
+      # Application settings — referenced by workflow expressions as $env.VARNAME
+      - GOOGLE_SHEETS_ID=${GOOGLE_SHEETS_ID}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_WHATSAPP_NUMBER=${TWILIO_WHATSAPP_NUMBER}
+      - TIMEZONE=${TIMEZONE:-Asia/Kolkata}
+      - MAX_MESSAGE_COUNT=${MAX_MESSAGE_COUNT:-5}
+      - MIN_HOURS_BETWEEN_MESSAGES=${MIN_HOURS_BETWEEN_MESSAGES:-23}
+      - DEFAULT_CLINIC_NAME=${DEFAULT_CLINIC_NAME:-Our Clinic}
+      - DEFAULT_DOCTOR_NAME=${DEFAULT_DOCTOR_NAME:-Your Doctor}
+      - ADMIN_WHATSAPP_NUMBER=${ADMIN_WHATSAPP_NUMBER:-}
+    env_file:
+      - .env
     volumes:
       - n8n_data:/home/node/.n8n
 

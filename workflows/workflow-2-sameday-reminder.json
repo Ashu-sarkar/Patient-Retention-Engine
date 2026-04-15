@@ -264,6 +264,115 @@
           "name": "Google Sheets account"
         }
       }
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "schema": { "__rl": true, "value": "public", "mode": "list" },
+        "table": { "__rl": true, "value": "patients", "mode": "list" },
+        "conflictTarget": "phone",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $('Filter Today\\'s Appointments').item.json.id }}",
+            "name": "={{ $('Filter Today\\'s Appointments').item.json.name }}",
+            "phone": "={{ $('Filter Today\\'s Appointments').item.json.phone }}",
+            "doctor_name": "={{ $('Filter Today\\'s Appointments').item.json.doctor_name || '' }}",
+            "clinic_name": "={{ $('Filter Today\\'s Appointments').item.json.clinic_name || '' }}",
+            "visit_date": "={{ $('Filter Today\\'s Appointments').item.json.visit_date || null }}",
+            "follow_up_date": "={{ $('Filter Today\\'s Appointments').item.json.follow_up_date || null }}",
+            "status": "={{ $('Filter Today\\'s Appointments').item.json.status || 'pending' }}",
+            "last_message_sent": "={{ new Date().toISOString() }}",
+            "message_count": "={{ (parseInt($('Filter Today\\'s Appointments').item.json.message_count) || 0) + 1 }}",
+            "response_status": "={{ $('Filter Today\\'s Appointments').item.json.response_status || 'none' }}",
+            "health_check_sent": "={{ $('Filter Today\\'s Appointments').item.json.health_check_sent === 'TRUE' || $('Filter Today\\'s Appointments').item.json.health_check_sent === true }}",
+            "reactivation_sent": "={{ $('Filter Today\\'s Appointments').item.json.reactivation_sent === 'TRUE' || $('Filter Today\\'s Appointments').item.json.reactivation_sent === true }}",
+            "notes": "={{ $('Filter Today\\'s Appointments').item.json.notes || '' }}",
+            "created_at": "={{ $('Filter Today\\'s Appointments').item.json.created_at || new Date().toISOString() }}",
+            "updated_at": "={{ new Date().toISOString() }}"
+          },
+          "matchingColumns": ["phone"],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "wf2-sb-001",
+      "name": "Supabase Upsert Patient",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1560, 180],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": { "__rl": true, "value": "public", "mode": "list" },
+        "table": { "__rl": true, "value": "message_logs", "mode": "list" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "patient_id": "={{ $('Filter Today\\'s Appointments').item.json.id }}",
+            "patient_name": "={{ $('Filter Today\\'s Appointments').item.json.name }}",
+            "phone": "={{ $('Filter Today\\'s Appointments').item.json.phone }}",
+            "workflow_name": "workflow-2-sameday-reminder",
+            "message_type": "same_day_reminder",
+            "message_sent": "={{ $('Filter Today\\'s Appointments').item.json._message_body }}",
+            "sent_at": "={{ new Date().toISOString() }}",
+            "delivery_status": "sent",
+            "twilio_sid": "={{ $('Send Same-Day Reminder').item.json.sid || '' }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "wf2-sb-002",
+      "name": "Supabase Insert Message Log",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1560, 380],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": { "__rl": true, "value": "public", "mode": "list" },
+        "table": { "__rl": true, "value": "system_logs", "mode": "list" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "workflow_name": "workflow-2-sameday-reminder",
+            "execution_id": "={{ $execution.id }}",
+            "log_level": "ERROR",
+            "message": "Failed to send same-day reminder",
+            "details": "={{ JSON.stringify({ patient_id: $('Filter Today\\'s Appointments').item.json.id, phone: $('Filter Today\\'s Appointments').item.json.phone, error: $('Send Same-Day Reminder').item.json.error?.message || 'HTTP request failed' }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "wf2-sb-003",
+      "name": "Supabase Insert Error Log",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1560, 520],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
+        }
+      }
     }
   ],
   "connections": {
@@ -329,6 +438,39 @@
         [
           {
             "node": "Log Send Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Patient Record": {
+      "main": [
+        [
+          {
+            "node": "Supabase Upsert Patient",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Message_Logs": {
+      "main": [
+        [
+          {
+            "node": "Supabase Insert Message Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Send Failure": {
+      "main": [
+        [
+          {
+            "node": "Supabase Insert Error Log",
             "type": "main",
             "index": 0
           }

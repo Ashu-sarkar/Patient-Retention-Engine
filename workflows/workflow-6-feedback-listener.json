@@ -348,6 +348,100 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [900, 360]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "schema": { "__rl": true, "value": "public", "mode": "list" },
+        "table": { "__rl": true, "value": "patients", "mode": "list" },
+        "conflictTarget": "phone",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $('Find Patient and Prepare Reply').item.json._patient_id }}",
+            "phone": "={{ $('Find Patient and Prepare Reply').item.json._from_phone }}",
+            "response_status": "={{ $('Find Patient and Prepare Reply').item.json._classification === 'confirmed' ? 'confirmed' : $('Find Patient and Prepare Reply').item.json._classification === 'cancelled' ? 'cancelled' : 'responded' }}",
+            "last_response": "={{ $('Find Patient and Prepare Reply').item.json._message_body }}",
+            "updated_at": "={{ new Date().toISOString() }}"
+          },
+          "matchingColumns": ["phone"],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "wf6-sb-001",
+      "name": "Supabase Upsert Patient Response",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1780, 460],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": { "__rl": true, "value": "public", "mode": "list" },
+        "table": { "__rl": true, "value": "system_logs", "mode": "list" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "workflow_name": "workflow-6-feedback-listener",
+            "execution_id": "={{ $execution.id }}",
+            "log_level": "WARN",
+            "message": "Inbound message from unrecognised number",
+            "details": "={{ JSON.stringify({ phone: $('Find Patient and Prepare Reply').item.json._from_phone, message: $('Find Patient and Prepare Reply').item.json._message_body, classification: $('Find Patient and Prepare Reply').item.json._classification }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "wf6-sb-002",
+      "name": "Supabase Log Unknown Sender",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1780, 720],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": { "__rl": true, "value": "public", "mode": "list" },
+        "table": { "__rl": true, "value": "system_logs", "mode": "list" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "workflow_name": "workflow-6-feedback-listener",
+            "execution_id": "={{ $execution.id }}",
+            "log_level": "INFO",
+            "message": "Patient response received and classified",
+            "details": "={{ JSON.stringify({ patient_id: $('Find Patient and Prepare Reply').item.json._patient_id, phone: $('Find Patient and Prepare Reply').item.json._from_phone, classification: $('Find Patient and Prepare Reply').item.json._classification, message: $('Find Patient and Prepare Reply').item.json._message_body }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "wf6-sb-003",
+      "name": "Supabase Log Patient Response",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [2440, 460],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "name": "Supabase DB"
+        }
+      }
     }
   ],
   "connections": {
@@ -470,6 +564,39 @@
         [
           {
             "node": "Log Patient Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Patient Response": {
+      "main": [
+        [
+          {
+            "node": "Supabase Upsert Patient Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Unknown Sender": {
+      "main": [
+        [
+          {
+            "node": "Supabase Log Unknown Sender",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Patient Response": {
+      "main": [
+        [
+          {
+            "node": "Supabase Log Patient Response",
             "type": "main",
             "index": 0
           }
