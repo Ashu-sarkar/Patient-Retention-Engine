@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#EA580C" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="description" content="Patient registration form" />
+  <title>Patient Registration</title>
+
+  <style>
+    /* ── DESIGN TOKENS (warm accent — soft orange) ─────────── */
+    :root {
+      --accent-50:  #FFF8F3;
+      --accent-100: #FFEDD5;
+      --accent-200: #FED7AA;
+      --accent-500: #F97316;
+      --accent-600: #EA580C;
+      --accent-700: #C2410C;
+      --green-50: #F0FDF4;
+      --green-100:#DCFCE7;
+      --green-600:#16A34A;
+      --amber-50: #FFFBEB;
+      --amber-200:#FDE68A;
+      --red-50:   #FEF2F2;
+      --red-500:  #EF4444;
+      --gray-50:  #F8FAFC;
+      --gray-100: #F1F5F9;
+      --gray-200: #E2E8F0;
+      --gray-300: #CBD5E1;
+      --gray-400: #94A3B8;
+      --gray-500: #64748B;
+      --gray-700: #334155;
+      --gray-900: #0F172A;
+      --white:    #FFFFFF;
+      --r-sm: 8px;
+      --r-md: 12px;
+      --r-lg: 16px;
+      --r-xl: 20px;
+      --shadow-xs: 0 1px 2px rgba(0,0,0,.06);
+      --shadow-sm: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
+      --shadow-md: 0 4px 8px rgba(0,0,0,.07), 0 2px 4px rgba(0,0,0,.05);
+    }
+
+    /* ── RESET ─────────────────────────────────────────────── */
+    *, *::before, *::after {
+      box-sizing: border-box; margin: 0; padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+    html { height: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--accent-50);
+      color: var(--gray-900);
+      min-height: 100dvh;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* ── APP SHELL ─────────────────────────────────────────── */
+    .app {
+      max-width: 500px;
+      margin: 0 auto;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    /* ── HEADER (soft orange hero) ───────────────────────── */
+    .app-header {
+      position: relative;
+      color: var(--white);
+      padding: 28px 22px 34px;
+      text-align: center;
+      flex-shrink: 0;
+      border-radius: 0 0 26px 26px;
+      background: linear-gradient(
+        155deg,
+        #FDBA74 0%,
+        var(--accent-500) 38%,
+        var(--accent-600) 72%,
+        var(--accent-700) 100%
+      );
+      box-shadow:
+        0 10px 28px rgba(194, 65, 12, 0.22),
+        0 2px 0 rgba(255, 255, 255, 0.12) inset;
+      overflow: hidden;
+    }
+    .app-header::before {
+      content: '';
+      position: absolute;
+      top: -45%;
+      right: -18%;
+      width: 58%;
+      height: 130%;
+      background: radial-gradient(
+        ellipse at 40% 40%,
+        rgba(255, 255, 255, 0.32) 0%,
+        rgba(255, 255, 255, 0) 68%
+      );
+      pointer-events: none;
+    }
+    .app-header::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 8%;
+      right: 8%;
+      height: 1px;
+      background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.45),
+        transparent
+      );
+      pointer-events: none;
+    }
+    .header-inner {
+      position: relative;
+      z-index: 1;
+    }
+    .header-icon {
+      width: 56px;
+      height: 56px;
+      background: rgba(255, 255, 255, 0.22);
+      border: 1px solid rgba(255, 255, 255, 0.28);
+      border-radius: 18px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 14px;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+    }
+    .header-title {
+      font-size: 21px;
+      font-weight: 700;
+      letter-spacing: -0.45px;
+      line-height: 1.25;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+    }
+    .header-subtitle {
+      font-size: 13px;
+      opacity: 0.92;
+      margin-top: 6px;
+      line-height: 1.45;
+      font-weight: 450;
+    }
+    .header-clinic {
+      display: inline-block;
+      background: rgba(255, 255, 255, 0.22);
+      border: 1px solid rgba(255, 255, 255, 0.28);
+      border-radius: 999px;
+      padding: 5px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-top: 12px;
+      letter-spacing: 0.02em;
+    }
+
+    /* ── FORM CONTENT (slight overlap under rounded header) ── */
+    .form-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 14px 130px;
+      margin-top: -10px;
+      position: relative;
+      z-index: 2;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* ── SECTION CARD ──────────────────────────────────────── */
+    .card {
+      background: var(--white);
+      border-radius: var(--r-xl);
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 14px;
+      overflow: hidden;
+      border: 1px solid var(--gray-100);
+    }
+    .card-header {
+      padding: 13px 16px 12px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .card-header-patient {
+      background: var(--accent-100);
+      border-bottom: 1px solid var(--accent-200);
+    }
+    .card-header-staff {
+      background: var(--green-50);
+      border-bottom: 1px solid var(--green-100);
+    }
+    .badge {
+      font-size: 10px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.8px;
+      padding: 4px 9px; border-radius: 6px;
+      flex-shrink: 0;
+    }
+    .badge-patient { background: var(--accent-600); color: var(--white); }
+    .badge-staff   { background: var(--green-600); color: var(--white); }
+    .card-title h2 {
+      font-size: 14px; font-weight: 600;
+      color: var(--gray-900); line-height: 1.3;
+    }
+    .card-title p {
+      font-size: 11.5px; color: var(--gray-500);
+      margin-top: 2px; line-height: 1.4;
+    }
+    .card-body {
+      padding: 16px 16px 14px;
+      display: flex; flex-direction: column; gap: 15px;
+    }
+
+    /* ── FIELD GROUP ───────────────────────────────────────── */
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .label {
+      font-size: 13px; font-weight: 500;
+      color: var(--gray-700);
+      display: flex; align-items: center; gap: 3px;
+    }
+    .req { color: var(--red-500); font-size: 14px; line-height: 1; }
+
+    /* ── INPUTS ────────────────────────────────────────────── */
+    .inp, .sel {
+      height: 52px;
+      border: 1.5px solid var(--gray-200);
+      border-radius: var(--r-md);
+      padding: 0 14px;
+      font-size: 16px; /* 16px = no iOS zoom */
+      color: var(--gray-900);
+      background: var(--white);
+      width: 100%; outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      -webkit-appearance: none; appearance: none;
+    }
+    .inp::placeholder { color: var(--gray-400); }
+    .inp:focus, .sel:focus {
+      border-color: var(--accent-600);
+      box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.12);
+    }
+    .inp.err, .sel.err {
+      border-color: var(--red-500);
+      box-shadow: 0 0 0 3px rgba(239,68,68,.08);
+    }
+    .sel {
+      cursor: pointer;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='7' viewBox='0 0 12 7'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2364748B' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 14px center;
+      padding-right: 38px;
+    }
+    .sel:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* inline validation message */
+    .errmsg {
+      display: none; align-items: center; gap: 4px;
+      font-size: 11.5px; color: var(--red-500);
+      animation: fadeSlideIn .15s ease-out;
+    }
+    .errmsg.show { display: flex; }
+    @keyframes fadeSlideIn {
+      from { opacity: 0; transform: translateY(-3px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── FOLLOW-UP DATE (CONDITIONAL) ──────────────────────── */
+    .conditional-field {
+      display: none;
+      flex-direction: column; gap: 6px;
+      animation: dropIn .2s cubic-bezier(.4,0,.2,1);
+    }
+    .conditional-field.show { display: flex; }
+    @keyframes dropIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── STAFF NOTICE BANNER ───────────────────────────────── */
+    .notice {
+      background: var(--amber-50);
+      border: 1px solid var(--amber-200);
+      border-radius: var(--r-md);
+      padding: 10px 13px;
+      display: flex; gap: 9px; align-items: flex-start;
+      margin-bottom: 14px;
+    }
+    .notice-emoji { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+    .notice-text {
+      font-size: 12px; color: #92400E; line-height: 1.55;
+    }
+    .notice-text strong { font-weight: 600; }
+
+    /* ── STICKY SUBMIT AREA ────────────────────────────────── */
+    .submit-wrap {
+      position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+      width: 100%; max-width: 500px;
+      padding: 12px 14px;
+      padding-bottom: calc(12px + env(safe-area-inset-bottom));
+      background: rgba(255, 248, 243, 0.97);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border-top: 1px solid var(--accent-100);
+      z-index: 100;
+    }
+    .submit-btn {
+      width: 100%; height: 54px;
+      background: linear-gradient(180deg, var(--accent-500) 0%, var(--accent-600) 100%);
+      color: var(--white);
+      border: none; border-radius: var(--r-md);
+      font-size: 16px; font-weight: 600;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      letter-spacing: -0.2px;
+      transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
+      box-shadow: 0 4px 14px rgba(194, 65, 12, 0.32);
+    }
+    .submit-btn:active:not(:disabled) { transform: scale(0.975); }
+    .submit-btn:disabled { background: var(--gray-400); box-shadow: none; cursor: not-allowed; }
+    .submit-btn.loading { background: var(--accent-600); }
+
+    /* ── SPINNER ───────────────────────────────────────────── */
+    .spin {
+      width: 20px; height: 20px;
+      border: 2.5px solid rgba(255,255,255,.25);
+      border-top-color: var(--white);
+      border-radius: 50%;
+      animation: rotate .65s linear infinite;
+    }
+    @keyframes rotate { to { transform: rotate(360deg); } }
+
+    /* ── SUCCESS SCREEN ────────────────────────────────────── */
+    .success-screen {
+      display: none; position: fixed; inset: 0;
+      background: var(--white); z-index: 200;
+      flex-direction: column; align-items: center;
+      justify-content: center;
+      padding: 32px 28px; text-align: center;
+    }
+    .success-screen.show { display: flex; animation: scrimIn .3s ease-out; }
+    @keyframes scrimIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+    .success-ring {
+      width: 88px; height: 88px;
+      background: var(--green-50);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 26px;
+      animation: popBounce .45s cubic-bezier(.36,.07,.19,.97) .15s both;
+    }
+    @keyframes popBounce {
+      0%  { transform: scale(0); }
+      70% { transform: scale(1.12); }
+      100%{ transform: scale(1); }
+    }
+    .success-title {
+      font-size: 26px; font-weight: 800;
+      color: var(--gray-900); letter-spacing: -0.5px;
+      margin-bottom: 10px;
+    }
+    .success-body {
+      font-size: 15px; color: var(--gray-500);
+      line-height: 1.65; max-width: 290px;
+    }
+    .success-code-box {
+      margin-top: 28px;
+      background: var(--accent-50);
+      border: 1.5px solid var(--accent-100);
+      border-radius: var(--r-lg);
+      padding: 16px 24px;
+    }
+    .success-code-label {
+      font-size: 12px; color: var(--gray-500);
+      text-transform: uppercase; letter-spacing: 0.8px;
+      margin-bottom: 5px;
+    }
+    .success-code-value {
+      font-size: 28px; font-weight: 800;
+      color: var(--accent-700); letter-spacing: 3px;
+    }
+    .success-hint {
+      margin-top: 12px; font-size: 12px; color: var(--gray-400);
+    }
+
+    /* ── TOAST ─────────────────────────────────────────────── */
+    .toast {
+      position: fixed; top: 16px; left: 50%;
+      transform: translateX(-50%) translateY(-80px);
+      background: var(--gray-900); color: var(--white);
+      padding: 12px 20px; border-radius: var(--r-md);
+      font-size: 14px; z-index: 300;
+      transition: transform 0.3s cubic-bezier(.36,.07,.19,.97);
+      max-width: calc(100vw - 28px); text-align: center;
+      box-shadow: var(--shadow-md); pointer-events: none;
+      white-space: nowrap;
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+    .toast.error { background: #DC2626; }
+
+    /* ── UTILS ─────────────────────────────────────────────── */
+    :focus-visible { outline: 2px solid var(--accent-600); outline-offset: 2px; }
+  </style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ─── HEADER ──────────────────────────────────────────────────── -->
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="header-icon" aria-hidden="true">
+        <svg width="26" height="26" fill="none" viewBox="0 0 24 24">
+          <path d="M3 9L12 2l9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
+                stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M9 22V12h6v10" stroke="#fff" stroke-width="1.8"
+                stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <h1 class="header-title">Patient Registration</h1>
+      <p class="header-subtitle">Fill in your details below</p>
+      <span class="header-clinic" id="js-clinic-badge" style="display:none"></span>
+    </div>
+  </header>
+
+  <!-- ─── FORM ────────────────────────────────────────────────────── -->
+  <main class="form-scroll">
+    <form id="reg-form" novalidate>
+
+      <!-- ══ SECTION 1 : PATIENT DETAILS ══════════════════════════ -->
+      <div class="card">
+        <div class="card-header card-header-patient">
+          <span class="badge badge-patient">Patient</span>
+          <div class="card-title">
+            <h2>Your Details</h2>
+            <p>Please fill in your personal information</p>
+          </div>
+        </div>
+        <div class="card-body">
+
+          <!-- Patient Name -->
+          <div class="field">
+            <label class="label" for="patient_name">
+              Full Name&nbsp;<span class="req">*</span>
+            </label>
+            <input id="patient_name" name="patient_name" type="text"
+                   class="inp" placeholder="Enter your full name"
+                   autocomplete="name" inputmode="text" maxlength="100" />
+            <span class="errmsg" id="e-patient_name">
+              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="6" fill="currentColor"/><path d="M6 3.5v3" stroke="#fff" stroke-width="1.2" stroke-linecap="round"/><circle cx="6" cy="8.5" r=".55" fill="#fff"/></svg>
+              Enter your full name (at least 2 characters)
+            </span>
+          </div>
+
+          <!-- Phone Number -->
+          <div class="field">
+            <label class="label" for="phone_number">
+              Mobile Number&nbsp;<span class="req">*</span>
+            </label>
+            <input id="phone_number" name="phone_number" type="tel"
+                   class="inp" placeholder="10-digit mobile number"
+                   inputmode="numeric" maxlength="10"
+                   autocomplete="tel-national" pattern="[0-9]{10}" />
+            <span class="errmsg" id="e-phone_number">
+              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="6" fill="currentColor"/><path d="M6 3.5v3" stroke="#fff" stroke-width="1.2" stroke-linecap="round"/><circle cx="6" cy="8.5" r=".55" fill="#fff"/></svg>
+              Enter a valid 10-digit mobile number (no +91)
+            </span>
+          </div>
+
+          <!-- DOB + Sex (side-by-side) -->
+          <div class="field-row">
+            <div class="field">
+              <label class="label" for="dob">Date of Birth</label>
+              <input id="dob" name="dob" type="date" class="inp" />
+            </div>
+            <div class="field">
+              <label class="label" for="sex">Sex</label>
+              <select id="sex" name="sex" class="sel">
+                <option value="">Select</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ── Staff notice ──────────────────────────────────────── -->
+      <div class="notice">
+        <span class="notice-emoji">💬</span>
+        <p class="notice-text">
+          <strong>Reception staff:</strong> Please help the patient complete
+          the visit information below.
+        </p>
+      </div>
+
+      <!-- ══ SECTION 2 : VISIT INFORMATION (STAFF) ════════════════ -->
+      <div class="card">
+        <div class="card-header card-header-staff">
+          <span class="badge badge-staff">Staff</span>
+          <div class="card-title">
+            <h2>Visit Information</h2>
+            <p>Completed with receptionist assistance</p>
+          </div>
+        </div>
+        <div class="card-body">
+
+          <!-- Hospital -->
+          <div class="field">
+            <label class="label" for="hospital_name">
+              Hospital / Clinic&nbsp;<span class="req">*</span>
+            </label>
+            <select id="hospital_name" name="hospital_name" class="sel">
+              <option value="">Select hospital</option>
+            </select>
+            <span class="errmsg" id="e-hospital_name">
+              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="6" fill="currentColor"/><path d="M6 3.5v3" stroke="#fff" stroke-width="1.2" stroke-linecap="round"/><circle cx="6" cy="8.5" r=".55" fill="#fff"/></svg>
+              Please select a hospital
+            </span>
+          </div>
+
+          <!-- Doctor -->
+          <div class="field">
+            <label class="label" for="doctor_name">
+              Doctor Name&nbsp;<span class="req">*</span>
+            </label>
+            <select id="doctor_name" name="doctor_name" class="sel" disabled>
+              <option value="">Select hospital first</option>
+            </select>
+            <span class="errmsg" id="e-doctor_name">
+              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="6" fill="currentColor"/><path d="M6 3.5v3" stroke="#fff" stroke-width="1.2" stroke-linecap="round"/><circle cx="6" cy="8.5" r=".55" fill="#fff"/></svg>
+              Please select a doctor
+            </span>
+          </div>
+
+          <!-- Visit Date -->
+          <div class="field">
+            <label class="label" for="visit_date">
+              Visit Date&nbsp;<span class="req">*</span>
+            </label>
+            <input id="visit_date" name="visit_date" type="date" class="inp" />
+            <span class="errmsg" id="e-visit_date">
+              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="6" fill="currentColor"/><path d="M6 3.5v3" stroke="#fff" stroke-width="1.2" stroke-linecap="round"/><circle cx="6" cy="8.5" r=".55" fill="#fff"/></svg>
+              Visit date is required
+            </span>
+          </div>
+
+          <!-- Follow-up Required -->
+          <div class="field">
+            <label class="label" for="follow_up_required">
+              Follow-up Required?&nbsp;<span class="req">*</span>
+            </label>
+            <select id="follow_up_required" name="follow_up_required" class="sel">
+              <option value="">Select</option>
+              <option value="No">No</option>
+              <option value="Yes">Yes</option>
+            </select>
+            <span class="errmsg" id="e-follow_up_required">
+              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="6" fill="currentColor"/><path d="M6 3.5v3" stroke="#fff" stroke-width="1.2" stroke-linecap="round"/><circle cx="6" cy="8.5" r=".55" fill="#fff"/></svg>
+              Please select if follow-up is required
+            </span>
+          </div>
+
+          <!-- Follow-up Date (conditional) -->
+          <div class="conditional-field" id="cond-followup">
+            <label class="label" for="follow_up_date">
+              Follow-up Date&nbsp;<span class="req">*</span>
+            </label>
+            <input id="follow_up_date" name="follow_up_date" type="date" class="inp" />
+            <span class="errmsg" id="e-follow_up_date">
+              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="6" fill="currentColor"/><path d="M6 3.5v3" stroke="#fff" stroke-width="1.2" stroke-linecap="round"/><circle cx="6" cy="8.5" r=".55" fill="#fff"/></svg>
+              Follow-up date must be after the visit date
+            </span>
+          </div>
+
+        </div>
+      </div>
+
+    </form>
+  </main><!-- /form-scroll -->
+
+  <!-- ─── STICKY SUBMIT ────────────────────────────────────────────── -->
+  <div class="submit-wrap">
+    <button type="submit" form="reg-form" class="submit-btn" id="js-submit">
+      <svg width="18" height="18" fill="none" viewBox="0 0 20 20" aria-hidden="true">
+        <path d="M10 2l7 8-7 8" stroke="#fff" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M3 10h14" stroke="#fff" stroke-width="2"
+              stroke-linecap="round"/>
+      </svg>
+      Submit Details
+    </button>
+  </div>
+
+  <!-- ─── SUCCESS SCREEN ───────────────────────────────────────────── -->
+  <div class="success-screen" id="js-success" role="alert" aria-live="assertive">
+    <div class="success-ring">
+      <svg width="42" height="42" fill="none" viewBox="0 0 42 42" aria-hidden="true">
+        <path d="M9 22L17 30L33 14" stroke="#16A34A"
+              stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <h2 class="success-title">All Done! 🎉</h2>
+    <p class="success-body" id="js-success-body">
+      Your details have been submitted successfully.<br/>
+      We'll send a confirmation to your WhatsApp shortly.
+    </p>
+    <div class="success-code-box" id="js-code-box" style="display:none">
+      <p class="success-code-label">Your Patient Code</p>
+      <p class="success-code-value" id="js-code-value"></p>
+      <p class="success-hint">Share this code with reception if needed</p>
+    </div>
+  </div>
+
+  <!-- ─── TOAST ────────────────────────────────────────────────────── -->
+  <div class="toast" id="js-toast" role="status" aria-live="polite"></div>
+
+</div><!-- /app -->
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   CONFIGURATION
+   Update WEBHOOK_URL with your actual n8n public URL.
+   Update HOSPITALS with your real hospital → doctor mapping.
+   ═══════════════════════════════════════════════════════════════════ */
+const WEBHOOK_URL = 'YOUR_N8N_WEBHOOK_URL/webhook/patient-form-intake';
+
+const HOSPITALS = {
+  'City Hospital':    ['Dr. Sharma', 'Dr. Mehta', 'Dr. Patel'],
+  'General Hospital': ['Dr. Kumar', 'Dr. Patel', 'Dr. Sharma'],
+  'Metro Clinic':     ['Dr. Mehta', 'Dr. Kumar'],
+};
+
+/* ═══════════════════════════════════════════════════════════════════
+   DOM REFS
+   ═══════════════════════════════════════════════════════════════════ */
+const $ = id => document.getElementById(id);
+const form       = $('reg-form');
+const submitBtn  = $('js-submit');
+const successScr = $('js-success');
+const toast      = $('js-toast');
+
+/* ═══════════════════════════════════════════════════════════════════
+   INIT
+   ═══════════════════════════════════════════════════════════════════ */
+(function init () {
+  const p          = new URLSearchParams(location.search);
+  const preHospital = decodeURIComponent(p.get('hospital') || p.get('clinic') || '');
+  const titleParam  = decodeURIComponent(p.get('title') || '');
+
+  // Header clinic badge
+  const badge = $('js-clinic-badge');
+  const label = titleParam || preHospital;
+  if (label) { badge.textContent = label; badge.style.display = 'inline-block'; }
+
+  // Date defaults
+  const today = localDateISO();
+  $('visit_date').value = today;
+  $('visit_date').max   = today;
+  $('dob').max          = today;
+
+  // Populate hospital dropdown
+  const hSel = $('hospital_name');
+  Object.keys(HOSPITALS).forEach(h => {
+    const o = document.createElement('option');
+    o.value = o.textContent = h;
+    hSel.appendChild(o);
+  });
+
+  // Pre-fill hospital from URL param
+  if (preHospital) {
+    const match = Object.keys(HOSPITALS).find(
+      h => h.toLowerCase() === preHospital.toLowerCase()
+    );
+    if (match) {
+      hSel.value = match;
+      updateDoctors(match);
+    }
+  }
+})();
+
+/* ─── helpers ──────────────────────────────────────────────────── */
+function localDateISO (offset = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() + offset);
+  return d.toLocaleDateString('en-CA'); // → YYYY-MM-DD
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   HOSPITAL → DOCTOR CASCADE
+   ═══════════════════════════════════════════════════════════════════ */
+function updateDoctors (hospital) {
+  const sel  = $('doctor_name');
+  const docs = HOSPITALS[hospital] || [];
+  sel.innerHTML = `<option value="">${hospital ? 'Select doctor' : 'Select hospital first'}</option>`;
+  docs.forEach(d => {
+    const o = document.createElement('option');
+    o.value = o.textContent = d;
+    sel.appendChild(o);
+  });
+  sel.disabled = !hospital;
+}
+
+$('hospital_name').addEventListener('change', function () {
+  updateDoctors(this.value);
+  clearErr('hospital_name');
+  clearErr('doctor_name');
+});
+
+/* ═══════════════════════════════════════════════════════════════════
+   FOLLOW-UP DATE CONDITIONAL TOGGLE
+   ═══════════════════════════════════════════════════════════════════ */
+$('follow_up_required').addEventListener('change', function () {
+  const show = this.value === 'Yes';
+  const wrap = $('cond-followup');
+  const inp  = $('follow_up_date');
+  wrap.classList.toggle('show', show);
+  if (show) {
+    inp.min = localDateISO(1);   // tomorrow minimum
+    inp.focus();
+  } else {
+    inp.value = '';
+    clearErr('follow_up_date');
+  }
+});
+
+// Update follow-up min date when visit date changes
+$('visit_date').addEventListener('change', function () {
+  if ($('follow_up_required').value === 'Yes') {
+    const fuInp = $('follow_up_date');
+    const next  = new Date(this.value);
+    next.setDate(next.getDate() + 1);
+    fuInp.min = next.toLocaleDateString('en-CA');
+    if (fuInp.value && fuInp.value <= this.value) fuInp.value = '';
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════════════
+   PHONE — DIGITS ONLY, MAX 10
+   ═══════════════════════════════════════════════════════════════════ */
+$('phone_number').addEventListener('input', function () {
+  const pos = this.selectionStart;
+  const raw = this.value.replace(/\D/g, '').slice(0, 10);
+  if (this.value !== raw) {
+    this.value = raw;
+    try { this.setSelectionRange(pos, pos); } catch (_) { /* Safari */ }
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════════════
+   VALIDATION
+   ═══════════════════════════════════════════════════════════════════ */
+function showErr (id) {
+  $( id ).classList.add('err');
+  $('e-' + id).classList.add('show');
+}
+function clearErr (id) {
+  const el = $(id); if (!el) return;
+  el.classList.remove('err');
+  const msg = $('e-' + id); if (msg) msg.classList.remove('show');
+}
+function clearAllErr () {
+  ['patient_name','phone_number','hospital_name','doctor_name',
+   'visit_date','follow_up_required','follow_up_date']
+    .forEach(clearErr);
+}
+
+function validate () {
+  clearAllErr();
+  let ok = true;
+  const scrollTo = el => { ok = false; if (ok === false) firstInvalid = firstInvalid || el; };
+  let firstInvalid = null;
+
+  const name    = $('patient_name').value.trim();
+  const phone   = $('phone_number').value.trim();
+  const hosp    = $('hospital_name').value;
+  const doc     = $('doctor_name').value;
+  const vDate   = $('visit_date').value;
+  const fuReq   = $('follow_up_required').value;
+  const fuDate  = $('follow_up_date').value;
+
+  if (!name || name.length < 2)              { showErr('patient_name');       ok = false; firstInvalid = firstInvalid || $('patient_name'); }
+  if (!/^[0-9]{10}$/.test(phone))           { showErr('phone_number');       ok = false; firstInvalid = firstInvalid || $('phone_number'); }
+  if (!hosp)                                 { showErr('hospital_name');      ok = false; firstInvalid = firstInvalid || $('hospital_name'); }
+  if (!doc)                                  { showErr('doctor_name');        ok = false; firstInvalid = firstInvalid || $('doctor_name'); }
+  if (!vDate)                                { showErr('visit_date');         ok = false; firstInvalid = firstInvalid || $('visit_date'); }
+  if (!fuReq)                                { showErr('follow_up_required'); ok = false; firstInvalid = firstInvalid || $('follow_up_required'); }
+  if (fuReq === 'Yes' && (!fuDate || fuDate <= vDate)) {
+                                               showErr('follow_up_date');     ok = false; firstInvalid = firstInvalid || $('follow_up_date'); }
+
+  if (!ok && firstInvalid) {
+    firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    firstInvalid.focus({ preventScroll: true });
+  }
+  return ok;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   CLEAR ERRORS ON CHANGE
+   ═══════════════════════════════════════════════════════════════════ */
+['patient_name','phone_number','hospital_name','doctor_name',
+ 'visit_date','follow_up_required','follow_up_date'].forEach(id => {
+  const el = $(id); if (!el) return;
+  el.addEventListener('input',  () => clearErr(id));
+  el.addEventListener('change', () => clearErr(id));
+});
+
+/* ═══════════════════════════════════════════════════════════════════
+   TOAST
+   ═══════════════════════════════════════════════════════════════════ */
+let toastTimer;
+function showToast (msg, isError = false) {
+  clearTimeout(toastTimer);
+  toast.textContent = msg;
+  toast.className   = 'toast show' + (isError ? ' error' : '');
+  toastTimer = setTimeout(() => { toast.className = 'toast' + (isError ? ' error' : ''); }, 4000);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   SUBMIT
+   ═══════════════════════════════════════════════════════════════════ */
+let busy = false;
+
+form.addEventListener('submit', async function (e) {
+  e.preventDefault();
+  if (busy) return;
+  if (!validate()) return;
+
+  busy = true;
+  submitBtn.disabled = true;
+  submitBtn.classList.add('loading');
+  submitBtn.innerHTML = '<div class="spin"></div>Submitting…';
+
+  const fuReq = $('follow_up_required').value;
+
+  const payload = {
+    patient_name:       $('patient_name').value.trim(),
+    phone_number:       $('phone_number').value.trim(),
+    dob:                $('dob').value   || '',
+    sex:                $('sex').value   || '',
+    hospital_name:      $('hospital_name').value,
+    doctor_name:        $('doctor_name').value,
+    visit_date:         $('visit_date').value,
+    follow_up_required: fuReq,
+    follow_up_date:     fuReq === 'Yes' ? $('follow_up_date').value : '',
+  };
+
+  try {
+    const res  = await fetch(WEBHOOK_URL, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(payload),
+    });
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    let data = {};
+    try { data = await res.json(); } catch (_) { /* n8n may return empty body */ }
+
+    /* ── Success ── */
+    successScr.classList.add('show');
+    if (data.patient_code) {
+      $('js-code-value').textContent = data.patient_code;
+      $('js-code-box').style.display = 'block';
+    }
+
+  } catch (err) {
+    console.error('Submission error:', err);
+    showToast('Something went wrong. Please try again.', true);
+    submitBtn.disabled = false;
+    submitBtn.classList.remove('loading');
+    submitBtn.innerHTML = `
+      <svg width="18" height="18" fill="none" viewBox="0 0 20 20" aria-hidden="true">
+        <path d="M10 2l7 8-7 8" stroke="#fff" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M3 10h14" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      Submit Details`;
+    busy = false;
+  }
+});
+</script>
+
+</body>
+</html>

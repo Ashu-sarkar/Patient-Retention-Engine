@@ -114,30 +114,14 @@
     },
     {
       "parameters": {
-        "operation": "update",
-        "schema": { "__rl": true, "value": "public", "mode": "list" },
-        "table": { "__rl": true, "value": "patients", "mode": "list" },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "last_message_sent": "={{ new Date().toISOString() }}",
-            "message_count": "={{ (parseInt($('Filter Tomorrow Follow-ups').item.json.message_count) || 0) + 1 }}",
-            "updated_at": "={{ new Date().toISOString() }}"
-          },
-          "matchingColumns": ["id"],
-          "schema": [
-            { "id": "id", "displayName": "id", "required": false, "defaultMatch": true }
-          ]
-        },
-        "additionalFields": {
-          "id": "={{ $('Filter Tomorrow Follow-ups').item.json.id }}"
-        },
+        "operation": "executeQuery",
+        "query": "=UPDATE public.patients SET last_message_sent = NOW(), message_count = COALESCE(message_count, 0) + 1, updated_at = NOW() WHERE id = '{{ $('Filter Tomorrow Follow-ups').item.json.id }}'",
         "options": {}
       },
       "id": "11111111-1111-1111-1111-000000000007",
       "name": "Update Patient in Supabase",
       "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.4,
+      "typeVersion": 2.5,
       "position": [1340, 180],
       "credentials": {
         "postgres": {

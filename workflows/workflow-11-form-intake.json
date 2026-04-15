@@ -1,0 +1,220 @@
+{
+  "name": "WF11 — QR Form Intake",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## WF11 — QR Form Intake\n\n**Trigger**: POST from the patient registration web form (QR code scan).\n\n**Flow**:\n1. Receive JSON payload from the form\n2. Server-side validation (second line of defence after frontend)\n3. Generate PAT-XXXX patient code\n4. Upsert patient record into Supabase\n5. Async call to WF7 (Welcome WhatsApp)\n6. Respond to form with `{ status, patient_code }`\n\n**Env vars used**:\n- `SUPABASE_URL` / `SUPABASE_ANON_KEY` (via Postgres credential)\n- `WEBHOOK_URL` + `N8N_WF7_WEBHOOK_PATH`\n- `TIMEZONE`",
+        "height": 270,
+        "width": 360
+      },
+      "id": "11111111-1111-1111-1111-000000000001",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-200, 200]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "patient-form-intake",
+        "responseMode": "lastNode",
+        "options": {
+          "rawBody": false
+        }
+      },
+      "id": "11111111-1111-1111-1111-000000000002",
+      "name": "Webhook — Form Intake",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 320]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Server-side validation (mirrors frontend rules) ──────────────\nconst body = $input.first().json.body || $input.first().json;\n\nconst errors = [];\n\nconst patientName      = String(body.patient_name      || '').trim();\nconst phoneRaw         = String(body.phone_number      || '').trim();\nconst dob              = String(body.dob               || '').trim();\nconst sex              = String(body.sex               || '').trim();\nconst hospitalName     = String(body.hospital_name     || '').trim();\nconst doctorName       = String(body.doctor_name       || '').trim();\nconst visitDate        = String(body.visit_date        || '').trim();\nconst followUpRequired = String(body.follow_up_required|| '').trim();\nconst followUpDate     = String(body.follow_up_date    || '').trim();\n\n// Required fields\nif (!patientName || patientName.length < 2)\n  errors.push('patient_name: required, min 2 characters');\nif (!/^[0-9]{10}$/.test(phoneRaw))\n  errors.push('phone_number: must be exactly 10 digits (no country code)');\nif (!hospitalName)\n  errors.push('hospital_name: required');\nif (!doctorName)\n  errors.push('doctor_name: required');\nif (!visitDate || !/^\\d{4}-\\d{2}-\\d{2}$/.test(visitDate))\n  errors.push('visit_date: required, format YYYY-MM-DD');\nif (!['Yes','No'].includes(followUpRequired))\n  errors.push('follow_up_required: must be Yes or No');\n\n// Conditional follow-up date\nif (followUpRequired === 'Yes') {\n  if (!followUpDate || !/^\\d{4}-\\d{2}-\\d{2}$/.test(followUpDate))\n    errors.push('follow_up_date: required when follow_up_required is Yes');\n  else if (visitDate && followUpDate <= visitDate)\n    errors.push('follow_up_date: must be after visit_date');\n}\n\n// Optional field validation\nif (sex && !['Male','Female','Other'].includes(sex))\n  errors.push('sex: must be Male, Female, or Other');\n\nif (dob && !/^\\d{4}-\\d{2}-\\d{2}$/.test(dob))\n  errors.push('dob: format must be YYYY-MM-DD');\n\nif (errors.length > 0) {\n  return [{ json: { _valid: false, _errors: errors, _phone: null } }];\n}\n\n// Normalise phone to E.164 (+91)\nconst phoneE164 = '+91' + phoneRaw;\n\nreturn [{\n  json: {\n    _valid:          true,\n    _errors:         [],\n    patient_name:    patientName,\n    phone:           phoneE164,\n    dob:             dob || null,\n    sex:             sex || null,\n    clinic_name:     hospitalName,\n    doctor_name:     doctorName,\n    visit_date:      visitDate,\n    follow_up_required: followUpRequired,\n    follow_up_date:  followUpRequired === 'Yes' ? followUpDate : null,\n    _raw_phone:      phoneRaw\n  }\n}];"
+      },
+      "id": "11111111-1111-1111-1111-000000000003",
+      "name": "Validate and Map Fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 320]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "cond-valid",
+              "leftValue": "={{ $json._valid }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "11111111-1111-1111-1111-000000000004",
+      "name": "If Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 320]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'error', message: 'Validation failed', errors: $json._errors }) }}",
+        "options": { "responseCode": 400 }
+      },
+      "id": "11111111-1111-1111-1111-000000000005",
+      "name": "Respond 400 Invalid",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [900, 500]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COUNT(*)::int AS total FROM public.patients;",
+        "options": {}
+      },
+      "id": "11111111-1111-1111-1111-000000000006",
+      "name": "Get Patient Count",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [900, 260],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_POSTGRES_CREDENTIAL_ID",
+          "name": "Supabase (Postgres)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge count from previous step with validated fields from If Valid\nconst validated = $('Validate and Map Fields').first().json;\nconst count     = $input.first().json.total || 0;\n\n// PAT-0001, PAT-0002 …\nconst seq         = String(count + 1).padStart(4, '0');\nconst patientCode = 'PAT-' + seq;\n\nconst now = new Date().toISOString();\n\nreturn [{\n  json: {\n    ...validated,\n    patient_code: patientCode,\n    status:       'Pending',\n    message_count: 0,\n    created_at:   now,\n    updated_at:   now,\n  }\n}];"
+      },
+      "id": "11111111-1111-1111-1111-000000000007",
+      "name": "Build Patient Record",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 260]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO public.patients (\n  patient_code, name, phone, dob, sex,\n  clinic_name, doctor_name, visit_date,\n  follow_up_required, follow_up_date,\n  status, message_count, created_at, updated_at\n) VALUES (\n  '{{ $json.patient_code }}',\n  '{{ $json.patient_name.replace(/'/g, \"''\") }}',\n  '{{ $json.phone }}',\n  {{ $json.dob ? \"'\" + $json.dob + \"'\" : 'NULL' }},\n  {{ $json.sex ? \"'\" + $json.sex + \"'\" : 'NULL' }},\n  '{{ $json.clinic_name.replace(/'/g, \"''\") }}',\n  '{{ $json.doctor_name.replace(/'/g, \"''\") }}',\n  '{{ $json.visit_date }}',\n  '{{ $json.follow_up_required }}',\n  {{ $json.follow_up_date ? \"'\" + $json.follow_up_date + \"'\" : 'NULL' }},\n  'Pending', 0,\n  NOW(), NOW()\n)\nON CONFLICT (phone) DO UPDATE SET\n  name               = EXCLUDED.name,\n  clinic_name        = EXCLUDED.clinic_name,\n  doctor_name        = EXCLUDED.doctor_name,\n  visit_date         = EXCLUDED.visit_date,\n  follow_up_required = EXCLUDED.follow_up_required,\n  follow_up_date     = EXCLUDED.follow_up_date,\n  status             = 'Pending',\n  updated_at         = NOW()\nRETURNING id, patient_code, phone;",
+        "options": {}
+      },
+      "id": "11111111-1111-1111-1111-000000000008",
+      "name": "Upsert Patient to Supabase",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1340, 260],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_POSTGRES_CREDENTIAL_ID",
+          "name": "Supabase (Postgres)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.WEBHOOK_URL }}/webhook/{{ $env.N8N_WF7_WEBHOOK_PATH || 'new-patient-intake' }}",
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "values": [
+            { "name": "patient_code",       "value": "={{ $('Build Patient Record').first().json.patient_code }}" },
+            { "name": "name",               "value": "={{ $('Build Patient Record').first().json.patient_name }}" },
+            { "name": "phone",              "value": "={{ $('Build Patient Record').first().json.phone }}" },
+            { "name": "clinic_name",        "value": "={{ $('Build Patient Record').first().json.clinic_name }}" },
+            { "name": "doctor_name",        "value": "={{ $('Build Patient Record').first().json.doctor_name }}" },
+            { "name": "follow_up_required", "value": "={{ $('Build Patient Record').first().json.follow_up_required }}" },
+            { "name": "follow_up_date",     "value": "={{ $('Build Patient Record').first().json.follow_up_date }}" },
+            { "name": "visit_date",         "value": "={{ $('Build Patient Record').first().json.visit_date }}" }
+          ]
+        },
+        "options": { "timeout": 8000, "redirect": { "redirect": { "followRedirects": false } } }
+      },
+      "id": "11111111-1111-1111-1111-000000000009",
+      "name": "Call WF7 Welcome",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 260],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'success', patient_code: $('Build Patient Record').first().json.patient_code, message: 'Registration complete. Welcome WhatsApp will arrive shortly.' }) }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "11111111-1111-1111-1111-000000000010",
+      "name": "Respond 200 OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1780, 260]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO public.system_logs (workflow_name, execution_id, level, message, metadata, created_at)\nVALUES (\n  'workflow-11-form-intake',\n  '{{ $execution.id }}',\n  'error',\n  'Form intake validation failed',\n  '{{ JSON.stringify({ errors: $json._errors }) }}',\n  NOW()\n);",
+        "options": {}
+      },
+      "id": "11111111-1111-1111-1111-000000000011",
+      "name": "Log Validation Error",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1120, 500],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_POSTGRES_CREDENTIAL_ID",
+          "name": "Supabase (Postgres)"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook — Form Intake": {
+      "main": [[{ "node": "Validate and Map Fields", "type": "main", "index": 0 }]]
+    },
+    "Validate and Map Fields": {
+      "main": [[{ "node": "If Valid", "type": "main", "index": 0 }]]
+    },
+    "If Valid": {
+      "main": [
+        [{ "node": "Get Patient Count", "type": "main", "index": 0 }],
+        [{ "node": "Log Validation Error", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Patient Count": {
+      "main": [[{ "node": "Build Patient Record", "type": "main", "index": 0 }]]
+    },
+    "Build Patient Record": {
+      "main": [[{ "node": "Upsert Patient to Supabase", "type": "main", "index": 0 }]]
+    },
+    "Upsert Patient to Supabase": {
+      "main": [[{ "node": "Call WF7 Welcome", "type": "main", "index": 0 }]]
+    },
+    "Call WF7 Welcome": {
+      "main": [[{ "node": "Respond 200 OK", "type": "main", "index": 0 }]]
+    },
+    "Log Validation Error": {
+      "main": [[{ "node": "Respond 400 Invalid", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "workflow-8-error-handler"
+  },
+  "staticData": null,
+  "tags": [{ "createdAt": "2024-01-01T00:00:00.000Z", "updatedAt": "2024-01-01T00:00:00.000Z", "id": "wf11-tag", "name": "intake" }],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "wf11-v1"
+}

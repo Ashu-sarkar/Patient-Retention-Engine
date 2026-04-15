@@ -407,15 +407,12 @@
     },
     "Sheet Exists Today?": {
       "main": [
-        [
-          { "node": "Get Patient Count for Code", "type": "main", "index": 0 },
-          { "node": "Read Intake Sheet", "type": "main", "index": 0 }
-        ],
+        [{ "node": "Get Patient Count for Code", "type": "main", "index": 0 }],
         [{ "node": "Log No Sheet Today", "type": "main", "index": 0 }]
       ]
     },
     "Get Patient Count for Code": {
-      "main": [[{ "node": "Validate and Map Rows", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Read Intake Sheet", "type": "main", "index": 0 }]]
     },
     "Read Intake Sheet": {
       "main": [[{ "node": "Validate and Map Rows", "type": "main", "index": 0 }]]

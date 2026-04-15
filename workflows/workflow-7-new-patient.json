@@ -15,7 +15,7 @@
     },
     {
       "parameters": {
-        "path": "={{ $env.N8N_WF7_WEBHOOK_PATH || 'new-patient-intake' }}",
+        "path": "new-patient-intake",
         "httpMethod": "POST",
         "responseMode": "lastNode",
         "options": {}
