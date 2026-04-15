@@ -3,9 +3,9 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Workflow 6: Feedback Listener\n\n**Trigger:** Webhook POST (always active)\n\n**Webhook URL:** Copy from the Webhook node → Production URL\nRegister this URL in:\n- Twilio: Console → Messaging → Sandbox Settings → \"When a message comes in\"\n- Meta: Developer App → WhatsApp → Configuration → Webhook\n\n**Logic:**\n1. Receives inbound WhatsApp message from Twilio or Meta\n2. Extracts sender phone + message body\n3. Finds matching patient in Supabase by phone number\n4. Classifies response (confirmed / cancelled / help / responded)\n5. Updates patient record in Supabase\n6. Sends appropriate auto-reply\n7. Logs to Supabase system_logs\n\n**Data source:** Supabase `public.patients` — populated by WF11 (QR form intake)\n\n**Before activating:**\n1. Set credential on Postgres nodes → Supabase DB\n2. Set credential on HTTP Request node → Twilio Basic Auth",
-        "height": 360,
-        "width": 440
+        "content": "## Workflow 6: Feedback Listener\n\n**Trigger:** Webhook POST (always active)\n\n**Webhook URL:** Copy from the Webhook node → Production URL\nRegister this URL in:\n- Meta: Developer App → WhatsApp → Configuration → Webhook\n  - Events to subscribe: messages\n  - The same URL handles GET (verification) and POST (inbound messages)\n\n**Logic:**\n1. GET path: Meta webhook verification — returns hub.challenge\n2. POST path: Receives inbound WhatsApp message from Meta\n3. Extracts sender phone + message body\n4. Finds matching patient in Supabase by phone number\n5. Classifies response (confirmed / cancelled / help / responded)\n6. Updates patient record in Supabase\n7. Sends appropriate auto-reply (text type — within 24h session window)\n8. Logs to Supabase system_logs\n\n**Before activating:**\n1. Set credential on Postgres nodes → Supabase DB\n2. Set credential on HTTP Request node → WhatsApp Business API (HTTP Header Auth)\n3. Set WA_WEBHOOK_VERIFY_TOKEN in .env to the token you register in Meta Developer Console",
+        "height": 420,
+        "width": 500
       },
       "id": "66666666-6666-6666-6666-000000000001",
       "name": "Sticky Note",
@@ -16,12 +16,48 @@
     {
       "parameters": {
         "path": "feedback-listener",
+        "httpMethod": "GET",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "66666666-6666-6666-6666-000000000015",
+      "name": "Webhook — Meta Verification (GET)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 280],
+      "webhookId": "feedback-listener-webhook-get"
+    },
+    {
+      "parameters": {
+        "jsCode": "const params = $input.first().json.query || {};\nif (params['hub.mode'] === 'subscribe' && params['hub.verify_token'] === $env.WA_WEBHOOK_VERIFY_TOKEN) {\n  return [{ json: { challenge: params['hub.challenge'] } }];\n}\nthrow new Error('Webhook verification failed: invalid verify_token');"
+      },
+      "id": "66666666-6666-6666-6666-000000000016",
+      "name": "Verify Token and Return Challenge",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 280]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.challenge }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "66666666-6666-6666-6666-000000000017",
+      "name": "Respond with Challenge",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [680, 280]
+    },
+    {
+      "parameters": {
+        "path": "feedback-listener",
         "httpMethod": "POST",
         "responseMode": "responseNode",
         "options": {}
       },
       "id": "66666666-6666-6666-6666-000000000002",
-      "name": "Webhook — Inbound WhatsApp",
+      "name": "Webhook — Inbound WhatsApp (POST)",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [240, 480],
@@ -29,7 +65,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Extract and normalise inbound message data\n// Handles both Twilio and Meta Cloud API webhook formats\nconst body = $input.first().json.body || $input.first().json;\n\nlet fromPhone = '';\nlet messageBody = '';\nlet source = 'unknown';\n\nif (body.From && body.Body !== undefined) {\n  source = 'twilio';\n  fromPhone = body.From.replace(/^whatsapp:/i, '').replace(/[\\s\\-().]/g, '');\n  messageBody = String(body.Body || '').trim();\n}\nelse if (body.entry && Array.isArray(body.entry)) {\n  source = 'meta';\n  try {\n    const msg = body.entry[0].changes[0].value.messages[0];\n    fromPhone = '+' + msg.from.replace(/^\\+/, '');\n    messageBody = msg.text?.body || '';\n  } catch (e) {\n    return [{ json: { _skip: true, reason: 'Not a message event (Meta webhook ping or status update)', source: 'meta' } }];\n  }\n}\nelse {\n  return [{ json: { _skip: true, reason: 'Unrecognised webhook format', rawBody: JSON.stringify(body).substr(0, 200) } }];\n}\n\nif (!fromPhone || !fromPhone.startsWith('+')) {\n  return [{ json: { _skip: true, reason: 'Could not extract valid phone from webhook', rawFrom: fromPhone } }];\n}\n\nconst lowerMsg = messageBody.toLowerCase();\nlet classification = 'responded';\n\nconst confirmedKeywords = ['yes', 'confirm', 'confirmed', 'will come', 'coming', 'ok', 'okay', 'sure', 'yep', 'yup', 'absolutely', 'definitely', \"i'll be there\", 'see you', 'good'];\nconst cancelledKeywords = ['no', 'cancel', 'cancelled', 'reschedule', \"can't make it\", 'cannot come', 'not coming', 'postpone', 'change date'];\nconst bookKeywords = ['book', 'schedule', 'appointment', 'want to book', 'fix appointment'];\n\nif (lowerMsg === 'help' || lowerMsg.includes('help') || ['not well','pain','emergency','urgent','need doctor','call me'].some(k => lowerMsg.includes(k))) {\n  classification = 'help';\n} else if (bookKeywords.some(k => lowerMsg.includes(k))) {\n  classification = 'book';\n} else if (confirmedKeywords.some(k => lowerMsg.includes(k))) {\n  classification = 'confirmed';\n} else if (cancelledKeywords.some(k => lowerMsg.includes(k))) {\n  classification = 'cancelled';\n}\n\nreturn [{\n  json: {\n    _from_phone: fromPhone,\n    _message_body: messageBody,\n    _classification: classification,\n    _source: source,\n    _received_at: new Date().toISOString()\n  }\n}];"
+        "jsCode": "// Meta Cloud API webhook format only\nconst body = $input.first().json.body || $input.first().json;\n\nlet fromPhone = '';\nlet messageBody = '';\n\nif (body.entry && Array.isArray(body.entry)) {\n  try {\n    const msg = body.entry[0].changes[0].value.messages[0];\n    // Meta sends phone without leading + — normalise to plain E.164 digits\n    fromPhone = String(msg.from || '').replace(/^\\+/, '').replace(/[\\s\\-().]/g, '');\n    messageBody = msg.text?.body || '';\n  } catch (e) {\n    return [{ json: { _skip: true, reason: 'Not a message event (Meta webhook ping or status update)' } }];\n  }\n} else {\n  return [{ json: { _skip: true, reason: 'Unrecognised webhook format', rawBody: JSON.stringify(body).substr(0, 200) } }];\n}\n\nif (!fromPhone || fromPhone.length < 7) {\n  return [{ json: { _skip: true, reason: 'Could not extract valid phone from webhook', rawFrom: fromPhone } }];\n}\n\nconst lowerMsg = messageBody.toLowerCase();\nlet classification = 'responded';\n\nconst confirmedKeywords = ['yes', 'confirm', 'confirmed', 'will come', 'coming', 'ok', 'okay', 'sure', 'yep', 'yup', 'absolutely', 'definitely', \"i'll be there\", 'see you', 'good'];\nconst cancelledKeywords = ['no', 'cancel', 'cancelled', 'reschedule', \"can't make it\", 'cannot come', 'not coming', 'postpone', 'change date'];\nconst bookKeywords = ['book', 'schedule', 'appointment', 'want to book', 'fix appointment'];\n\nif (lowerMsg === 'help' || ['not well','pain','emergency','urgent','need doctor','call me'].some(k => lowerMsg.includes(k))) {\n  classification = 'help';\n} else if (bookKeywords.some(k => lowerMsg.includes(k))) {\n  classification = 'book';\n} else if (confirmedKeywords.some(k => lowerMsg.includes(k))) {\n  classification = 'confirmed';\n} else if (cancelledKeywords.some(k => lowerMsg.includes(k))) {\n  classification = 'cancelled';\n}\n\nreturn [{\n  json: {\n    _from_phone: fromPhone,\n    _message_body: messageBody,\n    _classification: classification,\n    _received_at: new Date().toISOString()\n  }\n}];"
       },
       "id": "66666666-6666-6666-6666-000000000003",
       "name": "Parse and Classify Message",
@@ -74,7 +110,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=SELECT * FROM public.patients WHERE phone = '{{ $('Parse and Classify Message').item.json._from_phone }}' LIMIT 1",
+        "query": "=SELECT * FROM public.patients WHERE phone = '+{{ $('Parse and Classify Message').item.json._from_phone }}' LIMIT 1",
         "options": {}
       },
       "id": "66666666-6666-6666-6666-000000000006",
@@ -91,7 +127,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Determine if patient was found and prepare auto-reply\nconst patientRows = $input.all();\nconst parsed = $('Parse and Classify Message').first().json;\nconst inboundPhone = parsed._from_phone;\nconst classification = parsed._classification;\nconst messageBody = parsed._message_body;\nconst receivedAt = parsed._received_at;\n\nconst matchedPatient = patientRows.length > 0 && patientRows[0].json.id ? patientRows[0].json : null;\n\nif (!matchedPatient) {\n  return [{\n    json: {\n      _found: false,\n      _from_phone: inboundPhone,\n      _classification: classification,\n      _message_body: messageBody,\n      _received_at: receivedAt,\n      _log_message: `Unrecognised sender: ${inboundPhone}`\n    }\n  }];\n}\n\nconst patientName = matchedPatient.name || 'there';\nlet autoReply = null;\n\nif (classification === 'confirmed') {\n  autoReply = `Thank you, ${patientName}! ✅ We've noted that you'll be coming in for your appointment. See you then!\\n\\nIf anything changes, feel free to message us.`;\n} else if (classification === 'cancelled') {\n  autoReply = `Hi ${patientName}, no problem at all! 😊 We've noted that you'd like to reschedule. A member of our team will reach out to you shortly to arrange a new time.\\n\\nThank you for letting us know!`;\n} else if (classification === 'help') {\n  autoReply = `Hi ${patientName}, we're sorry to hear that. 🙏 Please stay calm — we've flagged this for our team and someone will reach out to you very soon. If this is an emergency, please call your nearest hospital.`;\n}\n\nreturn [{\n  json: {\n    _found: true,\n    _patient_id: matchedPatient.id,\n    _patient_name: patientName,\n    _from_phone: inboundPhone,\n    _to_phone: 'whatsapp:' + inboundPhone,\n    _classification: classification,\n    _message_body: messageBody,\n    _received_at: receivedAt,\n    _auto_reply: autoReply,\n    _should_reply: autoReply !== null\n  }\n}];"
+        "jsCode": "const patientRows = $input.all();\nconst parsed = $('Parse and Classify Message').first().json;\nconst inboundPhone = parsed._from_phone;\nconst classification = parsed._classification;\nconst messageBody = parsed._message_body;\nconst receivedAt = parsed._received_at;\n\nconst matchedPatient = patientRows.length > 0 && patientRows[0].json.id ? patientRows[0].json : null;\n\nif (!matchedPatient) {\n  return [{\n    json: {\n      _found: false,\n      _from_phone: inboundPhone,\n      _classification: classification,\n      _message_body: messageBody,\n      _received_at: receivedAt,\n      _log_message: `Unrecognised sender: ${inboundPhone}`\n    }\n  }];\n}\n\nconst patientName = matchedPatient.name || 'there';\nlet autoReply = null;\n\nif (classification === 'confirmed') {\n  autoReply = `Thank you, ${patientName}! ✅ We've noted that you'll be coming in for your appointment. See you then!\\n\\nIf anything changes, feel free to message us.`;\n} else if (classification === 'cancelled') {\n  autoReply = `Hi ${patientName}, no problem at all! 😊 We've noted that you'd like to reschedule. A member of our team will reach out to you shortly to arrange a new time.\\n\\nThank you for letting us know!`;\n} else if (classification === 'help') {\n  autoReply = `Hi ${patientName}, we're sorry to hear that. 🙏 Please stay calm — we've flagged this for our team and someone will reach out to you very soon. If this is an emergency, please call your nearest hospital.`;\n}\n\nreturn [{\n  json: {\n    _found: true,\n    _patient_id: matchedPatient.id,\n    _patient_name: patientName,\n    _from_phone: inboundPhone,\n    _classification: classification,\n    _message_body: messageBody,\n    _received_at: receivedAt,\n    _auto_reply: autoReply,\n    _should_reply: autoReply !== null\n  }\n}];"
       },
       "id": "66666666-6666-6666-6666-000000000007",
       "name": "Prepare Reply",
@@ -164,18 +200,13 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ 'https://api.twilio.com/2010-04-01/Accounts/' + $env.TWILIO_ACCOUNT_SID + '/Messages.json' }}",
+        "url": "={{ 'https://graph.facebook.com/v19.0/' + $env.WA_PHONE_NUMBER_ID + '/messages' }}",
         "authentication": "genericCredentialType",
-        "genericAuthType": "httpBasicAuth",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": false,
         "sendBody": true,
-        "contentType": "form-urlencoded",
-        "bodyParameters": {
-          "parameters": [
-            { "name": "To", "value": "={{ $('Prepare Reply').item.json._to_phone }}" },
-            { "name": "From", "value": "={{ $env.TWILIO_WHATSAPP_NUMBER }}" },
-            { "name": "Body", "value": "={{ $('Prepare Reply').item.json._auto_reply }}" }
-          ]
-        },
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $('Prepare Reply').item.json._from_phone, type: 'text', text: { body: $('Prepare Reply').item.json._auto_reply } }) }}",
         "options": {}
       },
       "id": "66666666-6666-6666-6666-000000000011",
@@ -184,9 +215,9 @@
       "typeVersion": 4.2,
       "position": [2000, 380],
       "credentials": {
-        "httpBasicAuth": {
-          "id": "REPLACE_WITH_TWILIO_CREDENTIAL_ID",
-          "name": "Twilio Basic Auth"
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_WA_CREDENTIAL_ID",
+          "name": "WhatsApp Business API"
         }
       },
       "onError": "continueRegularOutput"
@@ -267,7 +298,13 @@
     }
   ],
   "connections": {
-    "Webhook — Inbound WhatsApp": {
+    "Webhook — Meta Verification (GET)": {
+      "main": [[{ "node": "Verify Token and Return Challenge", "type": "main", "index": 0 }]]
+    },
+    "Verify Token and Return Challenge": {
+      "main": [[{ "node": "Respond with Challenge", "type": "main", "index": 0 }]]
+    },
+    "Webhook — Inbound WhatsApp (POST)": {
       "main": [[{ "node": "Parse and Classify Message", "type": "main", "index": 0 }]]
     },
     "Parse and Classify Message": {

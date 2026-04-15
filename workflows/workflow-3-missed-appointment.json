@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Workflow 3: Missed Appointment Recovery\n\n**Trigger:** Daily at 10:00 AM\n\n**Logic (from Supabase):**\n- Day +1: Empathetic recovery message\n- Day +3: Second nudge referencing the doctor\n- Day +7: Marks patient status as `missed` in Supabase (stops messaging)\n\nReads ONLY from Supabase `public.patients`.\n\n**Before activating:**\n1. Set credential on all Postgres nodes → Supabase DB\n2. Set credential on HTTP nodes → Twilio Basic Auth",
+        "content": "## Workflow 3: Missed Appointment Recovery\n\n**Trigger:** Daily at 10:00 AM\n\n**Logic (from Supabase):**\n- Day +1: Empathetic recovery message (template: patient_missed_recovery)\n- Day +3: Second nudge referencing the doctor (template: patient_missed_nudge)\n- Day +7: Marks patient status as `missed` in Supabase (stops messaging)\n\nReads ONLY from Supabase `public.patients`.\n\n**Before activating:**\n1. Set credential on all Postgres nodes → Supabase DB\n2. Set credential on HTTP nodes → WhatsApp Business API (HTTP Header Auth)\n3. Ensure both `patient_missed_recovery` and `patient_missed_nudge` templates are approved",
         "height": 260,
         "width": 400
       },
@@ -50,7 +50,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Filter patients with missed appointments and calculate days overdue\nconst items = $input.all();\nconst tz = $env.TIMEZONE || 'Asia/Kolkata';\nconst maxMessages = parseInt($env.MAX_MESSAGE_COUNT) || 5;\nconst minHours = parseInt($env.MIN_HOURS_BETWEEN_MESSAGES) || 23;\n\nconst now = new Date();\nconst todayStr = now.toLocaleDateString('en-CA', { timeZone: tz });\nconst todayDate = new Date(todayStr);\n\nconst actionable = [];\n\nfor (const item of items) {\n  const p = item.json;\n\n  if (!p.follow_up_date) continue;\n\n  const followUpDate = new Date(p.follow_up_date);\n  if (isNaN(followUpDate.getTime())) continue;\n\n  if (followUpDate >= todayDate) continue;\n\n  const status = p.status || 'pending';\n  if (status === 'completed' || status === 'inactive') continue;\n\n  const diffMs = todayDate - followUpDate;\n  const daysOverdue = Math.floor(diffMs / (1000 * 60 * 60 * 24));\n\n  const hasValidPhone = p.phone && /^\\+[1-9]\\d{6,14}$/.test(p.phone);\n  const msgCount = parseInt(p.message_count) || 0;\n\n  let recentlyMessaged = false;\n  if (p.last_message_sent) {\n    const lastSent = new Date(p.last_message_sent);\n    const hoursSince = (now - lastSent) / (1000 * 60 * 60);\n    recentlyMessaged = hoursSince < minHours;\n  }\n\n  const doctorName = p.doctor_name || $env.DEFAULT_DOCTOR_NAME || 'your doctor';\n  const clinicName = p.clinic_name || $env.DEFAULT_CLINIC_NAME || 'our clinic';\n  const patientName = p.name || 'there';\n  const toPhone = hasValidPhone ? 'whatsapp:' + p.phone : null;\n\n  if (daysOverdue >= 7) {\n    actionable.push({\n      json: {\n        ...p,\n        _action: 'mark_missed',\n        _days_overdue: daysOverdue,\n        _workflow: 'workflow-3-missed-appointment'\n      }\n    });\n  } else if (daysOverdue === 3 && hasValidPhone && msgCount < maxMessages && !recentlyMessaged) {\n    actionable.push({\n      json: {\n        ...p,\n        _action: 'send_nudge',\n        _days_overdue: daysOverdue,\n        _workflow: 'workflow-3-missed-appointment',\n        _message_type: 'missed_appointment_nudge',\n        _to_phone: toPhone,\n        _message_body: `Hi ${patientName}, ${doctorName} wanted us to check in on you. It's been a few days since your scheduled follow-up at ${clinicName}.\\n\\nSkipping follow-up care can sometimes delay recovery. If you'd like to book a new appointment, just reply *BOOK* and we'll arrange it for you. 💙`\n      }\n    });\n  } else if (daysOverdue === 1 && hasValidPhone && msgCount < maxMessages && !recentlyMessaged) {\n    actionable.push({\n      json: {\n        ...p,\n        _action: 'send_recovery',\n        _days_overdue: daysOverdue,\n        _workflow: 'workflow-3-missed-appointment',\n        _message_type: 'missed_appointment_recovery',\n        _to_phone: toPhone,\n        _message_body: `Hi ${patientName}, we noticed you missed your follow-up appointment with ${doctorName} yesterday. We completely understand that things come up! 😊\\n\\nYour health is important to us. Would you like to reschedule? Reply *RESCHEDULE* and our team will get back to you shortly.`\n      }\n    });\n  }\n}\n\nif (actionable.length === 0) {\n  return [{ json: { _skip: true, reason: 'No missed appointments to process', todayStr } }];\n}\n\nreturn actionable;"
+        "jsCode": "// Filter patients with missed appointments and calculate days overdue\nconst items = $input.all();\nconst tz = $env.TIMEZONE || 'Asia/Kolkata';\nconst maxMessages = parseInt($env.MAX_MESSAGE_COUNT) || 5;\nconst minHours = parseInt($env.MIN_HOURS_BETWEEN_MESSAGES) || 23;\n\nconst now = new Date();\nconst todayStr = now.toLocaleDateString('en-CA', { timeZone: tz });\nconst todayDate = new Date(todayStr);\n\nconst actionable = [];\n\nfor (const item of items) {\n  const p = item.json;\n\n  if (!p.follow_up_date) continue;\n\n  const followUpDate = new Date(p.follow_up_date);\n  if (isNaN(followUpDate.getTime())) continue;\n\n  if (followUpDate >= todayDate) continue;\n\n  const status = p.status || 'pending';\n  if (status === 'completed' || status === 'inactive') continue;\n\n  const diffMs = todayDate - followUpDate;\n  const daysOverdue = Math.floor(diffMs / (1000 * 60 * 60 * 24));\n\n  const hasValidPhone = p.phone && /^\\+[1-9]\\d{6,14}$/.test(p.phone);\n  const msgCount = parseInt(p.message_count) || 0;\n\n  let recentlyMessaged = false;\n  if (p.last_message_sent) {\n    const lastSent = new Date(p.last_message_sent);\n    const hoursSince = (now - lastSent) / (1000 * 60 * 60);\n    recentlyMessaged = hoursSince < minHours;\n  }\n\n  const doctorName = p.doctor_name || $env.DEFAULT_DOCTOR_NAME || 'your doctor';\n  const clinicName = p.clinic_name || $env.DEFAULT_CLINIC_NAME || 'our clinic';\n  const patientName = p.name || 'there';\n\n  if (daysOverdue >= 7) {\n    actionable.push({\n      json: {\n        ...p,\n        _action: 'mark_missed',\n        _days_overdue: daysOverdue,\n        _workflow: 'workflow-3-missed-appointment'\n      }\n    });\n  } else if (daysOverdue === 3 && hasValidPhone && msgCount < maxMessages && !recentlyMessaged) {\n    actionable.push({\n      json: {\n        ...p,\n        _action: 'send_nudge',\n        _days_overdue: daysOverdue,\n        _workflow: 'workflow-3-missed-appointment',\n        _message_type: 'missed_appointment_nudge',\n        _to_phone: p.phone.replace(/^\\+/, ''),\n        _name: patientName,\n        _doctor_name: doctorName,\n        _clinic_name: clinicName\n      }\n    });\n  } else if (daysOverdue === 1 && hasValidPhone && msgCount < maxMessages && !recentlyMessaged) {\n    actionable.push({\n      json: {\n        ...p,\n        _action: 'send_recovery',\n        _days_overdue: daysOverdue,\n        _workflow: 'workflow-3-missed-appointment',\n        _message_type: 'missed_appointment_recovery',\n        _to_phone: p.phone.replace(/^\\+/, ''),\n        _name: patientName,\n        _doctor_name: doctorName\n      }\n    });\n  }\n}\n\nif (actionable.length === 0) {\n  return [{ json: { _skip: true, reason: 'No missed appointments to process', todayStr } }];\n}\n\nreturn actionable;"
       },
       "id": "33333333-3333-3333-3333-000000000004",
       "name": "Filter Missed Appointments",
@@ -163,18 +163,12 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ 'https://api.twilio.com/2010-04-01/Accounts/' + $env.TWILIO_ACCOUNT_SID + '/Messages.json' }}",
+        "url": "={{ 'https://graph.facebook.com/v19.0/' + $env.WA_PHONE_NUMBER_ID + '/messages' }}",
         "authentication": "genericCredentialType",
-        "genericAuthType": "httpBasicAuth",
+        "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
-        "contentType": "form-urlencoded",
-        "bodyParameters": {
-          "parameters": [
-            { "name": "To", "value": "={{ $json._to_phone }}" },
-            { "name": "From", "value": "={{ $env.TWILIO_WHATSAPP_NUMBER }}" },
-            { "name": "Body", "value": "={{ $json._message_body }}" }
-          ]
-        },
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $json._to_phone, type: 'template', template: { name: 'patient_missed_recovery', language: { code: $env.WA_LANGUAGE_CODE || 'en' }, components: [{ type: 'body', parameters: [ { type: 'text', text: $json._name }, { type: 'text', text: $json._doctor_name } ] }] } }) }}",
         "options": { "retry": { "maxTries": 3, "waitBetweenTries": 30000 } }
       },
       "id": "33333333-3333-3333-3333-000000000008",
@@ -183,9 +177,9 @@
       "typeVersion": 4.2,
       "position": [1340, 300],
       "credentials": {
-        "httpBasicAuth": {
-          "id": "REPLACE_WITH_TWILIO_CREDENTIAL_ID",
-          "name": "Twilio Basic Auth"
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_WA_CREDENTIAL_ID",
+          "name": "WhatsApp Business API"
         }
       },
       "onError": "continueRegularOutput"
@@ -193,18 +187,12 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ 'https://api.twilio.com/2010-04-01/Accounts/' + $env.TWILIO_ACCOUNT_SID + '/Messages.json' }}",
+        "url": "={{ 'https://graph.facebook.com/v19.0/' + $env.WA_PHONE_NUMBER_ID + '/messages' }}",
         "authentication": "genericCredentialType",
-        "genericAuthType": "httpBasicAuth",
+        "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
-        "contentType": "form-urlencoded",
-        "bodyParameters": {
-          "parameters": [
-            { "name": "To", "value": "={{ $json._to_phone }}" },
-            { "name": "From", "value": "={{ $env.TWILIO_WHATSAPP_NUMBER }}" },
-            { "name": "Body", "value": "={{ $json._message_body }}" }
-          ]
-        },
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $json._to_phone, type: 'template', template: { name: 'patient_missed_nudge', language: { code: $env.WA_LANGUAGE_CODE || 'en' }, components: [{ type: 'body', parameters: [ { type: 'text', text: $json._name }, { type: 'text', text: $json._doctor_name }, { type: 'text', text: $json._clinic_name } ] }] } }) }}",
         "options": { "retry": { "maxTries": 3, "waitBetweenTries": 30000 } }
       },
       "id": "33333333-3333-3333-3333-000000000009",
@@ -213,9 +201,9 @@
       "typeVersion": 4.2,
       "position": [1340, 460],
       "credentials": {
-        "httpBasicAuth": {
-          "id": "REPLACE_WITH_TWILIO_CREDENTIAL_ID",
-          "name": "Twilio Basic Auth"
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_WA_CREDENTIAL_ID",
+          "name": "WhatsApp Business API"
         }
       },
       "onError": "continueRegularOutput"

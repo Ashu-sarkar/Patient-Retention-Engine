@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Workflow 2: Same-Day Reminder\n\n**Trigger:** Daily at 8:00 AM\n\n**Logic:** Reads from Supabase. Finds all patients whose `follow_up_date` is today, `status = pending`, and `message_count < 5`. Sends a morning reminder and updates Supabase.\n\n**Data source:** Supabase `public.patients` — populated by WF11 (QR form intake)\n\n**Before activating:**\n1. Set credential on all Postgres nodes → Supabase DB\n2. Set credential on Send node → Twilio Basic Auth",
+        "content": "## Workflow 2: Same-Day Reminder\n\n**Trigger:** Daily at 8:00 AM\n\n**Logic:** Reads from Supabase. Finds all patients whose `follow_up_date` is today, `status = pending`, and `message_count < 5`. Sends a morning reminder via Meta Cloud API (template: patient_sameday_reminder) and updates Supabase.\n\n**Data source:** Supabase `public.patients` — populated by WF11 (QR form intake)\n\n**Before activating:**\n1. Set credential on all Postgres nodes → Supabase DB\n2. Set credential on Send node → WhatsApp Business API (HTTP Header Auth)\n3. Ensure the `patient_sameday_reminder` template is approved in Meta Business Manager",
         "height": 220,
         "width": 380
       },
@@ -50,7 +50,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Filter patients whose follow-up is today and haven't been messaged recently\nconst items = $input.all();\nconst tz = $env.TIMEZONE || 'Asia/Kolkata';\nconst maxMessages = parseInt($env.MAX_MESSAGE_COUNT) || 5;\nconst minHours = parseInt($env.MIN_HOURS_BETWEEN_MESSAGES) || 23;\n\nconst now = new Date();\nconst todayStr = now.toLocaleDateString('en-CA', { timeZone: tz });\n\nconst filtered = items.filter(item => {\n  const p = item.json;\n\n  const fuDate = p.follow_up_date ? new Date(p.follow_up_date).toLocaleDateString('en-CA', { timeZone: tz }) : null;\n  if (!fuDate || fuDate !== todayStr) return false;\n\n  if (p.status && p.status !== 'pending') return false;\n\n  const msgCount = parseInt(p.message_count) || 0;\n  if (msgCount >= maxMessages) return false;\n\n  if (!p.phone || !/^\\+[1-9]\\d{6,14}$/.test(p.phone)) return false;\n\n  if (p.last_message_sent) {\n    const lastSent = new Date(p.last_message_sent);\n    const hoursSince = (now - lastSent) / (1000 * 60 * 60);\n    if (hoursSince < minHours) return false;\n  }\n\n  return true;\n});\n\nif (filtered.length === 0) {\n  return [{ json: { _skip: true, reason: 'No same-day appointments today', todayStr } }];\n}\n\nreturn filtered.map(item => ({\n  json: {\n    ...item.json,\n    _workflow: 'workflow-2-sameday-reminder',\n    _message_type: 'same_day_reminder',\n    _to_phone: 'whatsapp:' + item.json.phone,\n    _message_body: `Good morning ${item.json.name || 'there'}! 🌅 This is a reminder that your appointment with ${item.json.doctor_name || 'your doctor'} is *today*. Please arrive on time and bring any documents or test reports from your previous visit.\\n\\nSee you soon at ${item.json.clinic_name || ($env.DEFAULT_CLINIC_NAME || 'our clinic')}!`\n  }\n}));"
+        "jsCode": "// Filter patients whose follow-up is today and haven't been messaged recently\nconst items = $input.all();\nconst tz = $env.TIMEZONE || 'Asia/Kolkata';\nconst maxMessages = parseInt($env.MAX_MESSAGE_COUNT) || 5;\nconst minHours = parseInt($env.MIN_HOURS_BETWEEN_MESSAGES) || 23;\n\nconst now = new Date();\nconst todayStr = now.toLocaleDateString('en-CA', { timeZone: tz });\n\nconst filtered = items.filter(item => {\n  const p = item.json;\n\n  const fuDate = p.follow_up_date ? new Date(p.follow_up_date).toLocaleDateString('en-CA', { timeZone: tz }) : null;\n  if (!fuDate || fuDate !== todayStr) return false;\n\n  if (p.status && p.status !== 'pending') return false;\n\n  const msgCount = parseInt(p.message_count) || 0;\n  if (msgCount >= maxMessages) return false;\n\n  if (!p.phone || !/^\\+[1-9]\\d{6,14}$/.test(p.phone)) return false;\n\n  if (p.last_message_sent) {\n    const lastSent = new Date(p.last_message_sent);\n    const hoursSince = (now - lastSent) / (1000 * 60 * 60);\n    if (hoursSince < minHours) return false;\n  }\n\n  return true;\n});\n\nif (filtered.length === 0) {\n  return [{ json: { _skip: true, reason: 'No same-day appointments today', todayStr } }];\n}\n\nreturn filtered.map(item => ({\n  json: {\n    ...item.json,\n    _workflow: 'workflow-2-sameday-reminder',\n    _message_type: 'same_day_reminder',\n    _to_phone: item.json.phone.replace(/^\\+/, ''),\n    _name: item.json.name || 'there',\n    _doctor_name: item.json.doctor_name || $env.DEFAULT_DOCTOR_NAME || 'your doctor',\n    _clinic_name: item.json.clinic_name || $env.DEFAULT_CLINIC_NAME || 'our clinic'\n  }\n}));"
       },
       "id": "22222222-2222-2222-2222-000000000004",
       "name": "Filter Today's Appointments",
@@ -83,18 +83,12 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ 'https://api.twilio.com/2010-04-01/Accounts/' + $env.TWILIO_ACCOUNT_SID + '/Messages.json' }}",
+        "url": "={{ 'https://graph.facebook.com/v19.0/' + $env.WA_PHONE_NUMBER_ID + '/messages' }}",
         "authentication": "genericCredentialType",
-        "genericAuthType": "httpBasicAuth",
+        "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
-        "contentType": "form-urlencoded",
-        "bodyParameters": {
-          "parameters": [
-            { "name": "To", "value": "={{ $json._to_phone }}" },
-            { "name": "From", "value": "={{ $env.TWILIO_WHATSAPP_NUMBER }}" },
-            { "name": "Body", "value": "={{ $json._message_body }}" }
-          ]
-        },
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $json._to_phone, type: 'template', template: { name: 'patient_sameday_reminder', language: { code: $env.WA_LANGUAGE_CODE || 'en' }, components: [{ type: 'body', parameters: [ { type: 'text', text: $json._name }, { type: 'text', text: $json._doctor_name }, { type: 'text', text: $json._clinic_name } ] }] } }) }}",
         "options": { "retry": { "maxTries": 3, "waitBetweenTries": 30000 } }
       },
       "id": "22222222-2222-2222-2222-000000000006",
@@ -103,9 +97,9 @@
       "typeVersion": 4.2,
       "position": [1120, 280],
       "credentials": {
-        "httpBasicAuth": {
-          "id": "REPLACE_WITH_TWILIO_CREDENTIAL_ID",
-          "name": "Twilio Basic Auth"
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_WA_CREDENTIAL_ID",
+          "name": "WhatsApp Business API"
         }
       },
       "onError": "continueErrorOutput"
@@ -144,7 +138,7 @@
             "message_sent": "={{ $('Filter Today\\'s Appointments').item.json._message_body }}",
             "sent_at": "={{ new Date().toISOString() }}",
             "delivery_status": "sent",
-            "twilio_sid": "={{ $json.sid || '' }}"
+            "wa_message_id": "={{ $json.messages?.[0]?.id || '' }}"
           },
           "matchingColumns": [],
           "schema": []

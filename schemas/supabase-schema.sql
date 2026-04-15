@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS public.message_logs (
   delivery_status TEXT        NOT NULL DEFAULT 'sent'
                   CHECK (delivery_status IN ('sent','failed','delivered','read')),
   error_message   TEXT,
-  twilio_sid      TEXT
+  wa_message_id   TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_message_logs_patient_id ON public.message_logs (patient_id);
@@ -141,3 +141,20 @@ ALTER TABLE public.system_logs  ENABLE ROW LEVEL SECURITY;
 -- SELECT * FROM public.system_logs ORDER BY timestamp DESC LIMIT 20;
 -- SELECT * FROM public.message_logs WHERE patient_id = '<uuid>' ORDER BY sent_at DESC;
 -- SELECT * FROM public.patients WHERE status = 'pending' AND follow_up_date = CURRENT_DATE + 1;
+
+-- =============================================================================
+-- Migration: Twilio → WhatsApp Business API
+-- Run this in Supabase SQL Editor if the table was created before this migration.
+-- Safe to run even if already applied (IF EXISTS guard).
+-- =============================================================================
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name   = 'message_logs'
+      AND column_name  = 'twilio_sid'
+  ) THEN
+    ALTER TABLE public.message_logs RENAME COLUMN twilio_sid TO wa_message_id;
+  END IF;
+END $$;

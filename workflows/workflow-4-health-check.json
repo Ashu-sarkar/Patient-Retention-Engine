@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Workflow 4: Post-Visit Health Check\n\n**Trigger:** Daily at 10:15 AM\n\n**Logic:** Reads from Supabase. Finds patients who visited 2–3 days ago and haven't received a health check message. Sends a caring check-in with structured reply options (GOOD / OKAY / HELP). Sets `health_check_sent = TRUE` after sending.\n\n**Data source:** Supabase `public.patients`\n\n**Before activating:**\n1. Set credential on all Postgres nodes → Supabase DB\n2. Set credential on HTTP node → Twilio Basic Auth",
+        "content": "## Workflow 4: Post-Visit Health Check\n\n**Trigger:** Daily at 10:15 AM\n\n**Logic:** Reads from Supabase. Finds patients who visited 2–3 days ago and haven't received a health check message. Sends a caring check-in via Meta Cloud API (template: patient_health_check). Sets `health_check_sent = TRUE` after sending.\n\n**Data source:** Supabase `public.patients`\n\n**Before activating:**\n1. Set credential on all Postgres nodes → Supabase DB\n2. Set credential on HTTP node → WhatsApp Business API (HTTP Header Auth)\n3. Ensure the `patient_health_check` template is approved in Meta Business Manager",
         "height": 240,
         "width": 400
       },
@@ -50,7 +50,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Filter patients who visited 2-3 days ago and haven't received health check\nconst items = $input.all();\nconst tz = $env.TIMEZONE || 'Asia/Kolkata';\n\nconst now = new Date();\nconst todayStr = now.toLocaleDateString('en-CA', { timeZone: tz });\nconst todayDate = new Date(todayStr);\n\nconst filtered = items.filter(item => {\n  const p = item.json;\n\n  if (!p.visit_date) return false;\n\n  const visitDate = new Date(p.visit_date);\n  if (isNaN(visitDate.getTime())) return false;\n\n  const diffMs = todayDate - visitDate;\n  const daysSinceVisit = Math.floor(diffMs / (1000 * 60 * 60 * 24));\n\n  if (daysSinceVisit < 2 || daysSinceVisit > 3) return false;\n\n  // health_check_sent comes as boolean from Supabase\n  if (p.health_check_sent === true) return false;\n\n  if (p.status === 'inactive') return false;\n\n  if (!p.phone || !/^\\+[1-9]\\d{6,14}$/.test(p.phone)) return false;\n\n  return true;\n});\n\nif (filtered.length === 0) {\n  return [{ json: { _skip: true, reason: 'No patients due for health check', todayStr } }];\n}\n\nreturn filtered.map(item => ({\n  json: {\n    ...item.json,\n    _workflow: 'workflow-4-health-check',\n    _message_type: 'health_check',\n    _to_phone: 'whatsapp:' + item.json.phone,\n    _message_body: `Hi ${item.json.name || 'there'}! 😊 Hope you're feeling better after your visit with ${item.json.doctor_name || ($env.DEFAULT_DOCTOR_NAME || 'your doctor')}.\\n\\nHow are you doing today? Reply with:\\n*GOOD* — feeling well\\n*OKAY* — some discomfort\\n*HELP* — need to speak with the doctor\\n\\nWe're here if you need anything!`\n  }\n}));"
+        "jsCode": "// Filter patients who visited 2-3 days ago and haven't received health check\nconst items = $input.all();\nconst tz = $env.TIMEZONE || 'Asia/Kolkata';\n\nconst now = new Date();\nconst todayStr = now.toLocaleDateString('en-CA', { timeZone: tz });\nconst todayDate = new Date(todayStr);\n\nconst filtered = items.filter(item => {\n  const p = item.json;\n\n  if (!p.visit_date) return false;\n\n  const visitDate = new Date(p.visit_date);\n  if (isNaN(visitDate.getTime())) return false;\n\n  const diffMs = todayDate - visitDate;\n  const daysSinceVisit = Math.floor(diffMs / (1000 * 60 * 60 * 24));\n\n  if (daysSinceVisit < 2 || daysSinceVisit > 3) return false;\n\n  // health_check_sent comes as boolean from Supabase\n  if (p.health_check_sent === true) return false;\n\n  if (p.status === 'inactive') return false;\n\n  if (!p.phone || !/^\\+[1-9]\\d{6,14}$/.test(p.phone)) return false;\n\n  return true;\n});\n\nif (filtered.length === 0) {\n  return [{ json: { _skip: true, reason: 'No patients due for health check', todayStr } }];\n}\n\nreturn filtered.map(item => ({\n  json: {\n    ...item.json,\n    _workflow: 'workflow-4-health-check',\n    _message_type: 'health_check',\n    _to_phone: item.json.phone.replace(/^\\+/, ''),\n    _name: item.json.name || 'there',\n    _doctor_name: item.json.doctor_name || $env.DEFAULT_DOCTOR_NAME || 'your doctor'\n  }\n}));"
       },
       "id": "44444444-4444-4444-4444-000000000004",
       "name": "Filter Health Check Due",
@@ -83,18 +83,12 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ 'https://api.twilio.com/2010-04-01/Accounts/' + $env.TWILIO_ACCOUNT_SID + '/Messages.json' }}",
+        "url": "={{ 'https://graph.facebook.com/v19.0/' + $env.WA_PHONE_NUMBER_ID + '/messages' }}",
         "authentication": "genericCredentialType",
-        "genericAuthType": "httpBasicAuth",
+        "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
-        "contentType": "form-urlencoded",
-        "bodyParameters": {
-          "parameters": [
-            { "name": "To", "value": "={{ $json._to_phone }}" },
-            { "name": "From", "value": "={{ $env.TWILIO_WHATSAPP_NUMBER }}" },
-            { "name": "Body", "value": "={{ $json._message_body }}" }
-          ]
-        },
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $json._to_phone, type: 'template', template: { name: 'patient_health_check', language: { code: $env.WA_LANGUAGE_CODE || 'en' }, components: [{ type: 'body', parameters: [ { type: 'text', text: $json._name }, { type: 'text', text: $json._doctor_name } ] }] } }) }}",
         "options": { "retry": { "maxTries": 3, "waitBetweenTries": 30000 } }
       },
       "id": "44444444-4444-4444-4444-000000000006",
@@ -103,9 +97,9 @@
       "typeVersion": 4.2,
       "position": [1120, 280],
       "credentials": {
-        "httpBasicAuth": {
-          "id": "REPLACE_WITH_TWILIO_CREDENTIAL_ID",
-          "name": "Twilio Basic Auth"
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_WA_CREDENTIAL_ID",
+          "name": "WhatsApp Business API"
         }
       },
       "onError": "continueErrorOutput"
@@ -144,7 +138,7 @@
             "message_sent": "={{ $('Filter Health Check Due').item.json._message_body }}",
             "sent_at": "={{ new Date().toISOString() }}",
             "delivery_status": "sent",
-            "twilio_sid": "={{ $json.sid || '' }}"
+            "wa_message_id": "={{ $json.messages?.[0]?.id || '' }}"
           },
           "matchingColumns": [],
           "schema": []

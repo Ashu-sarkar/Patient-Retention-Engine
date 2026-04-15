@@ -28,14 +28,19 @@ services:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
 
+      # WhatsApp Business API (Meta Cloud API) — available as $env.WA_* inside n8n workflows
+      - WA_PHONE_NUMBER_ID=${WA_PHONE_NUMBER_ID}
+      - WA_ACCESS_TOKEN=${WA_ACCESS_TOKEN}
+      - WA_WEBHOOK_VERIFY_TOKEN=${WA_WEBHOOK_VERIFY_TOKEN}
+      - WA_LANGUAGE_CODE=${WA_LANGUAGE_CODE:-en}
+
       # Application settings — referenced by workflow expressions as $env.VARNAME
-      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
-      - TWILIO_WHATSAPP_NUMBER=${TWILIO_WHATSAPP_NUMBER}
       - TIMEZONE=${TIMEZONE:-Asia/Kolkata}
       - MAX_MESSAGE_COUNT=${MAX_MESSAGE_COUNT:-5}
       - MIN_HOURS_BETWEEN_MESSAGES=${MIN_HOURS_BETWEEN_MESSAGES:-23}
       - DEFAULT_CLINIC_NAME=${DEFAULT_CLINIC_NAME:-Our Clinic}
       - DEFAULT_DOCTOR_NAME=${DEFAULT_DOCTOR_NAME:-Your Doctor}
+      # Plain E.164 digits, e.g. 919876543210
       - ADMIN_WHATSAPP_NUMBER=${ADMIN_WHATSAPP_NUMBER:-}
     env_file:
       - .env

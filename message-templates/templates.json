@@ -10,6 +10,7 @@
       "category": "UTILITY",
       "message": "Hi {{name}}! 👋 Welcome to {{clinic_name}}. We've noted your visit with {{doctor_name}} and will keep you updated on your follow-up appointment. If you have any questions, feel free to reply to this message.",
       "placeholders": ["name", "clinic_name", "doctor_name"],
+      "component_parameters": ["name", "clinic_name", "doctor_name"],
       "notes": "Sent once when a patient is added. Establishes the messaging channel."
     },
     {
@@ -20,6 +21,7 @@
       "category": "UTILITY",
       "message": "Hi {{name}}, just a friendly reminder that your follow-up appointment with {{doctor_name}} at {{clinic_name}} is scheduled for *tomorrow*. We look forward to seeing you! 🏥\n\nReply *YES* to confirm or *RESCHEDULE* if you need to change the date.",
       "placeholders": ["name", "doctor_name", "clinic_name"],
+      "component_parameters": ["name", "doctor_name", "clinic_name"],
       "notes": "Sent the day before the follow-up. Include a clear call-to-action for confirmation."
     },
     {
@@ -30,6 +32,7 @@
       "category": "UTILITY",
       "message": "Good morning {{name}}! 🌅 This is a reminder that your appointment with {{doctor_name}} is *today*. Please arrive on time and bring any documents or test reports from your previous visit.\n\nSee you soon at {{clinic_name}}!",
       "placeholders": ["name", "doctor_name", "clinic_name"],
+      "component_parameters": ["name", "doctor_name", "clinic_name"],
       "notes": "Sent on the morning of the appointment. Keep it warm and practical."
     },
     {
@@ -40,6 +43,7 @@
       "category": "UTILITY",
       "message": "Hi {{name}}, we noticed you missed your follow-up appointment with {{doctor_name}} yesterday. We completely understand that things come up! 😊\n\nYour health is important to us. Would you like to reschedule? Reply *RESCHEDULE* and our team will get back to you shortly.",
       "placeholders": ["name", "doctor_name"],
+      "component_parameters": ["name", "doctor_name"],
       "notes": "Day +1 recovery message. Empathetic tone — avoid making the patient feel blamed."
     },
     {
@@ -50,6 +54,7 @@
       "category": "UTILITY",
       "message": "Hi {{name}}, {{doctor_name}} wanted us to check in on you. It's been a few days since your scheduled follow-up at {{clinic_name}}.\n\nSkipping follow-up care can sometimes delay recovery. If you'd like to book a new appointment, just reply *BOOK* and we'll arrange it for you. 💙",
       "placeholders": ["name", "doctor_name", "clinic_name"],
+      "component_parameters": ["name", "doctor_name", "clinic_name"],
       "notes": "Day +3 nudge. References the doctor to add authority. Explains the clinical reason."
     },
     {
@@ -60,6 +65,7 @@
       "category": "UTILITY",
       "message": "Hi {{name}}! 😊 Hope you're feeling better after your visit with {{doctor_name}}.\n\nHow are you doing today? Reply with:\n*GOOD* — feeling well\n*OKAY* — some discomfort\n*HELP* — need to speak with the doctor\n\nWe're here if you need anything!",
       "placeholders": ["name", "doctor_name"],
+      "component_parameters": ["name", "doctor_name"],
       "notes": "Sent 2–3 days post-visit. Captures response signals. HELP keyword can trigger staff alert in future phase."
     },
     {
@@ -70,6 +76,7 @@
       "category": "MARKETING",
       "message": "Hi {{name}}! 👋 It's been a while since we last saw you at {{clinic_name}}, and we just wanted to check in.\n\nRegular health check-ups with {{doctor_name}} are the best way to stay ahead of any concerns. If you'd like to book an appointment, reply *BOOK* and our team will reach out.\n\nTake care! 💙",
       "placeholders": ["name", "clinic_name", "doctor_name"],
+      "component_parameters": ["name", "clinic_name", "doctor_name"],
       "notes": "Sent once after 30 days of inactivity. Category is MARKETING — requires opt-in for Meta template approval."
     },
     {

@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Workflow 5: Patient Reactivation\n\n**Trigger:** Every Monday at 9:00 AM\n\n**Logic:** Reads from Supabase. Finds patients inactive for 30+ days (last message > 30 days ago or never messaged), who haven't received a reactivation message yet and are not inactive/completed. Sets `reactivation_sent = TRUE` after sending.\n\n**Data source:** Supabase `public.patients`\n\n**Note:** Meta category for this message is MARKETING — ensure opt-in compliance.\n\n**Before activating:**\n1. Set credential on all Postgres nodes → Supabase DB\n2. Set credential on HTTP node → Twilio Basic Auth",
+        "content": "## Workflow 5: Patient Reactivation\n\n**Trigger:** Every Monday at 9:00 AM\n\n**Logic:** Reads from Supabase. Finds patients inactive for 30+ days (last message > 30 days ago or never messaged), who haven't received a reactivation message yet and are not inactive/completed. Sends via Meta Cloud API (template: patient_reactivation). Sets `reactivation_sent = TRUE` after sending.\n\n**Data source:** Supabase `public.patients`\n\n**Note:** Meta category for this message is MARKETING — ensure opt-in compliance and template approval before activating.\n\n**Before activating:**\n1. Set credential on all Postgres nodes → Supabase DB\n2. Set credential on HTTP node → WhatsApp Business API (HTTP Header Auth)\n3. Ensure the `patient_reactivation` template is approved as MARKETING in Meta Business Manager",
         "height": 280,
         "width": 420
       },
@@ -50,7 +50,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Filter patients inactive for 30+ days who haven't been reactivated\nconst items = $input.all();\nconst tz = $env.TIMEZONE || 'Asia/Kolkata';\nconst inactivityDays = 30;\n\nconst now = new Date();\nconst thresholdDate = new Date(now);\nthresholdDate.setDate(thresholdDate.getDate() - inactivityDays);\n\nconst filtered = items.filter(item => {\n  const p = item.json;\n\n  if (p.status === 'inactive' || p.status === 'completed') return false;\n\n  // reactivation_sent is boolean in Supabase\n  if (p.reactivation_sent === true) return false;\n\n  if (!p.phone || !/^\\+[1-9]\\d{6,14}$/.test(p.phone)) return false;\n\n  if (p.last_message_sent) {\n    const lastSent = new Date(p.last_message_sent);\n    if (lastSent > thresholdDate) return false;\n  }\n\n  return true;\n});\n\nif (filtered.length === 0) {\n  return [{ json: { _skip: true, reason: 'No inactive patients to reactivate this week' } }];\n}\n\nreturn filtered.map(item => ({\n  json: {\n    ...item.json,\n    _workflow: 'workflow-5-reactivation',\n    _message_type: 'reactivation',\n    _to_phone: 'whatsapp:' + item.json.phone,\n    _message_body: `Hi ${item.json.name || 'there'}! 👋 It's been a while since we last saw you at ${item.json.clinic_name || ($env.DEFAULT_CLINIC_NAME || 'our clinic')}, and we just wanted to check in.\\n\\nRegular health check-ups with ${item.json.doctor_name || ($env.DEFAULT_DOCTOR_NAME || 'your doctor')} are the best way to stay ahead of any concerns. If you'd like to book an appointment, reply *BOOK* and our team will reach out.\\n\\nTake care! 💙`\n  }\n}));"
+        "jsCode": "// Filter patients inactive for 30+ days who haven't been reactivated\nconst items = $input.all();\nconst tz = $env.TIMEZONE || 'Asia/Kolkata';\nconst inactivityDays = 30;\n\nconst now = new Date();\nconst thresholdDate = new Date(now);\nthresholdDate.setDate(thresholdDate.getDate() - inactivityDays);\n\nconst filtered = items.filter(item => {\n  const p = item.json;\n\n  if (p.status === 'inactive' || p.status === 'completed') return false;\n\n  // reactivation_sent is boolean in Supabase\n  if (p.reactivation_sent === true) return false;\n\n  if (!p.phone || !/^\\+[1-9]\\d{6,14}$/.test(p.phone)) return false;\n\n  if (p.last_message_sent) {\n    const lastSent = new Date(p.last_message_sent);\n    if (lastSent > thresholdDate) return false;\n  }\n\n  return true;\n});\n\nif (filtered.length === 0) {\n  return [{ json: { _skip: true, reason: 'No inactive patients to reactivate this week' } }];\n}\n\nreturn filtered.map(item => ({\n  json: {\n    ...item.json,\n    _workflow: 'workflow-5-reactivation',\n    _message_type: 'reactivation',\n    _to_phone: item.json.phone.replace(/^\\+/, ''),\n    _name: item.json.name || 'there',\n    _clinic_name: item.json.clinic_name || $env.DEFAULT_CLINIC_NAME || 'our clinic',\n    _doctor_name: item.json.doctor_name || $env.DEFAULT_DOCTOR_NAME || 'your doctor'\n  }\n}));"
       },
       "id": "55555555-5555-5555-5555-000000000004",
       "name": "Filter Inactive Patients",
@@ -83,18 +83,12 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ 'https://api.twilio.com/2010-04-01/Accounts/' + $env.TWILIO_ACCOUNT_SID + '/Messages.json' }}",
+        "url": "={{ 'https://graph.facebook.com/v19.0/' + $env.WA_PHONE_NUMBER_ID + '/messages' }}",
         "authentication": "genericCredentialType",
-        "genericAuthType": "httpBasicAuth",
+        "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
-        "contentType": "form-urlencoded",
-        "bodyParameters": {
-          "parameters": [
-            { "name": "To", "value": "={{ $json._to_phone }}" },
-            { "name": "From", "value": "={{ $env.TWILIO_WHATSAPP_NUMBER }}" },
-            { "name": "Body", "value": "={{ $json._message_body }}" }
-          ]
-        },
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $json._to_phone, type: 'template', template: { name: 'patient_reactivation', language: { code: $env.WA_LANGUAGE_CODE || 'en' }, components: [{ type: 'body', parameters: [ { type: 'text', text: $json._name }, { type: 'text', text: $json._clinic_name }, { type: 'text', text: $json._doctor_name } ] }] } }) }}",
         "options": { "retry": { "maxTries": 3, "waitBetweenTries": 30000 } }
       },
       "id": "55555555-5555-5555-5555-000000000006",
@@ -103,9 +97,9 @@
       "typeVersion": 4.2,
       "position": [1120, 280],
       "credentials": {
-        "httpBasicAuth": {
-          "id": "REPLACE_WITH_TWILIO_CREDENTIAL_ID",
-          "name": "Twilio Basic Auth"
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_WA_CREDENTIAL_ID",
+          "name": "WhatsApp Business API"
         }
       },
       "onError": "continueErrorOutput"
@@ -144,7 +138,7 @@
             "message_sent": "={{ $('Filter Inactive Patients').item.json._message_body }}",
             "sent_at": "={{ new Date().toISOString() }}",
             "delivery_status": "sent",
-            "twilio_sid": "={{ $json.sid || '' }}"
+            "wa_message_id": "={{ $json.messages?.[0]?.id || '' }}"
           },
           "matchingColumns": [],
           "schema": []
