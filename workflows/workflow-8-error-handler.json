@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Workflow 8: Global Error Handler\n\n**Trigger:** n8n Error Trigger (fires when ANY other workflow fails)\n\n**How to link this workflow:**\n1. Open each workflow (WF1–WF7, WF9–WF10)\n2. Click the three-dot menu (⋮) → Settings\n3. Under \"Error Workflow\", select \"WF8 — Global Error Handler\"\n4. Save\n\n**What it does:**\n1. Receives error details from n8n\n2. Logs the error to Supabase `system_logs`\n3. Sends an alert to the admin WhatsApp number (if configured)\n\n**Data sink:** Supabase only (NOT Google Sheets)\n\n**Before activating:**\n1. Set credential on Postgres nodes → Supabase DB\n2. Set credential on HTTP Request node → Twilio Basic Auth\n3. This workflow must be activated BEFORE the others",
+        "content": "## Workflow 8: Global Error Handler\n\n**Trigger:** n8n Error Trigger (fires when ANY other workflow fails)\n\n**How to link this workflow:**\n1. Open each workflow (WF1–WF7, WF11)\n2. Click the three-dot menu (⋮) → Settings\n3. Under \"Error Workflow\", select \"WF8 — Global Error Handler\"\n4. Save\n\n**What it does:**\n1. Receives error details from n8n\n2. Logs the error to Supabase `system_logs`\n3. Sends an alert to the admin WhatsApp number (if configured)\n\n**Data sink:** Supabase only\n\n**Before activating:**\n1. Set credential on Postgres nodes → Supabase DB\n2. Set credential on HTTP Request node → Twilio Basic Auth\n3. This workflow must be activated BEFORE all others",
         "height": 340,
         "width": 440
       },

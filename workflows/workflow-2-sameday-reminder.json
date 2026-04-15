@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Workflow 2: Same-Day Reminder\n\n**Trigger:** Daily at 8:00 AM\n\n**Logic:** Reads from Supabase. Finds all patients whose `follow_up_date` is today, `status = pending`, and `message_count < 5`. Sends a morning reminder and updates Supabase.\n\n**Data source:** Supabase `public.patients` (NOT Google Sheets)\n\n**Before activating:**\n1. Set credential on all Postgres nodes → Supabase DB\n2. Set credential on Send node → Twilio Basic Auth",
+        "content": "## Workflow 2: Same-Day Reminder\n\n**Trigger:** Daily at 8:00 AM\n\n**Logic:** Reads from Supabase. Finds all patients whose `follow_up_date` is today, `status = pending`, and `message_count < 5`. Sends a morning reminder and updates Supabase.\n\n**Data source:** Supabase `public.patients` — populated by WF11 (QR form intake)\n\n**Before activating:**\n1. Set credential on all Postgres nodes → Supabase DB\n2. Set credential on Send node → Twilio Basic Auth",
         "height": 220,
         "width": 380
       },

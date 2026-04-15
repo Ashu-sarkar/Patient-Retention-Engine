@@ -7,12 +7,12 @@
 -- -------------------------
 -- Table: patients
 -- Primary record store. One row per patient (keyed on phone number).
--- Upserted by n8n WF10 (sheet sync) on conflict with phone.
+-- Upserted by WF11 (QR form intake) on conflict with phone.
 -- WF1–WF8 read exclusively from this table (Supabase = source of truth).
 -- -------------------------
 CREATE TABLE IF NOT EXISTS public.patients (
   id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  patient_code      TEXT,                          -- Human-readable ID from intake sheet (PAT-0001)
+  patient_code      TEXT,                          -- Human-readable ID assigned by WF11 (PAT-0001)
   name              TEXT        NOT NULL,
   phone             TEXT        NOT NULL,
   doctor_name       TEXT,
@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS public.patients (
                     CHECK (follow_up_required IN ('Yes','No')),
   follow_up_date    DATE,
   status            TEXT        NOT NULL DEFAULT 'pending'
-                    CHECK (status IN ('pending','completed','missed','inactive','data_error')),
+                    CHECK (status IN ('pending','completed','missed','inactive')),
   last_message_sent TIMESTAMPTZ,
   message_count     INTEGER     NOT NULL DEFAULT 0,
   response_status   TEXT        NOT NULL DEFAULT 'none'
@@ -32,7 +32,6 @@ CREATE TABLE IF NOT EXISTS public.patients (
   last_response     TEXT,
   health_check_sent BOOLEAN     NOT NULL DEFAULT FALSE,
   reactivation_sent BOOLEAN     NOT NULL DEFAULT FALSE,
-  intake_sheet_id   TEXT,                          -- Spreadsheet ID of the intake sheet this patient came from
   notes             TEXT,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -50,29 +49,6 @@ CREATE INDEX IF NOT EXISTS idx_patients_status             ON public.patients (s
 CREATE INDEX IF NOT EXISTS idx_patients_phone              ON public.patients (phone);
 CREATE INDEX IF NOT EXISTS idx_patients_follow_up_required ON public.patients (follow_up_required);
 CREATE INDEX IF NOT EXISTS idx_patients_visit_date         ON public.patients (visit_date);
-
--- -------------------------
--- Table: daily_intake_sheets
--- Tracks the Google Spreadsheet created each morning by WF9.
--- WF10 queries this table to know which sheet to poll for new patients.
--- -------------------------
-CREATE TABLE IF NOT EXISTS public.daily_intake_sheets (
-  id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  sheet_date       DATE        NOT NULL,
-  spreadsheet_id   TEXT        NOT NULL,
-  spreadsheet_url  TEXT,
-  email_sent_to    TEXT,
-  rows_synced      INTEGER     NOT NULL DEFAULT 0,
-  rows_errored     INTEGER     NOT NULL DEFAULT 0,
-  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  last_synced_at   TIMESTAMPTZ
-);
-
--- One sheet per calendar date
-ALTER TABLE public.daily_intake_sheets
-  ADD CONSTRAINT daily_sheets_date_unique UNIQUE (sheet_date);
-
-CREATE INDEX IF NOT EXISTS idx_daily_sheets_date ON public.daily_intake_sheets (sheet_date DESC);
 
 -- Auto-update updated_at on every row change
 CREATE OR REPLACE FUNCTION public.set_updated_at()
@@ -142,6 +118,8 @@ CREATE INDEX IF NOT EXISTS idx_system_logs_details   ON public.system_logs USING
 ALTER TABLE public.patients     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.message_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.system_logs  ENABLE ROW LEVEL SECURITY;
+-- Note: daily_intake_sheets table removed — Google Sheets intake is no longer used.
+-- All patient data enters via the QR form (WF11) which writes directly to public.patients.
 
 -- Service role bypasses RLS automatically — no policy needed for it.
 -- Block anonymous / authenticated access by default (no permissive policy = deny all).
@@ -159,5 +137,7 @@ ALTER TABLE public.system_logs  ENABLE ROW LEVEL SECURITY;
 -- SELECT COUNT(*) FROM public.patients;
 -- SELECT COUNT(*) FROM public.message_logs;
 -- SELECT COUNT(*) FROM public.system_logs;
+-- SELECT * FROM public.patients ORDER BY created_at DESC LIMIT 20;
 -- SELECT * FROM public.system_logs ORDER BY timestamp DESC LIMIT 20;
 -- SELECT * FROM public.message_logs WHERE patient_id = '<uuid>' ORDER BY sent_at DESC;
+-- SELECT * FROM public.patients WHERE status = 'pending' AND follow_up_date = CURRENT_DATE + 1;

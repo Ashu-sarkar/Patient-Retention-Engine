@@ -29,13 +29,6 @@ services:
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
 
       # Application settings — referenced by workflow expressions as $env.VARNAME
-      - GOOGLE_SHEETS_ID=${GOOGLE_SHEETS_ID}
-      - GOOGLE_DRIVE_FOLDER_ID=${GOOGLE_DRIVE_FOLDER_ID}
-      - CLINIC_HOSPITAL_NAMES=${CLINIC_HOSPITAL_NAMES:-City Hospital,General Hospital,Metro Clinic}
-      - CLINIC_DOCTOR_NAMES=${CLINIC_DOCTOR_NAMES:-Dr. Sharma,Dr. Mehta,Dr. Patel,Dr. Kumar}
-      - CLINIC_EMAIL=${CLINIC_EMAIL:-clinic@example.com}
-      - N8N_WF7_WEBHOOK_PATH=${N8N_WF7_WEBHOOK_PATH:-new-patient-intake}
-      - N8N_FORM_WEBHOOK_PATH=${N8N_FORM_WEBHOOK_PATH:-patient-form-intake}
       - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
       - TWILIO_WHATSAPP_NUMBER=${TWILIO_WHATSAPP_NUMBER}
       - TIMEZONE=${TIMEZONE:-Asia/Kolkata}

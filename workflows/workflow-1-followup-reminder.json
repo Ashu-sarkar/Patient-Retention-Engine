@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Workflow 1: Follow-Up Reminder\n\n**Trigger:** Daily at 9:00 AM\n\n**Logic:** Reads patients from Supabase (source of truth). Finds all patients whose `follow_up_date` is tomorrow, `status = pending`, and `message_count < 5`. Sends a WhatsApp reminder, updates the patient record in Supabase, and logs the send.\n\n**Data source:** Supabase `public.patients` (NOT Google Sheets — data enters via WF10 sheet sync)\n\n**Before activating:**\n1. Set credential on \"Read Patients from Supabase\" → Supabase DB\n2. Set credential on \"Send WhatsApp Reminder\" → Twilio Basic Auth\n3. Set credential on all Postgres write nodes → Supabase DB",
+        "content": "## Workflow 1: Follow-Up Reminder\n\n**Trigger:** Daily at 9:00 AM\n\n**Logic:** Reads patients from Supabase. Finds all patients whose `follow_up_date` is tomorrow, `status = pending`, and `message_count < 5`. Sends a WhatsApp reminder, updates the patient record, and logs the send.\n\n**Data source:** Supabase `public.patients` — populated by WF11 (QR form intake)\n\n**Before activating:**\n1. Set credential on \"Read Patients from Supabase\" → Supabase DB\n2. Set credential on \"Send WhatsApp Reminder\" → Twilio Basic Auth\n3. Set credential on all Postgres write nodes → Supabase DB",
         "height": 280,
         "width": 420
       },

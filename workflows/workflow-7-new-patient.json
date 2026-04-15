@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Workflow 7: New Patient Welcome\n\n**Trigger:** HTTP Webhook — called by WF10 (Sheet Sync) after a new patient row is successfully upserted to Supabase.\n\n**Webhook path:** Configured by `N8N_WF7_WEBHOOK_PATH` env var (default: `new-patient-intake`)\n\n**What changed from the original:**\n- Previously triggered by Google Sheets row detection\n- Now triggered by WF10 via HTTP POST after Supabase upsert\n- No Google Sheets reads/writes — all state is in Supabase\n\n**What it does:**\n1. Receives new patient data from WF10 (patient_code, name, phone, clinic, doctor, follow-up details)\n2. Sends a welcome WhatsApp message to the patient\n3. Updates Supabase: `last_message_sent`, `message_count = 1`\n4. Logs to Supabase system_logs\n\n**Before activating:**\n1. Activate THIS workflow BEFORE WF10 (webhook must be live)\n2. Set credential on Postgres nodes → Supabase DB\n3. Set credential on HTTP Request node → Twilio Basic Auth\n4. Copy the Production Webhook URL and set `WEBHOOK_URL` in `.env` to your public n8n URL\n   (e.g. https://your-n8n.example.com — NOT localhost for production)",
+        "content": "## Workflow 7: New Patient Welcome\n\n**Trigger:** HTTP Webhook — called by WF11 (QR Form Intake) after a new patient is successfully upserted to Supabase.\n\n**Webhook path:** `new-patient-intake` (hardcoded literal — must match WF11's HTTP call)\n\n**What it does:**\n1. Receives patient data from WF11 (patient_code, name, phone, clinic_name, doctor_name, follow_up_required, follow_up_date, visit_date)\n2. Sends a personalized welcome WhatsApp message via Twilio\n3. Updates Supabase: `last_message_sent`, `message_count = 1`\n4. Logs send result to `public.message_logs` and failures to `public.system_logs`\n\n**Data source:** Supabase `public.patients` (all state is in Supabase)\n\n**Before activating:**\n1. Activate THIS workflow BEFORE WF11 (webhook must be live before form submissions arrive)\n2. Set credential on all Postgres nodes → Supabase DB\n3. Set credential on HTTP Request node → Twilio Basic Auth\n4. Set `WEBHOOK_URL` in `.env` to your public n8n base URL (e.g. https://your-n8n.example.com)",
         "height": 420,
         "width": 480
       },
@@ -29,7 +29,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Validate incoming payload from WF10 and build welcome message\nconst data = $input.first().json;\n\n// WF10 sends: patient_code, name, phone, clinic_name, doctor_name, follow_up_required, follow_up_date, visit_date\nconst name = String(data.name || data.patient_name || '').trim();\nconst phone = String(data.phone || '').trim();\nconst patientCode = String(data.patient_code || '').trim();\nconst clinicName = String(data.clinic_name || $env.DEFAULT_CLINIC_NAME || 'our clinic').trim();\nconst doctorName = String(data.doctor_name || $env.DEFAULT_DOCTOR_NAME || 'your doctor').trim();\nconst followUpRequired = String(data.follow_up_required || 'No').trim();\nconst followUpDate = data.follow_up_date || null;\n\nif (!phone || !/^\\+[1-9]\\d{6,14}$/.test(phone)) {\n  return [{ json: { _skip: true, reason: `Invalid phone received from WF10: ${phone}`, patientCode } }];\n}\n\nif (!name) {\n  return [{ json: { _skip: true, reason: 'Empty patient name received from WF10', patientCode } }];\n}\n\n// Build welcome message\nlet welcomeMsg = `Hi ${name}! 👋 Welcome to ${clinicName}. We've noted your visit with ${doctorName} and your records are now in our system.\\n\\n`;\n\nif (followUpRequired === 'Yes' && followUpDate) {\n  const fuDisplay = new Date(followUpDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });\n  welcomeMsg += `Your follow-up appointment is scheduled for *${fuDisplay}*. We'll send you a reminder closer to the date.\\n\\n`;\n} else {\n  welcomeMsg += `Your doctor will guide you on next steps. `;\n}\n\nwelcomeMsg += `If you have any questions, feel free to reply to this message. Take care! 💙`;\n\nreturn [{\n  json: {\n    _skip: false,\n    _patient_name: name,\n    _phone: phone,\n    _patient_code: patientCode,\n    _to_phone: 'whatsapp:' + phone,\n    _message_body: welcomeMsg,\n    _message_type: 'welcome'\n  }\n}];"
+        "jsCode": "// Payload sent by WF11: patient_code, name, phone (E.164), clinic_name, doctor_name,\n// follow_up_required, follow_up_date, visit_date\nconst data = $input.first().json.body || $input.first().json;\n\nconst name           = String(data.name           || data.patient_name || '').trim();\nconst phone          = String(data.phone          || '').trim();\nconst patientCode    = String(data.patient_code   || '').trim();\nconst clinicName     = String(data.clinic_name    || 'our clinic').trim();\nconst doctorName     = String(data.doctor_name    || 'your doctor').trim();\nconst followUpRequired = String(data.follow_up_required || 'No').trim();\nconst followUpDate   = data.follow_up_date || null;\n\nif (!phone || !/^\\+[1-9]\\d{6,14}$/.test(phone)) {\n  return [{ json: { _skip: true, reason: `Invalid phone: ${phone}`, patientCode } }];\n}\nif (!name) {\n  return [{ json: { _skip: true, reason: 'Empty patient name', patientCode } }];\n}\n\nlet msg = `Hi ${name}! 👋 Welcome to ${clinicName}. Your visit with ${doctorName} has been recorded.\\n\\n`;\n\nif (followUpRequired === 'Yes' && followUpDate) {\n  const fuDisplay = new Date(followUpDate).toLocaleDateString('en-IN', {\n    day: 'numeric', month: 'long', year: 'numeric'\n  });\n  msg += `Your follow-up is scheduled for *${fuDisplay}*. We will remind you closer to the date.\\n\\n`;\n}\n\nmsg += `Reply *CONFIRM* to confirm or *CANCEL* to cancel. Take care! 💙`;\n\nreturn [{\n  json: {\n    _skip:          false,\n    _patient_name:  name,\n    _phone:         phone,\n    _patient_code:  patientCode,\n    _to_phone:      'whatsapp:' + phone,\n    _message_body:  msg,\n    _message_type:  'welcome'\n  }\n}];"
       },
       "id": "77777777-7777-7777-7777-000000000003",
       "name": "Build Welcome Message",
@@ -179,7 +179,7 @@
         "options": { "responseCode": 200 }
       },
       "id": "77777777-7777-7777-7777-000000000009",
-      "name": "Respond OK to WF10",
+      "name": "Respond OK to WF11",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [1340, 420]
@@ -203,7 +203,7 @@
         [
           { "node": "Update Patient Welcome Sent", "type": "main", "index": 0 },
           { "node": "Log Welcome Message", "type": "main", "index": 0 },
-          { "node": "Respond OK to WF10", "type": "main", "index": 0 }
+          { "node": "Respond OK to WF11", "type": "main", "index": 0 }
         ],
         [{ "node": "Log Welcome Failure", "type": "main", "index": 0 }]
       ]
