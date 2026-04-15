@@ -10,7 +10,13 @@ services:
       - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD:-strongpass}
       - N8N_HOST=${N8N_HOST:-localhost}
       - N8N_PORT=${N8N_PORT:-5678}
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
       - WEBHOOK_URL=${WEBHOOK_URL:-http://localhost:5678}
+      # Stable encryption key — MUST be set before first launch and never changed afterwards.
+      # Generate with: openssl rand -hex 32
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      # Scheduler timezone — n8n uses GENERIC_TIMEZONE for cron triggers (WF1-WF5)
+      - GENERIC_TIMEZONE=${TIMEZONE:-Asia/Kolkata}
 
       # n8n internal DB — upgraded from SQLite to Supabase PostgreSQL
       # Comment these 6 lines out and set DB_TYPE=sqlite to revert to SQLite
