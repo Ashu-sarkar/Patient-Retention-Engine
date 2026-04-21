@@ -17,7 +17,7 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "patient-form-intake",
-        "responseMode": "lastNode",
+        "responseMode": "responseNode",
         "options": {}
       },
       "id": "11111111-1111-1111-1111-000000000002",
@@ -159,6 +159,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [1780, 200],
+      "continueOnFail": true,
       "credentials": {
         "postgres": {
           "id": "REPLACE_WITH_POSTGRES_CREDENTIAL_ID",
@@ -202,6 +203,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [900, 460],
+      "continueOnFail": true,
       "credentials": {
         "postgres": {
           "id": "REPLACE_WITH_POSTGRES_CREDENTIAL_ID",

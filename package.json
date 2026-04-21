@@ -1,0 +1,14 @@
+{
+  "name": "patient-retention-engine",
+  "version": "1.0.0",
+  "description": "Patient Retention Engine — n8n + Supabase automated WhatsApp follow-ups",
+  "private": true,
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "setup": "node tests/setup-n8n.js",
+    "test": "node tests/run-tests.js",
+    "test:setup-and-run": "node tests/setup-n8n.js && node tests/run-tests.js"
+  }
+}

@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0d9488" />
+  <meta name="description" content="Hospital and clinic onboarding" />
+  <title>Hospital / Clinic Boarding</title>
+
+  <style>
+    :root {
+      --accent-50:  #f0fdfa;
+      --accent-100: #ccfbf1;
+      --accent-200: #99f6e4;
+      --accent-500: #14b8a6;
+      --accent-600: #0d9488;
+      --accent-700: #0f766e;
+      --green-50: #f0fdf4;
+      --green-600:#16a34a;
+      --red-500:  #ef4444;
+      --gray-50:  #f8fafc;
+      --gray-100: #f1f5f9;
+      --gray-200: #e2e8f0;
+      --gray-400: #94a3b8;
+      --gray-500: #64748b;
+      --gray-700: #334155;
+      --gray-900: #0f172a;
+      --white:    #ffffff;
+      --r-md: 12px;
+      --r-xl: 20px;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { height: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--accent-50);
+      color: var(--gray-900);
+      min-height: 100dvh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .app {
+      max-width: 500px;
+      margin: 0 auto;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .app-header {
+      position: relative;
+      color: var(--white);
+      padding: 28px 22px 34px;
+      text-align: center;
+      flex-shrink: 0;
+      border-radius: 0 0 26px 26px;
+      background: linear-gradient(155deg, #5eead4 0%, var(--accent-500) 45%, var(--accent-600) 78%, var(--accent-700) 100%);
+      box-shadow: 0 10px 28px rgba(15, 118, 110, 0.22);
+      overflow: hidden;
+    }
+    .header-inner { position: relative; z-index: 1; }
+    .header-icon {
+      width: 56px;
+      height: 56px;
+      background: rgba(255, 255, 255, 0.22);
+      border: 1px solid rgba(255, 255, 255, 0.28);
+      border-radius: 18px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 14px;
+    }
+    .header-title {
+      font-size: 21px;
+      font-weight: 700;
+      letter-spacing: -0.45px;
+      line-height: 1.25;
+    }
+    .header-subtitle {
+      font-size: 13px;
+      opacity: 0.92;
+      margin-top: 6px;
+      line-height: 1.45;
+      font-weight: 450;
+    }
+
+    .form-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 14px 130px;
+      margin-top: -10px;
+      position: relative;
+      z-index: 2;
+    }
+
+    .card {
+      background: var(--white);
+      border-radius: var(--r-xl);
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 14px;
+      overflow: hidden;
+      border: 1px solid var(--gray-100);
+    }
+    .card-header {
+      padding: 13px 16px 12px;
+      background: var(--accent-100);
+      border-bottom: 1px solid var(--accent-200);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .badge {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      padding: 4px 9px;
+      border-radius: 6px;
+      background: var(--accent-600);
+      color: var(--white);
+    }
+    .card-title h2 { font-size: 14px; font-weight: 600; color: var(--gray-900); }
+    .card-title p { font-size: 11.5px; color: var(--gray-500); margin-top: 2px; }
+    .card-body { padding: 16px; display: flex; flex-direction: column; gap: 15px; }
+
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .label { font-size: 13px; font-weight: 500; color: var(--gray-700); }
+    .req { color: var(--red-500); }
+
+    .inp, .ta, .sel {
+      border: 1.5px solid var(--gray-200);
+      border-radius: var(--r-md);
+      padding: 12px 14px;
+      font-size: 16px;
+      color: var(--gray-900);
+      background: var(--white);
+      width: 100%;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .inp, .sel { height: 52px; }
+    .sel { appearance: none; }
+    .ta {
+      min-height: 96px;
+      resize: vertical;
+      line-height: 1.45;
+    }
+    .inp:focus, .ta:focus, .sel:focus {
+      border-color: var(--accent-600);
+      box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.12);
+    }
+    .inp.err, .ta.err, .sel.err {
+      border-color: var(--red-500);
+      box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.08);
+    }
+
+    .errmsg {
+      display: none;
+      font-size: 11.5px;
+      color: var(--red-500);
+    }
+    .errmsg.show { display: block; }
+
+    .submit-wrap {
+      position: fixed;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100%;
+      max-width: 500px;
+      padding: 12px 14px;
+      padding-bottom: calc(12px + env(safe-area-inset-bottom));
+      background: rgba(240, 253, 250, 0.97);
+      backdrop-filter: blur(10px);
+      border-top: 1px solid var(--accent-100);
+      z-index: 100;
+    }
+    .submit-btn {
+      width: 100%;
+      height: 54px;
+      background: linear-gradient(180deg, var(--accent-500) 0%, var(--accent-600) 100%);
+      color: var(--white);
+      border: none;
+      border-radius: var(--r-md);
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: 0 4px 14px rgba(15, 118, 110, 0.28);
+    }
+    .submit-btn:disabled { background: var(--gray-400); box-shadow: none; cursor: not-allowed; }
+    .spin {
+      width: 20px;
+      height: 20px;
+      border: 2.5px solid rgba(255,255,255,.25);
+      border-top-color: var(--white);
+      border-radius: 50%;
+      animation: rotate .65s linear infinite;
+    }
+    @keyframes rotate { to { transform: rotate(360deg); } }
+
+    .success-screen {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: var(--white);
+      z-index: 200;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 28px;
+      text-align: center;
+    }
+    .success-screen.show { display: flex; }
+    .success-ring {
+      width: 88px;
+      height: 88px;
+      background: var(--green-50);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 22px;
+    }
+    .success-title {
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--gray-900);
+      margin-bottom: 10px;
+    }
+    .success-body {
+      font-size: 15px;
+      color: var(--gray-500);
+      line-height: 1.65;
+      max-width: 300px;
+    }
+    .success-highlight {
+      margin-top: 20px;
+      padding: 16px 20px;
+      background: var(--accent-50);
+      border: 1px solid var(--accent-100);
+      border-radius: 16px;
+      text-align: left;
+    }
+    .success-highlight dt {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--gray-500);
+      margin-bottom: 4px;
+    }
+    .success-highlight dd {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--gray-900);
+    }
+    .success-highlight dd + dt { margin-top: 12px; }
+
+    .toast {
+      position: fixed;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-80px);
+      background: var(--gray-900);
+      color: var(--white);
+      padding: 12px 20px;
+      border-radius: var(--r-md);
+      font-size: 14px;
+      z-index: 300;
+      transition: transform 0.3s ease;
+      max-width: calc(100vw - 28px);
+      text-align: center;
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+    .toast.error { background: #dc2626; }
+  </style>
+</head>
+<body>
+
+<div class="app">
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="header-icon" aria-hidden="true">
+        <svg width="28" height="28" fill="none" viewBox="0 0 24 24">
+          <path d="M4 21V10l8-5 8 5v11" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M9 21V12h6v9" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <h1 class="header-title">Hospital / Clinic Boarding</h1>
+      <p class="header-subtitle">Register your facility and doctor for patient referrals</p>
+    </div>
+  </header>
+
+  <main class="form-scroll">
+    <form id="boarding-form" novalidate>
+      <div class="card">
+        <div class="card-header">
+          <span class="badge">Details</span>
+          <div class="card-title">
+            <h2>Facility &amp; physician</h2>
+            <p>Address and specialty are stored securely</p>
+          </div>
+        </div>
+        <div class="card-body">
+
+          <div class="field">
+            <label class="label" for="hospital_name">Hospital / clinic name <span class="req">*</span></label>
+            <input id="hospital_name" name="hospital_name" type="text" class="inp"
+                   placeholder="Official name as patients should see it"
+                   autocomplete="organization" maxlength="200" />
+            <span class="errmsg" id="e-hospital_name">Enter at least 2 characters</span>
+          </div>
+
+          <div class="field">
+            <label class="label" for="facility_type">Facility type <span class="req">*</span></label>
+            <select id="facility_type" name="facility_type" class="sel">
+              <option value="">Select the closest match</option>
+              <option value="General Hospital">General Hospital</option>
+              <option value="Multi-specialty Clinic">Multi-specialty Clinic</option>
+              <option value="Dental Clinic">Dental Clinic</option>
+              <option value="Pathology Lab">Pathology Lab</option>
+              <option value="Diagnostic Center">Diagnostic Center</option>
+              <option value="Physiotherapy Clinic">Physiotherapy Clinic</option>
+              <option value="Eye Clinic">Eye Clinic</option>
+              <option value="ENT Clinic">ENT Clinic</option>
+              <option value="Other Medical Facility">Other Medical Facility</option>
+            </select>
+            <span class="errmsg" id="e-facility_type">Select a valid facility type</span>
+          </div>
+
+          <div class="field">
+            <label class="label" for="address">Full address <span class="req">*</span></label>
+            <textarea id="address" name="address" class="ta" maxlength="1000"
+                      placeholder="Street, city, state, PIN"></textarea>
+            <span class="errmsg" id="e-address">Enter a complete address (at least 5 characters)</span>
+          </div>
+
+          <div class="field">
+            <label class="label" for="doctor_name">Doctor name <span class="req">*</span></label>
+            <input id="doctor_name" name="doctor_name" type="text" class="inp"
+                   placeholder="Dr. Name" autocomplete="name" maxlength="150" />
+            <span class="errmsg" id="e-doctor_name">Enter at least 2 characters</span>
+          </div>
+
+          <div class="field">
+            <label class="label" for="doctor_expertise">Doctor expertise / specialty <span class="req">*</span></label>
+            <textarea id="doctor_expertise" name="doctor_expertise" class="ta" maxlength="500"
+                      placeholder="e.g. Cardiology, General medicine"></textarea>
+            <span class="errmsg" id="e-doctor_expertise">Describe specialty (at least 2 characters)</span>
+          </div>
+
+        </div>
+      </div>
+    </form>
+  </main>
+
+  <div class="submit-wrap">
+    <button type="submit" form="boarding-form" class="submit-btn" id="js-submit">
+      Submit listing
+    </button>
+  </div>
+
+  <div class="success-screen" id="js-success" role="alert" aria-live="assertive">
+    <div class="success-ring">
+      <svg width="42" height="42" fill="none" viewBox="0 0 42 42" aria-hidden="true">
+        <path d="M9 22L17 30L33 14" stroke="#16A34A" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <h2 class="success-title">Thank you</h2>
+    <p class="success-body" id="js-success-lead">
+      Your listing was saved. Patients will see the hospital and doctor below.
+    </p>
+    <dl class="success-highlight" id="js-success-summary" aria-label="Saved listing summary">
+      <dt>Hospital / clinic</dt>
+      <dd id="js-sum-hospital">—</dd>
+      <dt>Facility type</dt>
+      <dd id="js-sum-facility-type">—</dd>
+      <dt>Doctor</dt>
+      <dd id="js-sum-doctor">—</dd>
+    </dl>
+  </div>
+
+  <div class="toast" id="js-toast" role="status" aria-live="polite"></div>
+</div>
+
+<script>
+const WEBHOOK_URL = 'YOUR_N8N_WEBHOOK_URL/webhook/hospital-boarding';
+
+const $ = id => document.getElementById(id);
+const form = $('boarding-form');
+const submitBtn = $('js-submit');
+const successScr = $('js-success');
+const toast = $('js-toast');
+const FACILITY_TYPES = [
+  'General Hospital',
+  'Multi-specialty Clinic',
+  'Dental Clinic',
+  'Pathology Lab',
+  'Diagnostic Center',
+  'Physiotherapy Clinic',
+  'Eye Clinic',
+  'ENT Clinic',
+  'Other Medical Facility',
+];
+
+function showErr(id) {
+  const el = $(id);
+  if (el) el.classList.add('err');
+  const msg = $('e-' + id);
+  if (msg) msg.classList.add('show');
+}
+function clearErr(id) {
+  const el = $(id);
+  if (el) el.classList.remove('err');
+  const msg = $('e-' + id);
+  if (msg) msg.classList.remove('show');
+}
+function clearAllErr() {
+  ['hospital_name', 'facility_type', 'address', 'doctor_name', 'doctor_expertise'].forEach(clearErr);
+}
+
+function validate() {
+  clearAllErr();
+  let ok = true;
+  let firstInvalid = null;
+
+  const hospital = $('hospital_name').value.trim();
+  const facilityType = $('facility_type').value.trim();
+  const address = $('address').value.trim();
+  const doctor = $('doctor_name').value.trim();
+  const expertise = $('doctor_expertise').value.trim();
+
+  if (!hospital || hospital.length < 2) {
+    showErr('hospital_name');
+    ok = false;
+    firstInvalid = firstInvalid || $('hospital_name');
+  }
+  if (!FACILITY_TYPES.includes(facilityType)) {
+    showErr('facility_type');
+    ok = false;
+    firstInvalid = firstInvalid || $('facility_type');
+  }
+  if (!address || address.length < 5) {
+    showErr('address');
+    ok = false;
+    firstInvalid = firstInvalid || $('address');
+  }
+  if (!doctor || doctor.length < 2) {
+    showErr('doctor_name');
+    ok = false;
+    firstInvalid = firstInvalid || $('doctor_name');
+  }
+  if (!expertise || expertise.length < 2) {
+    showErr('doctor_expertise');
+    ok = false;
+    firstInvalid = firstInvalid || $('doctor_expertise');
+  }
+
+  if (!ok && firstInvalid) {
+    firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    firstInvalid.focus({ preventScroll: true });
+  }
+  return ok;
+}
+
+['hospital_name', 'facility_type', 'address', 'doctor_name', 'doctor_expertise'].forEach(id => {
+  const el = $(id);
+  if (!el) return;
+  const eventName = el.tagName === 'SELECT' ? 'change' : 'input';
+  el.addEventListener(eventName, () => clearErr(id));
+});
+
+let toastTimer;
+function showToast(msg, isError = false) {
+  clearTimeout(toastTimer);
+  toast.textContent = msg;
+  toast.className = 'toast show' + (isError ? ' error' : '');
+  toastTimer = setTimeout(() => { toast.className = 'toast' + (isError ? ' error' : ''); }, 4000);
+}
+
+let busy = false;
+form.addEventListener('submit', async function (e) {
+  e.preventDefault();
+  if (busy) return;
+  if (!validate()) return;
+
+  busy = true;
+  submitBtn.disabled = true;
+  submitBtn.innerHTML = '<div class="spin"></div>Submitting…';
+
+  const payload = {
+    hospital_name: $('hospital_name').value.trim(),
+    facility_type: $('facility_type').value.trim(),
+    address: $('address').value.trim(),
+    doctor_name: $('doctor_name').value.trim(),
+    doctor_expertise: $('doctor_expertise').value.trim(),
+  };
+
+  try {
+    const res = await fetch(WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+
+    let data = {};
+    try { data = await res.json(); } catch (_) {}
+
+    $('js-sum-hospital').textContent = data.hospital_name || payload.hospital_name;
+    $('js-sum-facility-type').textContent = data.facility_type || payload.facility_type;
+    $('js-sum-doctor').textContent = data.doctor_name || payload.doctor_name;
+    successScr.classList.add('show');
+  } catch (err) {
+    console.error(err);
+    showToast('Something went wrong. Please try again.', true);
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Submit listing';
+    busy = false;
+  }
+});
+</script>
+</body>
+</html>

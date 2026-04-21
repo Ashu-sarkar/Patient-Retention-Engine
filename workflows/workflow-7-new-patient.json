@@ -17,7 +17,7 @@
       "parameters": {
         "path": "new-patient-intake",
         "httpMethod": "POST",
-        "responseMode": "lastNode",
+        "responseMode": "responseNode",
         "options": {}
       },
       "id": "77777777-7777-7777-7777-000000000002",
@@ -177,6 +177,18 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [1340, 420]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"ok\", \"message\": \"WA send failed — logged to system_logs\" }",
+        "options": { "responseCode": 200 }
+      },
+      "id": "77777777-7777-7777-7777-000000000010",
+      "name": "Respond OK (WA Error Path)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1340, 680]
     }
   ],
   "connections": {
@@ -201,6 +213,9 @@
         ],
         [{ "node": "Log Welcome Failure", "type": "main", "index": 0 }]
       ]
+    },
+    "Log Welcome Failure": {
+      "main": [[{ "node": "Respond OK (WA Error Path)", "type": "main", "index": 0 }]]
     }
   },
   "active": false,

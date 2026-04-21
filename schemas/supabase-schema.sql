@@ -108,6 +108,49 @@ CREATE INDEX IF NOT EXISTS idx_system_logs_workflow  ON public.system_logs (work
 -- GIN index enables fast JSONB queries: details->>'patient_id'
 CREATE INDEX IF NOT EXISTS idx_system_logs_details   ON public.system_logs USING GIN (details);
 
+-- -------------------------
+-- Table: hospital_boarding
+-- One row per hospital/clinic onboarding submission (facility + doctor).
+-- Written by WF12 (hospital boarding form). Patient-facing UIs may expose only
+-- hospital_name + doctor_name; facility_type is WhatsApp-safe metadata for
+-- segmentation, while full address and expertise stay in this table.
+-- -------------------------
+CREATE TABLE IF NOT EXISTS public.hospital_boarding (
+  id                 UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  hospital_name      TEXT        NOT NULL,
+  facility_type      TEXT        NOT NULL
+                   CONSTRAINT hospital_boarding_facility_type_check
+                   CHECK (facility_type IN (
+                     'General Hospital',
+                     'Multi-specialty Clinic',
+                     'Dental Clinic',
+                     'Pathology Lab',
+                     'Diagnostic Center',
+                     'Physiotherapy Clinic',
+                     'Eye Clinic',
+                     'ENT Clinic',
+                     'Other Medical Facility',
+                     'Unspecified'
+                   )),
+  address            TEXT        NOT NULL,
+  doctor_name        TEXT        NOT NULL,
+  doctor_expertise   TEXT        NOT NULL,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_hospital_boarding_hospital_name
+  ON public.hospital_boarding (lower(trim(hospital_name)));
+CREATE INDEX IF NOT EXISTS idx_hospital_boarding_facility_type
+  ON public.hospital_boarding (facility_type);
+CREATE INDEX IF NOT EXISTS idx_hospital_boarding_doctor_name
+  ON public.hospital_boarding (lower(trim(doctor_name)));
+
+DROP TRIGGER IF EXISTS trg_hospital_boarding_updated_at ON public.hospital_boarding;
+CREATE TRIGGER trg_hospital_boarding_updated_at
+  BEFORE UPDATE ON public.hospital_boarding
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
 -- =============================================================================
 -- Row Level Security (RLS)
 -- Enable after verifying n8n can connect with the service-role key.
@@ -115,9 +158,10 @@ CREATE INDEX IF NOT EXISTS idx_system_logs_details   ON public.system_logs USING
 -- The anon key is subject to RLS — block all access by default.
 -- =============================================================================
 
-ALTER TABLE public.patients     ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.message_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.system_logs  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.patients           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.message_logs       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.system_logs        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.hospital_boarding  ENABLE ROW LEVEL SECURITY;
 -- Note: daily_intake_sheets table removed — Google Sheets intake is no longer used.
 -- All patient data enters via the QR form (WF11) which writes directly to public.patients.
 
@@ -137,6 +181,7 @@ ALTER TABLE public.system_logs  ENABLE ROW LEVEL SECURITY;
 -- SELECT COUNT(*) FROM public.patients;
 -- SELECT COUNT(*) FROM public.message_logs;
 -- SELECT COUNT(*) FROM public.system_logs;
+-- SELECT * FROM public.hospital_boarding ORDER BY created_at DESC LIMIT 20;
 -- SELECT * FROM public.patients ORDER BY created_at DESC LIMIT 20;
 -- SELECT * FROM public.system_logs ORDER BY timestamp DESC LIMIT 20;
 -- SELECT * FROM public.message_logs WHERE patient_id = '<uuid>' ORDER BY sent_at DESC;
