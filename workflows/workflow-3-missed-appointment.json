@@ -1,9 +1,9 @@
 {
-  "name": "WF3 — Missed Appointment Recovery",
+  "name": "WF3 \u2014 Missed Appointment Recovery",
   "nodes": [
     {
       "parameters": {
-        "content": "## Workflow 3: Missed Appointment Recovery\n\n**Trigger:** Daily at 10:00 AM\n\n**Logic (from Supabase):**\n- Day +1: Empathetic recovery message (template: patient_missed_recovery)\n- Day +3: Second nudge referencing the doctor (template: patient_missed_nudge)\n- Day +7: Marks patient status as `missed` in Supabase (stops messaging)\n\nReads ONLY from Supabase `public.patients`.\n\n**Before activating:**\n1. Set credential on all Postgres nodes → Supabase DB\n2. Set credential on HTTP nodes → WhatsApp Business API (HTTP Header Auth)\n3. Ensure both `patient_missed_recovery` and `patient_missed_nudge` templates are approved",
+        "content": "## Workflow 3: Missed Appointment Recovery\n\n**Trigger:** Daily at 10:00 AM\n\n**Logic (from Supabase):**\n- Day +1: Empathetic recovery message (template: patient_missed_recovery)\n- Day +3: Second nudge referencing the doctor (template: patient_missed_nudge)\n- Day +7: Marks patient status as `missed` in Supabase (stops messaging)\n\nReads ONLY from Supabase `public.patients`.\n\n**Before activating:**\n1. Set credential on all Postgres nodes \u2192 Supabase DB\n2. Set credential on HTTP nodes \u2192 WhatsApp Business API (HTTP Header Auth)\n3. Ensure both `patient_missed_recovery` and `patient_missed_nudge` templates are approved",
         "height": 260,
         "width": 400
       },
@@ -11,7 +11,10 @@
       "name": "Sticky Note",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [240, 60]
+      "position": [
+        240,
+        60
+      ]
     },
     {
       "parameters": {
@@ -28,7 +31,10 @@
       "name": "Daily 10AM Trigger",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.1,
-      "position": [240, 380]
+      "position": [
+        240,
+        380
+      ]
     },
     {
       "parameters": {
@@ -40,7 +46,10 @@
       "name": "Read Patients from Supabase",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
-      "position": [460, 380],
+      "position": [
+        460,
+        380
+      ],
       "credentials": {
         "postgres": {
           "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
@@ -56,18 +65,28 @@
       "name": "Filter Missed Appointments",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [680, 380]
+      "position": [
+        680,
+        380
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
           "conditions": [
             {
               "id": "skip-check-wf3",
               "leftValue": "={{ $json._skip }}",
               "rightValue": true,
-              "operator": { "type": "boolean", "operation": "true" }
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
             }
           ],
           "combinator": "and"
@@ -78,7 +97,10 @@
       "name": "Skip if No Patients",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [900, 380]
+      "position": [
+        900,
+        380
+      ]
     },
     {
       "parameters": {
@@ -86,13 +108,20 @@
           "values": [
             {
               "conditions": {
-                "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
                 "conditions": [
                   {
                     "id": "action-mark-missed",
                     "leftValue": "={{ $json._action }}",
                     "rightValue": "mark_missed",
-                    "operator": { "type": "string", "operation": "equals" }
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
                   }
                 ],
                 "combinator": "and"
@@ -102,13 +131,20 @@
             },
             {
               "conditions": {
-                "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
                 "conditions": [
                   {
                     "id": "action-send-recovery",
                     "leftValue": "={{ $json._action }}",
                     "rightValue": "send_recovery",
-                    "operator": { "type": "string", "operation": "equals" }
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
                   }
                 ],
                 "combinator": "and"
@@ -118,13 +154,20 @@
             },
             {
               "conditions": {
-                "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
                 "conditions": [
                   {
                     "id": "action-send-nudge",
                     "leftValue": "={{ $json._action }}",
                     "rightValue": "send_nudge",
-                    "operator": { "type": "string", "operation": "equals" }
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
                   }
                 ],
                 "combinator": "and"
@@ -140,7 +183,10 @@
       "name": "Route by Action",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3,
-      "position": [1120, 280]
+      "position": [
+        1120,
+        280
+      ]
     },
     {
       "parameters": {
@@ -152,7 +198,10 @@
       "name": "Mark Missed in Supabase",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
-      "position": [1340, 120],
+      "position": [
+        1340,
+        120
+      ],
       "credentials": {
         "postgres": {
           "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
@@ -169,13 +218,21 @@
         "sendBody": true,
         "contentType": "json",
         "body": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $json._to_phone, type: 'template', template: { name: 'patient_missed_recovery', language: { code: $env.WA_LANGUAGE_CODE || 'en' }, components: [{ type: 'body', parameters: [ { type: 'text', text: $json._name }, { type: 'text', text: $json._doctor_name } ] }] } }) }}",
-        "options": { "retry": { "maxTries": 3, "waitBetweenTries": 30000 } }
+        "options": {
+          "retry": {
+            "maxTries": 3,
+            "waitBetweenTries": 30000
+          }
+        }
       },
       "id": "33333333-3333-3333-3333-000000000008",
       "name": "Send Recovery Message",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1340, 300],
+      "position": [
+        1340,
+        300
+      ],
       "credentials": {
         "httpHeaderAuth": {
           "id": "REPLACE_WITH_WA_CREDENTIAL_ID",
@@ -193,13 +250,21 @@
         "sendBody": true,
         "contentType": "json",
         "body": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $json._to_phone, type: 'template', template: { name: 'patient_missed_nudge', language: { code: $env.WA_LANGUAGE_CODE || 'en' }, components: [{ type: 'body', parameters: [ { type: 'text', text: $json._name }, { type: 'text', text: $json._doctor_name }, { type: 'text', text: $json._clinic_name } ] }] } }) }}",
-        "options": { "retry": { "maxTries": 3, "waitBetweenTries": 30000 } }
+        "options": {
+          "retry": {
+            "maxTries": 3,
+            "waitBetweenTries": 30000
+          }
+        }
       },
       "id": "33333333-3333-3333-3333-000000000009",
       "name": "Send Nudge Message",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1340, 460],
+      "position": [
+        1340,
+        460
+      ],
       "credentials": {
         "httpHeaderAuth": {
           "id": "REPLACE_WITH_WA_CREDENTIAL_ID",
@@ -218,7 +283,10 @@
       "name": "Update Patient After Send",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
-      "position": [1560, 380],
+      "position": [
+        1560,
+        380
+      ],
       "credentials": {
         "postgres": {
           "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
@@ -229,8 +297,16 @@
     {
       "parameters": {
         "operation": "insert",
-        "schema": { "__rl": true, "value": "public", "mode": "list" },
-        "table": { "__rl": true, "value": "message_logs", "mode": "list" },
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "message_logs",
+          "mode": "list"
+        },
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
@@ -252,7 +328,10 @@
       "name": "Log Message to Supabase",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
-      "position": [1780, 380],
+      "position": [
+        1780,
+        380
+      ],
       "credentials": {
         "postgres": {
           "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
@@ -263,8 +342,16 @@
     {
       "parameters": {
         "operation": "insert",
-        "schema": { "__rl": true, "value": "public", "mode": "list" },
-        "table": { "__rl": true, "value": "system_logs", "mode": "list" },
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "system_logs",
+          "mode": "list"
+        },
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
@@ -283,7 +370,10 @@
       "name": "Log Missed Status to Supabase",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
-      "position": [1560, 120],
+      "position": [
+        1560,
+        120
+      ],
       "credentials": {
         "postgres": {
           "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
@@ -294,47 +384,137 @@
   ],
   "connections": {
     "Daily 10AM Trigger": {
-      "main": [[{ "node": "Read Patients from Supabase", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Read Patients from Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Read Patients from Supabase": {
-      "main": [[{ "node": "Filter Missed Appointments", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Filter Missed Appointments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Filter Missed Appointments": {
-      "main": [[{ "node": "Skip if No Patients", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Skip if No Patients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Skip if No Patients": {
       "main": [
         [],
-        [{ "node": "Route by Action", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Route by Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Route by Action": {
       "main": [
-        [{ "node": "Mark Missed in Supabase", "type": "main", "index": 0 }],
-        [{ "node": "Send Recovery Message", "type": "main", "index": 0 }],
-        [{ "node": "Send Nudge Message", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Mark Missed in Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Recovery Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Nudge Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Mark Missed in Supabase": {
-      "main": [[{ "node": "Log Missed Status to Supabase", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Log Missed Status to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Send Recovery Message": {
-      "main": [[{ "node": "Update Patient After Send", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Update Patient After Send",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Send Nudge Message": {
-      "main": [[{ "node": "Update Patient After Send", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Update Patient After Send",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Update Patient After Send": {
-      "main": [[{ "node": "Log Message to Supabase", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Log Message to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
-  "settings": { "executionOrder": "v1" },
+  "settings": {
+    "executionOrder": "v1"
+  },
   "versionId": "33333333-3333-3333-3333-333333333303",
   "id": "wf3-missed-appointment",
-  "meta": { "templateCredsSetupCompleted": false },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
   "tags": [
-    { "name": "patient-retention" },
-    { "name": "recovery" }
+    {
+      "id": "tag-patient-retention",
+      "name": "patient-retention"
+    },
+    {
+      "id": "tag-recovery",
+      "name": "recovery"
+    }
   ]
 }

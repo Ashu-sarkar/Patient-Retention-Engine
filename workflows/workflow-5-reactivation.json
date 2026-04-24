@@ -1,9 +1,9 @@
 {
-  "name": "WF5 — Patient Reactivation (30-Day)",
+  "name": "WF5 \u2014 Patient Reactivation (30-Day)",
   "nodes": [
     {
       "parameters": {
-        "content": "## Workflow 5: Patient Reactivation\n\n**Trigger:** Every Monday at 9:00 AM\n\n**Logic:** Reads from Supabase. Finds patients inactive for 30+ days (last message > 30 days ago or never messaged), who haven't received a reactivation message yet and are not inactive/completed. Sends via Meta Cloud API (template: patient_reactivation). Sets `reactivation_sent = TRUE` after sending.\n\n**Data source:** Supabase `public.patients`\n\n**Note:** Meta category for this message is MARKETING — ensure opt-in compliance and template approval before activating.\n\n**Before activating:**\n1. Set credential on all Postgres nodes → Supabase DB\n2. Set credential on HTTP node → WhatsApp Business API (HTTP Header Auth)\n3. Ensure the `patient_reactivation` template is approved as MARKETING in Meta Business Manager",
+        "content": "## Workflow 5: Patient Reactivation\n\n**Trigger:** Every Monday at 9:00 AM\n\n**Logic:** Reads from Supabase. Finds patients inactive for 30+ days (last message > 30 days ago or never messaged), who haven't received a reactivation message yet and are not inactive/completed. Sends via Meta Cloud API (template: patient_reactivation). Sets `reactivation_sent = TRUE` after sending.\n\n**Data source:** Supabase `public.patients`\n\n**Note:** Meta category for this message is MARKETING \u2014 ensure opt-in compliance and template approval before activating.\n\n**Before activating:**\n1. Set credential on all Postgres nodes \u2192 Supabase DB\n2. Set credential on HTTP node \u2192 WhatsApp Business API (HTTP Header Auth)\n3. Ensure the `patient_reactivation` template is approved as MARKETING in Meta Business Manager",
         "height": 280,
         "width": 420
       },
@@ -11,7 +11,10 @@
       "name": "Sticky Note",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [240, 60]
+      "position": [
+        240,
+        60
+      ]
     },
     {
       "parameters": {
@@ -28,7 +31,10 @@
       "name": "Weekly Monday 9AM Trigger",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.1,
-      "position": [240, 380]
+      "position": [
+        240,
+        380
+      ]
     },
     {
       "parameters": {
@@ -40,7 +46,10 @@
       "name": "Read Patients from Supabase",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
-      "position": [460, 380],
+      "position": [
+        460,
+        380
+      ],
       "credentials": {
         "postgres": {
           "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
@@ -56,18 +65,28 @@
       "name": "Filter Inactive Patients",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [680, 380]
+      "position": [
+        680,
+        380
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
           "conditions": [
             {
               "id": "skip-check-wf5",
               "leftValue": "={{ $json._skip }}",
               "rightValue": true,
-              "operator": { "type": "boolean", "operation": "true" }
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
             }
           ],
           "combinator": "and"
@@ -78,7 +97,10 @@
       "name": "Skip if No Patients",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [900, 380]
+      "position": [
+        900,
+        380
+      ]
     },
     {
       "parameters": {
@@ -89,13 +111,21 @@
         "sendBody": true,
         "contentType": "json",
         "body": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $json._to_phone, type: 'template', template: { name: 'patient_reactivation', language: { code: $env.WA_LANGUAGE_CODE || 'en' }, components: [{ type: 'body', parameters: [ { type: 'text', text: $json._name }, { type: 'text', text: $json._clinic_name }, { type: 'text', text: $json._doctor_name } ] }] } }) }}",
-        "options": { "retry": { "maxTries": 3, "waitBetweenTries": 30000 } }
+        "options": {
+          "retry": {
+            "maxTries": 3,
+            "waitBetweenTries": 30000
+          }
+        }
       },
       "id": "55555555-5555-5555-5555-000000000006",
       "name": "Send Reactivation Message",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1120, 280],
+      "position": [
+        1120,
+        280
+      ],
       "credentials": {
         "httpHeaderAuth": {
           "id": "REPLACE_WITH_WA_CREDENTIAL_ID",
@@ -114,7 +144,10 @@
       "name": "Update Patient in Supabase",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
-      "position": [1340, 180],
+      "position": [
+        1340,
+        180
+      ],
       "credentials": {
         "postgres": {
           "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
@@ -125,8 +158,16 @@
     {
       "parameters": {
         "operation": "insert",
-        "schema": { "__rl": true, "value": "public", "mode": "list" },
-        "table": { "__rl": true, "value": "message_logs", "mode": "list" },
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "message_logs",
+          "mode": "list"
+        },
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
@@ -149,7 +190,10 @@
       "name": "Log Message to Supabase",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
-      "position": [1340, 380],
+      "position": [
+        1340,
+        380
+      ],
       "credentials": {
         "postgres": {
           "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
@@ -160,8 +204,16 @@
     {
       "parameters": {
         "operation": "insert",
-        "schema": { "__rl": true, "value": "public", "mode": "list" },
-        "table": { "__rl": true, "value": "system_logs", "mode": "list" },
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "system_logs",
+          "mode": "list"
+        },
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
@@ -180,7 +232,10 @@
       "name": "Log Send Failure to Supabase",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
-      "position": [1340, 520],
+      "position": [
+        1340,
+        520
+      ],
       "credentials": {
         "postgres": {
           "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
@@ -191,37 +246,91 @@
   ],
   "connections": {
     "Weekly Monday 9AM Trigger": {
-      "main": [[{ "node": "Read Patients from Supabase", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Read Patients from Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Read Patients from Supabase": {
-      "main": [[{ "node": "Filter Inactive Patients", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Filter Inactive Patients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Filter Inactive Patients": {
-      "main": [[{ "node": "Skip if No Patients", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Skip if No Patients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Skip if No Patients": {
       "main": [
         [],
-        [{ "node": "Send Reactivation Message", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Send Reactivation Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Send Reactivation Message": {
       "main": [
         [
-          { "node": "Update Patient in Supabase", "type": "main", "index": 0 },
-          { "node": "Log Message to Supabase", "type": "main", "index": 0 }
+          {
+            "node": "Update Patient in Supabase",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Message to Supabase",
+            "type": "main",
+            "index": 0
+          }
         ],
-        [{ "node": "Log Send Failure to Supabase", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Log Send Failure to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   },
   "active": false,
-  "settings": { "executionOrder": "v1" },
+  "settings": {
+    "executionOrder": "v1"
+  },
   "versionId": "55555555-5555-5555-5555-555555555505",
   "id": "wf5-reactivation",
-  "meta": { "templateCredsSetupCompleted": false },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
   "tags": [
-    { "name": "patient-retention" },
-    { "name": "reactivation" }
+    {
+      "id": "tag-patient-retention",
+      "name": "patient-retention"
+    },
+    {
+      "id": "tag-reactivation",
+      "name": "reactivation"
+    }
   ]
 }

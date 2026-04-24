@@ -1,9 +1,9 @@
 {
-  "name": "WF8 — Global Error Handler",
+  "name": "WF8 \u2014 Global Error Handler",
   "nodes": [
     {
       "parameters": {
-        "content": "## Workflow 8: Global Error Handler\n\n**Trigger:** n8n Error Trigger (fires when ANY other workflow fails)\n\n**How to link this workflow:**\n1. Open each workflow (WF1–WF7, WF11)\n2. Click the three-dot menu (⋮) → Settings\n3. Under \"Error Workflow\", select \"WF8 — Global Error Handler\"\n4. Save\n\n**What it does:**\n1. Receives error details from n8n\n2. Logs the error to Supabase `system_logs`\n3. Sends a free-form text alert to the admin WhatsApp number via Meta Cloud API (if configured)\n\n**Data sink:** Supabase only\n\n**Before activating:**\n1. Set credential on Postgres nodes → Supabase DB\n2. Set credential on HTTP Request node → WhatsApp Business API (HTTP Header Auth)\n3. Set ADMIN_WHATSAPP_NUMBER in .env (plain E.164 digits, e.g. 919876543210)\n4. This workflow must be activated BEFORE all others",
+        "content": "## Workflow 8: Global Error Handler\n\n**Trigger:** n8n Error Trigger (fires when ANY other workflow fails)\n\n**How to link this workflow:**\n1. Open each workflow (WF1\u2013WF7, WF11)\n2. Click the three-dot menu (\u22ee) \u2192 Settings\n3. Under \"Error Workflow\", select \"WF8 \u2014 Global Error Handler\"\n4. Save\n\n**What it does:**\n1. Receives error details from n8n\n2. Logs the error to Supabase `system_logs`\n3. Sends a free-form text alert to the admin WhatsApp number via Meta Cloud API (if configured)\n\n**Data sink:** Supabase only\n\n**Before activating:**\n1. Set credential on Postgres nodes \u2192 Supabase DB\n2. Set credential on HTTP Request node \u2192 WhatsApp Business API (HTTP Header Auth)\n3. Set ADMIN_WHATSAPP_NUMBER in .env (plain E.164 digits, e.g. 919876543210)\n4. This workflow must be activated BEFORE all others",
         "height": 340,
         "width": 440
       },
@@ -11,7 +11,10 @@
       "name": "Sticky Note",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [240, 60]
+      "position": [
+        240,
+        60
+      ]
     },
     {
       "parameters": {},
@@ -19,23 +22,37 @@
       "name": "Error Trigger",
       "type": "n8n-nodes-base.errorTrigger",
       "typeVersion": 1,
-      "position": [240, 480]
+      "position": [
+        240,
+        480
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// Build a structured error report from n8n's error payload\nconst errorData = $input.first().json;\n\nconst workflowName = errorData.workflow?.name || errorData.workflow?.id || 'unknown';\nconst executionId = errorData.execution?.id || 'unknown';\nconst executionUrl = errorData.execution?.url || '';\nconst errorMessage = errorData.error?.message || 'Unknown error';\nconst errorStack = errorData.error?.stack || '';\nconst timestamp = new Date().toISOString();\n\nconst adminAlert = `⚠️ *Patient Retention Engine Alert*\\n\\nWorkflow: ${workflowName}\\nError: ${errorMessage}\\nTime: ${timestamp}\\nExecution ID: ${executionId}\\n\\nPlease check the n8n dashboard and Supabase system_logs.${executionUrl ? '\\n\\nExecution: ' + executionUrl : ''}`;\n\nconst details = {\n  workflow: workflowName,\n  execution_id: executionId,\n  execution_url: executionUrl,\n  error_message: errorMessage,\n  error_stack: errorStack.substr(0, 500),\n  raw: JSON.stringify(errorData).substr(0, 1000)\n};\n\nreturn [{\n  json: {\n    _workflow_name: workflowName,\n    _execution_id: executionId,\n    _error_message: errorMessage,\n    _timestamp: timestamp,\n    _admin_alert: adminAlert,\n    _details: details\n  }\n}];"
+        "jsCode": "// Build a structured error report from n8n's error payload\nconst errorData = $input.first().json;\n\nconst workflowName = errorData.workflow?.name || errorData.workflow?.id || 'unknown';\nconst executionId = errorData.execution?.id || 'unknown';\nconst executionUrl = errorData.execution?.url || '';\nconst errorMessage = errorData.error?.message || 'Unknown error';\nconst errorStack = errorData.error?.stack || '';\nconst timestamp = new Date().toISOString();\n\nconst adminAlert = `\u26a0\ufe0f *Patient Retention Engine Alert*\\n\\nWorkflow: ${workflowName}\\nError: ${errorMessage}\\nTime: ${timestamp}\\nExecution ID: ${executionId}\\n\\nPlease check the n8n dashboard and Supabase system_logs.${executionUrl ? '\\n\\nExecution: ' + executionUrl : ''}`;\n\nconst details = {\n  workflow: workflowName,\n  execution_id: executionId,\n  execution_url: executionUrl,\n  error_message: errorMessage,\n  error_stack: errorStack.substr(0, 500),\n  raw: JSON.stringify(errorData).substr(0, 1000)\n};\n\nreturn [{\n  json: {\n    _workflow_name: workflowName,\n    _execution_id: executionId,\n    _error_message: errorMessage,\n    _timestamp: timestamp,\n    _admin_alert: adminAlert,\n    _details: details\n  }\n}];"
       },
       "id": "88888888-8888-8888-8888-000000000003",
       "name": "Build Error Report",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [460, 480]
+      "position": [
+        460,
+        480
+      ]
     },
     {
       "parameters": {
         "operation": "insert",
-        "schema": { "__rl": true, "value": "public", "mode": "list" },
-        "table": { "__rl": true, "value": "system_logs", "mode": "list" },
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "system_logs",
+          "mode": "list"
+        },
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
@@ -54,7 +71,10 @@
       "name": "Log Error to Supabase",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
-      "position": [680, 380],
+      "position": [
+        680,
+        380
+      ],
       "credentials": {
         "postgres": {
           "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
@@ -65,13 +85,20 @@
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
           "conditions": [
             {
               "id": "admin-phone-check",
               "leftValue": "={{ $env.ADMIN_WHATSAPP_NUMBER }}",
               "rightValue": "",
-              "operator": { "type": "string", "operation": "notEmpty" }
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
             }
           ],
           "combinator": "and"
@@ -82,7 +109,10 @@
       "name": "Admin Phone Configured?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [680, 580]
+      "position": [
+        680,
+        580
+      ]
     },
     {
       "parameters": {
@@ -99,7 +129,10 @@
       "name": "Send Admin Alert",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [900, 480],
+      "position": [
+        900,
+        480
+      ],
       "credentials": {
         "httpHeaderAuth": {
           "id": "REPLACE_WITH_WA_CREDENTIAL_ID",
@@ -111,15 +144,23 @@
     {
       "parameters": {
         "operation": "insert",
-        "schema": { "__rl": true, "value": "public", "mode": "list" },
-        "table": { "__rl": true, "value": "system_logs", "mode": "list" },
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "system_logs",
+          "mode": "list"
+        },
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
             "workflow_name": "workflow-8-error-handler",
             "execution_id": "={{ $execution.id }}",
             "log_level": "WARN",
-            "message": "Admin alert skipped — ADMIN_WHATSAPP_NUMBER not configured",
+            "message": "Admin alert skipped \u2014 ADMIN_WHATSAPP_NUMBER not configured",
             "details": "={{ JSON.stringify({ original_workflow: $('Build Error Report').item.json._workflow_name, original_execution: $('Build Error Report').item.json._execution_id }) }}"
           },
           "matchingColumns": [],
@@ -131,7 +172,10 @@
       "name": "Log Alert Skipped to Supabase",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
-      "position": [900, 680],
+      "position": [
+        900,
+        680
+      ],
       "credentials": {
         "postgres": {
           "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
@@ -142,28 +186,68 @@
   ],
   "connections": {
     "Error Trigger": {
-      "main": [[{ "node": "Build Error Report", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Build Error Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Build Error Report": {
-      "main": [[
-        { "node": "Log Error to Supabase", "type": "main", "index": 0 },
-        { "node": "Admin Phone Configured?", "type": "main", "index": 0 }
-      ]]
+      "main": [
+        [
+          {
+            "node": "Log Error to Supabase",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Admin Phone Configured?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Admin Phone Configured?": {
       "main": [
-        [{ "node": "Send Admin Alert", "type": "main", "index": 0 }],
-        [{ "node": "Log Alert Skipped to Supabase", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Send Admin Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Alert Skipped to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   },
   "active": false,
-  "settings": { "executionOrder": "v1" },
+  "settings": {
+    "executionOrder": "v1"
+  },
   "versionId": "88888888-8888-8888-8888-888888888808",
   "id": "wf8-error-handler",
-  "meta": { "templateCredsSetupCompleted": false },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
   "tags": [
-    { "name": "patient-retention" },
-    { "name": "monitoring" }
+    {
+      "id": "tag-patient-retention",
+      "name": "patient-retention"
+    },
+    {
+      "id": "tag-monitoring",
+      "name": "monitoring"
+    }
   ]
 }

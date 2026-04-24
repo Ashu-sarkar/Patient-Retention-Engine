@@ -17,17 +17,22 @@ services:
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
       # Scheduler timezone — n8n uses GENERIC_TIMEZONE for cron triggers (WF1-WF5)
       - GENERIC_TIMEZONE=${TIMEZONE:-Asia/Kolkata}
+      # Allow session cookies over HTTP (required for local dev without TLS)
+      - N8N_SECURE_COOKIE=false
 
-      # n8n internal DB — upgraded from SQLite to Supabase PostgreSQL
-      # Comment these 6 lines out and set DB_TYPE=sqlite to revert to SQLite
-      - DB_TYPE=postgresdb
-      - DB_POSTGRESDB_HOST=${SUPABASE_DB_HOST}
-      - DB_POSTGRESDB_PORT=${SUPABASE_DB_PORT:-5432}
-      - DB_POSTGRESDB_DATABASE=${SUPABASE_DB_NAME:-postgres}
-      - DB_POSTGRESDB_USER=${SUPABASE_DB_USER:-postgres}
-      - DB_POSTGRESDB_PASSWORD=${SUPABASE_DB_PASSWORD}
-      - DB_POSTGRESDB_SSL_ENABLED=true
-      - DB_POSTGRESDB_SSL_REJECT_UNAUTHORIZED=true
+      # n8n internal DB — SQLite (local dev default)
+      # Supabase direct host is IPv6-only; Docker on macOS cannot route IPv6.
+      # Workflow nodes still reach Supabase via HTTP/Postgres credentials below.
+      # To switch back to Postgres, resolve the IPv6/pooler issue and uncomment:
+      # - DB_TYPE=postgresdb
+      # - DB_POSTGRESDB_HOST=${SUPABASE_DB_HOST}
+      # - DB_POSTGRESDB_PORT=${SUPABASE_DB_PORT:-5432}
+      # - DB_POSTGRESDB_DATABASE=${SUPABASE_DB_NAME:-postgres}
+      # - DB_POSTGRESDB_USER=${SUPABASE_DB_USER:-postgres}
+      # - DB_POSTGRESDB_PASSWORD=${SUPABASE_DB_PASSWORD}
+      # - DB_POSTGRESDB_SSL_ENABLED=true
+      # - DB_POSTGRESDB_SSL_REJECT_UNAUTHORIZED=true
+      - DB_TYPE=sqlite
 
       # Supabase — available as $env.SUPABASE_URL / $env.SUPABASE_SERVICE_ROLE_KEY
       # inside n8n workflow Code nodes and HTTP Request nodes

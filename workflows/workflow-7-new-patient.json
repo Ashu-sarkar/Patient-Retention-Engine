@@ -1,9 +1,9 @@
 {
-  "name": "WF7 — New Patient Welcome",
+  "name": "WF7 \u2014 New Patient Welcome",
   "nodes": [
     {
       "parameters": {
-        "content": "## Workflow 7: New Patient Welcome\n\n**Trigger:** HTTP Webhook — called by WF11 (QR Form Intake) after a new patient is successfully upserted to Supabase.\n\n**Webhook path:** `new-patient-intake` (hardcoded literal — must match WF11's HTTP call)\n\n**What it does:**\n1. Receives patient data from WF11 (patient_code, name, phone, clinic_name, doctor_name, follow_up_required, follow_up_date, visit_date)\n2. Sends a personalized welcome WhatsApp message via Meta Cloud API (template: patient_welcome)\n3. Updates Supabase: `last_message_sent`, `message_count = 1`\n4. Logs send result to `public.message_logs` and failures to `public.system_logs`\n\n**Data source:** Supabase `public.patients` (all state is in Supabase)\n\n**Before activating:**\n1. Activate THIS workflow BEFORE WF11 (webhook must be live before form submissions arrive)\n2. Set credential on all Postgres nodes → Supabase DB\n3. Set credential on HTTP Request node → WhatsApp Business API (HTTP Header Auth)\n4. Set `WEBHOOK_URL` in `.env` to your public n8n base URL (e.g. https://your-n8n.example.com)\n5. Ensure the `patient_welcome` template is approved in Meta Business Manager",
+        "content": "## Workflow 7: New Patient Welcome\n\n**Trigger:** HTTP Webhook \u2014 called by WF11 (QR Form Intake) after a new patient is successfully upserted to Supabase.\n\n**Webhook path:** `new-patient-intake` (hardcoded literal \u2014 must match WF11's HTTP call)\n\n**What it does:**\n1. Receives patient data from WF11 (patient_code, name, phone, clinic_name, doctor_name, follow_up_required, follow_up_date, visit_date)\n2. Sends a personalized welcome WhatsApp message via Meta Cloud API (template: patient_welcome)\n3. Updates Supabase: `last_message_sent`, `message_count = 1`\n4. Logs send result to `public.message_logs` and failures to `public.system_logs`\n\n**Data source:** Supabase `public.patients` (all state is in Supabase)\n\n**Before activating:**\n1. Activate THIS workflow BEFORE WF11 (webhook must be live before form submissions arrive)\n2. Set credential on all Postgres nodes \u2192 Supabase DB\n3. Set credential on HTTP Request node \u2192 WhatsApp Business API (HTTP Header Auth)\n4. Set `WEBHOOK_URL` in `.env` to your public n8n base URL (e.g. https://your-n8n.example.com)\n5. Ensure the `patient_welcome` template is approved in Meta Business Manager",
         "height": 420,
         "width": 480
       },
@@ -11,7 +11,10 @@
       "name": "Sticky Note",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [240, 60]
+      "position": [
+        240,
+        60
+      ]
     },
     {
       "parameters": {
@@ -21,10 +24,13 @@
         "options": {}
       },
       "id": "77777777-7777-7777-7777-000000000002",
-      "name": "Webhook — New Patient",
+      "name": "Webhook \u2014 New Patient",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [240, 540],
+      "position": [
+        240,
+        540
+      ],
       "webhookId": "new-patient-intake-webhook"
     },
     {
@@ -35,18 +41,28 @@
       "name": "Build Welcome Message",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [460, 540]
+      "position": [
+        460,
+        540
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
           "conditions": [
             {
               "id": "skip-check-wf7",
               "leftValue": "={{ $json._skip }}",
               "rightValue": true,
-              "operator": { "type": "boolean", "operation": "true" }
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
             }
           ],
           "combinator": "and"
@@ -57,7 +73,10 @@
       "name": "Skip if Invalid Data?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [680, 540]
+      "position": [
+        680,
+        540
+      ]
     },
     {
       "parameters": {
@@ -68,13 +87,21 @@
         "sendBody": true,
         "contentType": "json",
         "body": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $json._to_phone, type: 'template', template: { name: 'patient_welcome', language: { code: $env.WA_LANGUAGE_CODE || 'en' }, components: [{ type: 'body', parameters: [ { type: 'text', text: $json._patient_name }, { type: 'text', text: $json._clinic_name }, { type: 'text', text: $json._doctor_name } ] }] } }) }}",
-        "options": { "retry": { "maxTries": 2, "waitBetweenTries": 15000 } }
+        "options": {
+          "retry": {
+            "maxTries": 2,
+            "waitBetweenTries": 15000
+          }
+        }
       },
       "id": "77777777-7777-7777-7777-000000000005",
       "name": "Send Welcome Message",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [900, 420],
+      "position": [
+        900,
+        420
+      ],
       "credentials": {
         "httpHeaderAuth": {
           "id": "REPLACE_WITH_WA_CREDENTIAL_ID",
@@ -93,7 +120,10 @@
       "name": "Update Patient Welcome Sent",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
-      "position": [1120, 320],
+      "position": [
+        1120,
+        320
+      ],
       "credentials": {
         "postgres": {
           "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
@@ -104,8 +134,16 @@
     {
       "parameters": {
         "operation": "insert",
-        "schema": { "__rl": true, "value": "public", "mode": "list" },
-        "table": { "__rl": true, "value": "message_logs", "mode": "list" },
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "message_logs",
+          "mode": "list"
+        },
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
@@ -127,7 +165,10 @@
       "name": "Log Welcome Message",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
-      "position": [1120, 500],
+      "position": [
+        1120,
+        500
+      ],
       "credentials": {
         "postgres": {
           "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
@@ -138,8 +179,16 @@
     {
       "parameters": {
         "operation": "insert",
-        "schema": { "__rl": true, "value": "public", "mode": "list" },
-        "table": { "__rl": true, "value": "system_logs", "mode": "list" },
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "system_logs",
+          "mode": "list"
+        },
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
@@ -158,7 +207,10 @@
       "name": "Log Welcome Failure",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
-      "position": [1120, 660],
+      "position": [
+        1120,
+        660
+      ],
       "credentials": {
         "postgres": {
           "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
@@ -170,61 +222,129 @@
       "parameters": {
         "respondWith": "json",
         "responseBody": "={ \"status\": \"ok\", \"message\": \"Welcome message queued\" }",
-        "options": { "responseCode": 200 }
+        "options": {
+          "responseCode": 200
+        }
       },
       "id": "77777777-7777-7777-7777-000000000009",
       "name": "Respond OK to WF11",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [1340, 420]
+      "position": [
+        1340,
+        420
+      ]
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={ \"status\": \"ok\", \"message\": \"WA send failed — logged to system_logs\" }",
-        "options": { "responseCode": 200 }
+        "responseBody": "={ \"status\": \"ok\", \"message\": \"WA send failed \u2014 logged to system_logs\" }",
+        "options": {
+          "responseCode": 200
+        }
       },
       "id": "77777777-7777-7777-7777-000000000010",
       "name": "Respond OK (WA Error Path)",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [1340, 680]
+      "position": [
+        1340,
+        680
+      ]
     }
   ],
   "connections": {
-    "Webhook — New Patient": {
-      "main": [[{ "node": "Build Welcome Message", "type": "main", "index": 0 }]]
+    "Webhook \u2014 New Patient": {
+      "main": [
+        [
+          {
+            "node": "Build Welcome Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Build Welcome Message": {
-      "main": [[{ "node": "Skip if Invalid Data?", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Skip if Invalid Data?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Skip if Invalid Data?": {
       "main": [
         [],
-        [{ "node": "Send Welcome Message", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Send Welcome Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Send Welcome Message": {
       "main": [
         [
-          { "node": "Update Patient Welcome Sent", "type": "main", "index": 0 },
-          { "node": "Log Welcome Message", "type": "main", "index": 0 },
-          { "node": "Respond OK to WF11", "type": "main", "index": 0 }
+          {
+            "node": "Update Patient Welcome Sent",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Welcome Message",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Respond OK to WF11",
+            "type": "main",
+            "index": 0
+          }
         ],
-        [{ "node": "Log Welcome Failure", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Log Welcome Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Log Welcome Failure": {
-      "main": [[{ "node": "Respond OK (WA Error Path)", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Respond OK (WA Error Path)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
-  "settings": { "executionOrder": "v1" },
+  "settings": {
+    "executionOrder": "v1"
+  },
   "versionId": "77777777-7777-7777-7777-777777777707",
   "id": "wf7-new-patient",
-  "meta": { "templateCredsSetupCompleted": false },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
   "tags": [
-    { "name": "patient-retention" },
-    { "name": "onboarding" }
+    {
+      "id": "tag-patient-retention",
+      "name": "patient-retention"
+    },
+    {
+      "id": "tag-onboarding",
+      "name": "onboarding"
+    }
   ]
 }
