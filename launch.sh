@@ -71,6 +71,18 @@ echo ""
 
 cd "$REPO_DIR"
 
+# ── Supabase schema + pooler checks (host DB, before Docker) ─────────────────
+if command -v node >/dev/null 2>&1; then
+  if [ ! -d "${REPO_DIR}/node_modules/pg" ] && command -v npm >/dev/null 2>&1; then
+    log "Installing npm dependencies (pg for Supabase preflight)…"
+    npm install --no-audit --no-fund --silent
+  fi
+  log "Running Supabase preflight (schema alignment + PostgREST reload signal)…"
+  node "${REPO_DIR}/scripts/preflight-supabase.js" || die "Supabase preflight failed — fix SUPABASE_DB_* pooler settings and SQL errors above, or set SKIP_SUPABASE_PREFLIGHT=1 to skip."
+else
+  die "Node.js is required for scripts/preflight-supabase.js (install Node 18+)."
+fi
+
 # ── Build / start ─────────────────────────────────────────────────────────────
 if [ "$MODE" = "rebuild" ]; then
   log "Forcing a clean image rebuild…"

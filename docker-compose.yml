@@ -22,6 +22,7 @@ services:
       - GENERIC_TIMEZONE=${TIMEZONE:-Asia/Kolkata}
 
       # ── n8n internal DB (SQLite for local dev) ────────────────────────
+      # Run ./launch.sh (runs scripts/preflight-supabase.js) so Supabase schema + pooler stay aligned.
       # Supabase direct host is IPv6-only; Docker on macOS cannot route IPv6.
       # Workflow nodes still reach Supabase via HTTP/Postgres credentials.
       # To switch back to Postgres, resolve the IPv6/pooler issue and uncomment:

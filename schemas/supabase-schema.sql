@@ -1,7 +1,11 @@
 -- =============================================================================
 -- Supabase / PostgreSQL Schema
 -- Patient Retention Engine
--- Run this in: Supabase Dashboard → SQL Editor → New Query
+--
+-- For day-to-day dev, prefer automated alignment (idempotent):
+--   npm run preflight   or   ./launch.sh
+-- which applies schemas/preflight-migrations.sql (schema drift + PostgREST reload).
+-- Use this file for a full reference or greenfield manual install in SQL Editor.
 -- =============================================================================
 
 -- -------------------------

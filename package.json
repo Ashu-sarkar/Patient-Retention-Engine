@@ -7,8 +7,12 @@
     "node": ">=18.0.0"
   },
   "scripts": {
+    "preflight": "node scripts/preflight-supabase.js",
     "setup": "node tests/setup-n8n.js",
     "test": "node tests/run-tests.js",
-    "test:setup-and-run": "node tests/setup-n8n.js && node tests/run-tests.js"
+    "test:setup-and-run": "node scripts/preflight-supabase.js && node tests/setup-n8n.js && node tests/run-tests.js"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
   }
 }

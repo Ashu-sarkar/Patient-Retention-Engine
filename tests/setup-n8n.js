@@ -20,6 +20,9 @@
  *   SUPABASE_DB_HOST, SUPABASE_DB_PORT, SUPABASE_DB_NAME,
  *   SUPABASE_DB_USER, SUPABASE_DB_PASSWORD
  *   WA_ACCESS_TOKEN  (optional — placeholder used if absent)
+ *
+ * Run `npm run preflight` or `./launch.sh` first so Postgres columns match workflows
+ * and PostgREST cache is reloaded (avoids name / workflow_name / hospital_boarding drift).
  */
 
 'use strict';
