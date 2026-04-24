@@ -1,9 +1,9 @@
 {
-  "name": "WF11 — QR Form Intake",
+  "name": "WF11 \u2014 QR Form Intake",
   "nodes": [
     {
       "parameters": {
-        "content": "## WF11 — QR Form Intake\n\n**Trigger:** POST webhook from the patient registration HTML form (QR code scan).\n**Path:** `/webhook/patient-form-intake`\n\n**Flow:**\n1. Receive 9-field JSON payload from the form\n2. Server-side validation (mirrors frontend rules — second line of defence)\n3. Generate PAT-XXXX patient code\n4. Upsert patient into `public.patients` (conflict on phone → update)\n5. Call WF7 webhook to send welcome WhatsApp (fire-and-forget)\n6. Respond to the form: `{ status, patient_code }` on success, `{ errors[] }` on failure\n\n**Payload fields:** patient_name, phone_number, dob, sex, hospital_name, doctor_name, visit_date, follow_up_required, follow_up_date\n\n**Activation order:** WF8 → WF7 → WF11 (WF7 webhook must be live before WF11 calls it)\n\n**Credentials to set:**\n- 3× Postgres nodes → Supabase DB\n- HTTP Request (Call WF7) — no credential needed (internal n8n call)",
+        "content": "## WF11 \u2014 QR Form Intake\n\n**Trigger:** POST webhook from the patient registration HTML form (QR code scan).\n**Path:** `/webhook/patient-form-intake`\n\n**Flow:**\n1. Receive 9-field JSON payload from the form\n2. Server-side validation (mirrors frontend rules \u2014 second line of defence)\n3. Generate PAT-XXXX patient code\n4. Upsert patient into `public.patients` (conflict on phone \u2192 update)\n5. Call WF7 webhook to send welcome WhatsApp (fire-and-forget)\n6. Respond to the form: `{ status, patient_code }` on success, `{ errors[] }` on failure\n\n**Payload fields:** patient_name, phone_number, dob, sex, hospital_name, doctor_name, visit_date, follow_up_required, follow_up_date\n\n**Activation order:** WF8 \u2192 WF7 \u2192 WF11 (WF7 webhook must be live before WF11 calls it)\n\n**Credentials to set:**\n- 3\u00d7 Postgres nodes \u2192 Supabase DB\n- HTTP Request (Call WF7) \u2014 no credential needed (internal n8n call)",
         "height": 380,
         "width": 400
       },
@@ -11,7 +11,10 @@
       "name": "Sticky Note",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [-240, 180]
+      "position": [
+        -240,
+        180
+      ]
     },
     {
       "parameters": {
@@ -21,32 +24,45 @@
         "options": {}
       },
       "id": "11111111-1111-1111-1111-000000000002",
-      "name": "Webhook — Form Intake",
+      "name": "Webhook \u2014 Form Intake",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1.1,
-      "position": [240, 320],
+      "position": [
+        240,
+        320
+      ],
       "webhookId": "patient-form-intake-webhook"
     },
     {
       "parameters": {
-        "jsCode": "// ── Server-side validation ─────────────────────────────────────────────────\n// Mirrors the frontend rules in patient-form/index.html.\n// Accepts body both as $json (raw) and $json.body (tunnelled through some proxies).\n\nconst body = $input.first().json.body || $input.first().json;\n\nconst errors = [];\n\nconst patientName      = String(body.patient_name       || '').trim();\nconst phoneRaw         = String(body.phone_number       || '').trim();\nconst dob              = String(body.dob                || '').trim();\nconst sex              = String(body.sex                || '').trim();\nconst hospitalName     = String(body.hospital_name      || '').trim();\nconst doctorName       = String(body.doctor_name        || '').trim();\nconst visitDate        = String(body.visit_date         || '').trim();\nconst followUpRequired = String(body.follow_up_required || '').trim();\nconst followUpDate     = String(body.follow_up_date     || '').trim();\n\nconst ISO_DATE = /^\\d{4}-\\d{2}-\\d{2}$/;\nconst PHONE_RE = /^[0-9]{10}$/;\nconst today    = new Date(); today.setHours(0,0,0,0);\n\n// Required fields\nif (!patientName || patientName.length < 2)\n  errors.push('patient_name: required, minimum 2 characters');\n\nif (!PHONE_RE.test(phoneRaw))\n  errors.push('phone_number: must be exactly 10 digits (no +91)');\n\nif (!hospitalName)\n  errors.push('hospital_name: required');\n\nif (!doctorName)\n  errors.push('doctor_name: required');\n\nif (!visitDate || !ISO_DATE.test(visitDate))\n  errors.push('visit_date: required, format YYYY-MM-DD');\nelse if (new Date(visitDate + 'T00:00:00') > today)\n  errors.push('visit_date: cannot be in the future');\n\nif (!['Yes','No'].includes(followUpRequired))\n  errors.push('follow_up_required: must be Yes or No');\n\n// Conditional follow-up date\nif (followUpRequired === 'Yes') {\n  if (!followUpDate || !ISO_DATE.test(followUpDate))\n    errors.push('follow_up_date: required when follow_up_required is Yes, format YYYY-MM-DD');\n  else if (visitDate && followUpDate <= visitDate)\n    errors.push('follow_up_date: must be strictly after visit_date');\n}\n\n// Optional field validation\nif (sex && !['Male','Female','Other'].includes(sex))\n  errors.push('sex: must be Male, Female, or Other');\n\nif (dob) {\n  if (!ISO_DATE.test(dob))\n    errors.push('dob: format must be YYYY-MM-DD');\n  else if (new Date(dob + 'T00:00:00') >= today)\n    errors.push('dob: must be a past date');\n}\n\nif (errors.length > 0) {\n  return [{ json: { _valid: false, _errors: errors } }];\n}\n\n// Normalise phone to E.164 (+91)\nconst phone = '+91' + phoneRaw;\n\nreturn [{\n  json: {\n    _valid:          true,\n    _errors:         [],\n    patient_name:    patientName,\n    phone:           phone,\n    dob:             dob  || null,\n    sex:             sex  || null,\n    clinic_name:     hospitalName,\n    doctor_name:     doctorName,\n    visit_date:      visitDate,\n    follow_up_required: followUpRequired,\n    follow_up_date:  followUpRequired === 'Yes' ? followUpDate : null,\n  }\n}];"
+        "jsCode": "// \u2500\u2500 Server-side validation \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n// Mirrors the frontend rules in patient-form/index.html.\n// Accepts body both as $json (raw) and $json.body (tunnelled through some proxies).\n\nconst body = $input.first().json.body || $input.first().json;\n\nconst errors = [];\n\nconst patientName      = String(body.patient_name       || '').trim();\nconst phoneRaw         = String(body.phone_number       || '').trim();\nconst dob              = String(body.dob                || '').trim();\nconst sex              = String(body.sex                || '').trim();\nconst hospitalName     = String(body.hospital_name      || '').trim();\nconst doctorName       = String(body.doctor_name        || '').trim();\nconst visitDate        = String(body.visit_date         || '').trim();\nconst followUpRequired = String(body.follow_up_required || '').trim();\nconst followUpDate     = String(body.follow_up_date     || '').trim();\n\nconst ISO_DATE = /^\\d{4}-\\d{2}-\\d{2}$/;\nconst PHONE_RE = /^[0-9]{10}$/;\nconst today    = new Date(); today.setHours(0,0,0,0);\n\n// Required fields\nif (!patientName || patientName.length < 2)\n  errors.push('patient_name: required, minimum 2 characters');\n\nif (!PHONE_RE.test(phoneRaw))\n  errors.push('phone_number: must be exactly 10 digits (no +91)');\n\nif (!hospitalName)\n  errors.push('hospital_name: required');\n\nif (!doctorName)\n  errors.push('doctor_name: required');\n\nif (!visitDate || !ISO_DATE.test(visitDate))\n  errors.push('visit_date: required, format YYYY-MM-DD');\nelse if (new Date(visitDate + 'T00:00:00') > today)\n  errors.push('visit_date: cannot be in the future');\n\nif (!['Yes','No'].includes(followUpRequired))\n  errors.push('follow_up_required: must be Yes or No');\n\n// Conditional follow-up date\nif (followUpRequired === 'Yes') {\n  if (!followUpDate || !ISO_DATE.test(followUpDate))\n    errors.push('follow_up_date: required when follow_up_required is Yes, format YYYY-MM-DD');\n  else if (visitDate && followUpDate <= visitDate)\n    errors.push('follow_up_date: must be strictly after visit_date');\n}\n\n// Optional field validation\nif (sex && !['Male','Female','Other'].includes(sex))\n  errors.push('sex: must be Male, Female, or Other');\n\nif (dob) {\n  if (!ISO_DATE.test(dob))\n    errors.push('dob: format must be YYYY-MM-DD');\n  else if (new Date(dob + 'T00:00:00') >= today)\n    errors.push('dob: must be a past date');\n}\n\nif (errors.length > 0) {\n  return [{ json: { _valid: false, _errors: errors } }];\n}\n\n// Normalise phone to E.164 (+91)\nconst phone = '+91' + phoneRaw;\n\nreturn [{\n  json: {\n    _valid:          true,\n    _errors:         [],\n    patient_name:    patientName,\n    phone:           phone,\n    dob:             dob  || null,\n    sex:             sex  || null,\n    clinic_name:     hospitalName,\n    doctor_name:     doctorName,\n    visit_date:      visitDate,\n    follow_up_required: followUpRequired,\n    follow_up_date:  followUpRequired === 'Yes' ? followUpDate : null,\n  }\n}];"
       },
       "id": "11111111-1111-1111-1111-000000000003",
       "name": "Validate and Normalise",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [460, 320]
+      "position": [
+        460,
+        320
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
           "conditions": [
             {
               "id": "cond-valid",
               "leftValue": "={{ $json._valid }}",
               "rightValue": true,
-              "operator": { "type": "boolean", "operation": "true" }
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
             }
           ],
           "combinator": "and"
@@ -57,7 +73,10 @@
       "name": "Valid?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [680, 320]
+      "position": [
+        680,
+        320
+      ]
     },
     {
       "parameters": {
@@ -68,11 +87,14 @@
       "id": "11111111-1111-1111-1111-000000000005",
       "name": "Get Patient Count",
       "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.5,
-      "position": [900, 200],
+      "typeVersion": 2.4,
+      "position": [
+        900,
+        200
+      ],
       "credentials": {
         "postgres": {
-          "id": "REPLACE_WITH_POSTGRES_CREDENTIAL_ID",
+          "id": "sWPSEheWzNhrv7z5",
           "name": "Supabase (Postgres)"
         }
       }
@@ -85,7 +107,10 @@
       "name": "Assign Patient Code",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1120, 200]
+      "position": [
+        1120,
+        200
+      ]
     },
     {
       "parameters": {
@@ -96,11 +121,14 @@
       "id": "11111111-1111-1111-1111-000000000007",
       "name": "Upsert Patient",
       "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.5,
-      "position": [1340, 200],
+      "typeVersion": 2.4,
+      "position": [
+        1340,
+        200
+      ],
       "credentials": {
         "postgres": {
-          "id": "REPLACE_WITH_POSTGRES_CREDENTIAL_ID",
+          "id": "sWPSEheWzNhrv7z5",
           "name": "Supabase (Postgres)"
         }
       }
@@ -113,41 +141,80 @@
         "contentType": "json",
         "body": {
           "values": [
-            { "name": "patient_code",       "value": "={{ $('Assign Patient Code').first().json.patient_code }}" },
-            { "name": "name",               "value": "={{ $('Assign Patient Code').first().json.name }}" },
-            { "name": "phone",              "value": "={{ $('Assign Patient Code').first().json.phone }}" },
-            { "name": "clinic_name",        "value": "={{ $('Assign Patient Code').first().json.clinic_name }}" },
-            { "name": "doctor_name",        "value": "={{ $('Assign Patient Code').first().json.doctor_name }}" },
-            { "name": "follow_up_required", "value": "={{ $('Assign Patient Code').first().json.follow_up_required }}" },
-            { "name": "follow_up_date",     "value": "={{ $('Assign Patient Code').first().json.follow_up_date }}" },
-            { "name": "visit_date",         "value": "={{ $('Assign Patient Code').first().json.visit_date }}" }
+            {
+              "name": "patient_code",
+              "value": "={{ $('Assign Patient Code').first().json.patient_code }}"
+            },
+            {
+              "name": "name",
+              "value": "={{ $('Assign Patient Code').first().json.name }}"
+            },
+            {
+              "name": "phone",
+              "value": "={{ $('Assign Patient Code').first().json.phone }}"
+            },
+            {
+              "name": "clinic_name",
+              "value": "={{ $('Assign Patient Code').first().json.clinic_name }}"
+            },
+            {
+              "name": "doctor_name",
+              "value": "={{ $('Assign Patient Code').first().json.doctor_name }}"
+            },
+            {
+              "name": "follow_up_required",
+              "value": "={{ $('Assign Patient Code').first().json.follow_up_required }}"
+            },
+            {
+              "name": "follow_up_date",
+              "value": "={{ $('Assign Patient Code').first().json.follow_up_date }}"
+            },
+            {
+              "name": "visit_date",
+              "value": "={{ $('Assign Patient Code').first().json.visit_date }}"
+            }
           ]
         },
         "options": {
           "timeout": 8000,
-          "redirect": { "redirect": { "followRedirects": false } }
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
         }
       },
       "id": "11111111-1111-1111-1111-000000000008",
       "name": "Call WF7 Welcome",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1560, 200],
+      "position": [
+        1560,
+        200
+      ],
       "continueOnFail": true
     },
     {
       "parameters": {
         "operation": "insert",
-        "schema": { "__rl": true, "value": "public", "mode": "list" },
-        "table": { "__rl": true, "value": "system_logs", "mode": "list" },
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "system_logs",
+          "mode": "list"
+        },
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
             "workflow_name": "workflow-11-form-intake",
-            "execution_id":  "={{ $execution.id }}",
-            "log_level":     "INFO",
-            "message":       "New patient registered via QR form",
-            "details":       "={{ JSON.stringify({ patient_code: $('Assign Patient Code').first().json.patient_code, phone: $('Assign Patient Code').first().json.phone, name: $('Assign Patient Code').first().json.name }) }}"
+            "execution_id": "={{ $execution.id }}",
+            "log_level": "INFO",
+            "message": "New patient registered via QR form",
+            "details": "={{ JSON.stringify({ patient_code: $('Assign Patient Code').first().json.patient_code, phone: $('Assign Patient Code').first().json.phone, name: $('Assign Patient Code').first().json.name }) }}"
           },
           "matchingColumns": [],
           "schema": []
@@ -157,12 +224,15 @@
       "id": "11111111-1111-1111-1111-000000000009",
       "name": "Log Registration",
       "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.5,
-      "position": [1780, 200],
+      "typeVersion": 2.4,
+      "position": [
+        1780,
+        200
+      ],
       "continueOnFail": true,
       "credentials": {
         "postgres": {
-          "id": "REPLACE_WITH_POSTGRES_CREDENTIAL_ID",
+          "id": "sWPSEheWzNhrv7z5",
           "name": "Supabase (Postgres)"
         }
       }
@@ -171,27 +241,40 @@
       "parameters": {
         "respondWith": "json",
         "responseBody": "={{ JSON.stringify({ status: 'success', patient_code: $('Assign Patient Code').first().json.patient_code, message: 'Registration complete. A welcome message will arrive on WhatsApp shortly.' }) }}",
-        "options": { "responseCode": 200 }
+        "options": {
+          "responseCode": 200
+        }
       },
       "id": "11111111-1111-1111-1111-000000000010",
       "name": "Respond 200 OK",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [2000, 200]
+      "position": [
+        2000,
+        200
+      ]
     },
     {
       "parameters": {
         "operation": "insert",
-        "schema": { "__rl": true, "value": "public", "mode": "list" },
-        "table": { "__rl": true, "value": "system_logs", "mode": "list" },
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "system_logs",
+          "mode": "list"
+        },
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
             "workflow_name": "workflow-11-form-intake",
-            "execution_id":  "={{ $execution.id }}",
-            "log_level":     "WARN",
-            "message":       "Form submission rejected — validation failed",
-            "details":       "={{ JSON.stringify({ errors: $('Validate and Normalise').first().json._errors }) }}"
+            "execution_id": "={{ $execution.id }}",
+            "log_level": "WARN",
+            "message": "Form submission rejected \u2014 validation failed",
+            "details": "={{ JSON.stringify({ errors: $('Validate and Normalise').first().json._errors }) }}"
           },
           "matchingColumns": [],
           "schema": []
@@ -201,12 +284,15 @@
       "id": "11111111-1111-1111-1111-000000000011",
       "name": "Log Validation Failure",
       "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.5,
-      "position": [900, 460],
+      "typeVersion": 2.4,
+      "position": [
+        900,
+        460
+      ],
       "continueOnFail": true,
       "credentials": {
         "postgres": {
-          "id": "REPLACE_WITH_POSTGRES_CREDENTIAL_ID",
+          "id": "sWPSEheWzNhrv7z5",
           "name": "Supabase (Postgres)"
         }
       }
@@ -215,45 +301,126 @@
       "parameters": {
         "respondWith": "json",
         "responseBody": "={{ JSON.stringify({ status: 'error', message: 'Validation failed', errors: $('Validate and Normalise').first().json._errors }) }}",
-        "options": { "responseCode": 400 }
+        "options": {
+          "responseCode": 400
+        }
       },
       "id": "11111111-1111-1111-1111-000000000012",
       "name": "Respond 400 Invalid",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [1120, 460]
+      "position": [
+        1120,
+        460
+      ]
     }
   ],
   "connections": {
-    "Webhook — Form Intake": {
-      "main": [[{ "node": "Validate and Normalise", "type": "main", "index": 0 }]]
+    "Webhook \u2014 Form Intake": {
+      "main": [
+        [
+          {
+            "node": "Validate and Normalise",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Validate and Normalise": {
-      "main": [[{ "node": "Valid?", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Valid?": {
       "main": [
-        [{ "node": "Get Patient Count", "type": "main", "index": 0 }],
-        [{ "node": "Log Validation Failure", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Get Patient Count",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Validation Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Get Patient Count": {
-      "main": [[{ "node": "Assign Patient Code", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Assign Patient Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Assign Patient Code": {
-      "main": [[{ "node": "Upsert Patient", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Upsert Patient",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Upsert Patient": {
-      "main": [[{ "node": "Call WF7 Welcome", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Call WF7 Welcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Call WF7 Welcome": {
-      "main": [[{ "node": "Log Registration", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Log Registration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Log Registration": {
-      "main": [[{ "node": "Respond 200 OK", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Respond 200 OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Log Validation Failure": {
-      "main": [[{ "node": "Respond 400 Invalid", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Respond 400 Invalid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "pinData": {},
@@ -264,10 +431,17 @@
     "errorWorkflow": "workflow-8-error-handler"
   },
   "staticData": null,
-  "tags": [{ "id": "wf11-tag", "name": "intake" }],
+  "tags": [
+    {
+      "id": "wf11-tag",
+      "name": "intake"
+    }
+  ],
   "triggerCount": 1,
   "updatedAt": "2024-01-01T00:00:00.000Z",
   "versionId": "wf11-v2",
   "id": "wf11-form-intake",
-  "meta": { "templateCredsSetupCompleted": false }
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
 }

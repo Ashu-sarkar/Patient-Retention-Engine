@@ -34,6 +34,12 @@ function parseEnv(filePath) {
 const env          = parseEnv(path.join(__dirname, '..', '.env'));
 const N8N_URL      = `http://${env.N8N_HOST || 'localhost'}:${env.N8N_PORT || '5678'}`;
 const N8N_B64      = Buffer.from(`${env.N8N_BASIC_AUTH_USER || 'admin'}:${env.N8N_BASIC_AUTH_PASSWORD || 'strongpass'}`).toString('base64');
+const N8N_API_KEY  = env.N8N_API_KEY || '';
+const N8N_OWNER_EMAIL    = env.N8N_OWNER_EMAIL    || '';
+const N8N_OWNER_PASSWORD = env.N8N_OWNER_PASSWORD || '';
+/** Session cookie for /rest/* (n8n 2.x: /api/v1/* requires X-N8N-API-KEY, not Basic auth). */
+let n8nSessionCookie = '';
+
 const SB_URL       = env.SUPABASE_URL;
 const SB_KEY       = env.SUPABASE_SERVICE_ROLE_KEY;
 const WA_VER_TOKEN = env.WA_WEBHOOK_VERIFY_TOKEN || '';
@@ -102,16 +108,52 @@ function date(offset = 0) {
 }
 
 // ── HTTP helpers ──────────────────────────────────────────────────────────────
+async function n8nLogin() {
+  if (!N8N_OWNER_EMAIL || !N8N_OWNER_PASSWORD) return;
+  const res = await fetch(`${N8N_URL}/rest/login`, {
+    method : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body   : JSON.stringify({
+      emailOrLdapLoginId: N8N_OWNER_EMAIL,
+      password          : N8N_OWNER_PASSWORD,
+    }),
+    signal: AbortSignal.timeout(15000),
+  });
+  const setCookie = res.headers.get('set-cookie') || '';
+  const m = setCookie.match(/n8n-auth=([^;]+)/);
+  if (m) n8nSessionCookie = `n8n-auth=${m[1]}`;
+}
+
+/** n8n REST + Public API. /api/v1/* uses N8N_API_KEY when set; /rest/* uses owner session cookie. */
 async function n8nApi(method, path, body) {
-  const res  = await fetch(`${N8N_URL}${path}`, {
+  const headers = { 'Content-Type': 'application/json' };
+  if (path.startsWith('/api/v1/')) {
+    if (N8N_API_KEY) headers['X-N8N-API-KEY'] = N8N_API_KEY;
+    else headers.Authorization = `Basic ${N8N_B64}`;
+  } else if (n8nSessionCookie) {
+    headers.Cookie = n8nSessionCookie;
+  } else {
+    headers.Authorization = `Basic ${N8N_B64}`;
+  }
+  const res = await fetch(`${N8N_URL}${path}`, {
     method,
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Basic ${N8N_B64}` },
+    headers,
     body: body ? JSON.stringify(body) : undefined,
     signal: AbortSignal.timeout(10000),
   });
   const text = await res.text();
   let json; try { json = JSON.parse(text); } catch { json = { _raw: text }; }
   return { status: res.status, ok: res.ok, json };
+}
+
+/** List workflows (n8n 2.x — use /rest with session; Basic on /api/v1/workflows returns 401). */
+async function n8nListWorkflows() {
+  if (!n8nSessionCookie) await n8nLogin();
+  const { ok, json } = await n8nApi('GET', '/rest/workflows');
+  if (!ok || !Array.isArray(json.data)) {
+    return { ok: false, data: [], message: json?.message || JSON.stringify(json).slice(0, 120) };
+  }
+  return { ok: true, data: json.data };
 }
 
 async function wh(webhookPath, method = 'POST', body = null, extraHeaders = {}) {
@@ -232,6 +274,10 @@ async function main() {
   console.log('╚══════════════════════════════════════════════════════════╝');
   console.log(`  n8n      : ${N8N_URL}`);
   console.log(`  Supabase : ${SB_URL}\n`);
+  if (!N8N_API_KEY) {
+    console.log('  Note: N8N_API_KEY not set — workflow list uses owner session (/rest/workflows).');
+    console.log('        Set N8N_API_KEY in .env for POST /api/v1/workflows/:id/run (manual cron triggers).\n');
+  }
 
   // ── §1 Infrastructure ────────────────────────────────────────────────────
   section('§1  Infrastructure');
@@ -248,9 +294,9 @@ async function main() {
 
   let allWorkflows = [];
   await test('1.3  All 10 workflows imported in n8n', async () => {
-    const { ok, json } = await n8nApi('GET', '/api/v1/workflows?limit=100');
-    assert(ok, `n8n API auth failed (${json?.message || 'check N8N_BASIC_AUTH_USER/PASSWORD'})`);
-    allWorkflows = json.data || [];
+    const { ok, data, message } = await n8nListWorkflows();
+    assert(ok, `n8n workflow list failed (${message || 'login: set N8N_OWNER_EMAIL / N8N_OWNER_PASSWORD in .env'})`);
+    allWorkflows = data;
     const names   = allWorkflows.map(w => w.name);
     const REQUIRED = ['WF1', 'WF2', 'WF3', 'WF4', 'WF5', 'WF6', 'WF7', 'WF8', 'WF11', 'WF12'];
     const missing  = REQUIRED.filter(r => !names.some(n => n.includes(r)));
@@ -279,7 +325,7 @@ async function main() {
     assert(Array.isArray(m), 'message_logs table missing or inaccessible');
     assert(Array.isArray(s), 'system_logs table missing or inaccessible');
     assert(Array.isArray(h),
-      'hospital_boarding table missing or inaccessible. Apply schemas/migration-add-hospital-boarding.sql in Supabase.');
+      'hospital_boarding missing or PostgREST cache stale. Run schemas/migration-align-legacy-schema.sql (or migration-add-hospital-boarding.sql) in Supabase SQL Editor, then reload schema.');
   });
 
   // ── §2  WF12 — Hospital Boarding ─────────────────────────────────────────

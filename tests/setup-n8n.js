@@ -1,17 +1,25 @@
 #!/usr/bin/env node
 /**
- * Patient Retention Engine — n8n Setup Script
+ * Patient Retention Engine — n8n Setup Script  (n8n 2.x compatible)
  *
- * Automatically:
- *  1. Creates Supabase (Postgres) credential in n8n
- *  2. Creates WhatsApp Business API (HTTP Header Auth) credential in n8n
- *  3. Re-imports the fixed workflow JSONs via n8n API
- *  4. Activates all workflows (WF1–WF8, WF11, WF12)
+ * Idempotent — safe to run on every deployment or after volume wipe.
  *
- * Run ONCE before tests:
+ * What it does (in order):
+ *  1. Waits for n8n /healthz to be reachable
+ *  2. Creates the owner account on first boot (showSetupOnFirstLoad = true)
+ *  3. Logs in with session cookie (N8N_SECURE_COOKIE=false required for HTTP)
+ *  4. Creates/upserts Supabase DB + WhatsApp credentials
+ *  5. Patches placeholder credential IDs in every workflow
+ *  6. Activates all workflows (WF1–WF8, WF11, WF12)
+ *
+ * Usage:
  *   node tests/setup-n8n.js
  *
- * Requirements: n8n running at localhost:5678
+ * Environment (read from .env):
+ *   N8N_HOST, N8N_PORT, N8N_OWNER_EMAIL, N8N_OWNER_PASSWORD
+ *   SUPABASE_DB_HOST, SUPABASE_DB_PORT, SUPABASE_DB_NAME,
+ *   SUPABASE_DB_USER, SUPABASE_DB_PASSWORD
+ *   WA_ACCESS_TOKEN  (optional — placeholder used if absent)
  */
 
 'use strict';
@@ -19,223 +27,293 @@
 const fs   = require('fs');
 const path = require('path');
 
-// ── Parse .env ───────────────────────────────────────────────────────────────
+// ── Parse .env ────────────────────────────────────────────────────────────────
 function parseEnv(filePath) {
   try {
     return Object.fromEntries(
       fs.readFileSync(filePath, 'utf8')
         .split('\n')
         .filter(l => l.trim() && !l.startsWith('#') && l.includes('='))
-        .map(l => { const i = l.indexOf('='); return [l.slice(0, i).trim(), l.slice(i + 1).trim()]; })
+        .map(l => {
+          const i = l.indexOf('=');
+          return [l.slice(0, i).trim(), l.slice(i + 1).trim()];
+        })
     );
   } catch { return {}; }
 }
 
-const env     = parseEnv(path.join(__dirname, '..', '.env'));
-const N8N_URL = `http://${env.N8N_HOST || 'localhost'}:${env.N8N_PORT || '5678'}`;
-const N8N_B64 = Buffer.from(`${env.N8N_BASIC_AUTH_USER || 'admin'}:${env.N8N_BASIC_AUTH_PASSWORD || 'strongpass'}`).toString('base64');
+const env    = parseEnv(path.join(__dirname, '..', '.env'));
+const HOST   = env.N8N_HOST     || 'localhost';
+const PORT   = env.N8N_PORT     || '5678';
+const BASE   = `http://${HOST}:${PORT}`;
+const WF_DIR = path.join(__dirname, '..', 'workflows');
 
-const WF_DIR  = path.join(__dirname, '..', 'workflows');
+// Owner credentials — prefer explicit env vars, fall back to n8n auth vars
+const OWNER_EMAIL     = env.N8N_OWNER_EMAIL    || 'sarkar.ashu15@gmail.com';
+const OWNER_PASSWORD  = env.N8N_OWNER_PASSWORD || 'Ashu1501@';
+const OWNER_FIRSTNAME = env.N8N_OWNER_FIRSTNAME || 'Ashutosh';
+const OWNER_LASTNAME  = env.N8N_OWNER_LASTNAME  || 'Sarkar';
 
-// Workflow name fragments expected in n8n
-const WORKFLOW_FRAGMENTS = ['WF1', 'WF2', 'WF3', 'WF4', 'WF5', 'WF6', 'WF7', 'WF8', 'WF11', 'WF12'];
+// ── HTTP helpers ──────────────────────────────────────────────────────────────
+let sessionCookie = '';
 
-// ── HTTP Helper ───────────────────────────────────────────────────────────────
-async function n8n(method, endpoint, body) {
-  const url = `${N8N_URL}${endpoint}`;
+async function request(method, endpoint, body, extraHeaders = {}) {
+  const url  = `${BASE}${endpoint}`;
   const opts = {
     method,
     headers: {
-      'Content-Type':  'application/json',
-      'Authorization': `Basic ${N8N_B64}`,
+      'Content-Type': 'application/json',
+      ...(sessionCookie ? { Cookie: sessionCookie } : {}),
+      ...extraHeaders,
     },
   };
-  if (body) opts.body = JSON.stringify(body);
-
+  if (body !== undefined) opts.body = JSON.stringify(body);
   const res  = await fetch(url, opts);
   const text = await res.text();
-  let   json;
+  let json;
   try { json = JSON.parse(text); } catch { json = { _raw: text }; }
-  return { ok: res.ok, status: res.status, json };
+  return { ok: res.ok, status: res.status, json, headers: res.headers };
+}
+
+// ── Wait for n8n to be healthy ────────────────────────────────────────────────
+async function waitForN8n(maxSeconds = 90) {
+  console.log(`  Waiting for n8n at ${BASE}/healthz …`);
+  for (let i = 0; i < maxSeconds; i += 3) {
+    try {
+      const r = await fetch(`${BASE}/healthz`);
+      if (r.ok || r.status === 401) { console.log(`  ✅ n8n is up`); return; }
+    } catch { /* not yet */ }
+    await new Promise(r => setTimeout(r, 3000));
+    process.stdout.write('.');
+  }
+  throw new Error(`n8n did not become healthy within ${maxSeconds}s`);
+}
+
+// ── Owner setup (first boot only) ─────────────────────────────────────────────
+async function ensureOwner() {
+  const { json } = await request('GET', '/rest/settings');
+  const needsSetup = json?.data?.userManagement?.showSetupOnFirstLoad;
+  if (!needsSetup) {
+    console.log('  Owner already configured — skipping setup.');
+    return;
+  }
+  console.log('  First boot detected — creating owner account…');
+  const { ok, json: r } = await request('POST', '/rest/owner/setup', {
+    email:       OWNER_EMAIL,
+    password:    OWNER_PASSWORD,
+    firstName:   OWNER_FIRSTNAME,
+    lastName:    OWNER_LASTNAME,
+    skipSurvey:  true,
+  });
+  if (ok) {
+    console.log(`  ✅ Owner created: ${r?.data?.email}`);
+  } else {
+    // May already exist from a previous partial run
+    console.log(`  ⏭  Owner setup response: ${JSON.stringify(r).slice(0, 120)}`);
+  }
+}
+
+// ── Login + capture session cookie ───────────────────────────────────────────
+async function login() {
+  const { ok, json, headers } = await request('POST', '/rest/login', {
+    emailOrLdapLoginId: OWNER_EMAIL,
+    password:           OWNER_PASSWORD,
+  });
+  if (!ok) throw new Error(`Login failed: ${JSON.stringify(json).slice(0, 200)}`);
+
+  // Capture the n8n-auth cookie from Set-Cookie header
+  const setCookie = headers.get('set-cookie') || '';
+  const match = setCookie.match(/n8n-auth=([^;]+)/);
+  if (!match) throw new Error('Login succeeded but no n8n-auth cookie found in response');
+  sessionCookie = `n8n-auth=${match[1]}`;
+  console.log(`  ✅ Logged in as ${json?.data?.email}`);
 }
 
 // ── Credential helpers ────────────────────────────────────────────────────────
 async function listCredentials() {
-  const { ok, json } = await n8n('GET', '/api/v1/credentials?limit=100');
-  return ok ? (json.data || []) : [];
+  const { json } = await request('GET', '/rest/credentials');
+  return json?.data || [];
 }
 
-async function createCredential(name, type, data) {
-  const existing = await listCredentials();
-  const found    = existing.find(c => c.name === name);
-  if (found) {
-    console.log(`  ⏭  Credential "${name}" already exists (id: ${found.id})`);
-    return found.id;
+async function upsertCredential(name, type, data) {
+  const existing = (await listCredentials()).find(c => c.name === name);
+  if (existing) {
+    // PATCH requires name + type to pass schema validation
+    const { ok, json } = await request('PATCH', `/rest/credentials/${existing.id}`, { name, type, data });
+    if (!ok) console.warn(`  ⚠️  Could not update "${name}": ${JSON.stringify(json).slice(0, 120)}`);
+    else console.log(`  ⏭  Credential "${name}" updated (id: ${existing.id})`);
+    return existing.id;
   }
-  const { ok, json } = await n8n('POST', '/api/v1/credentials', { name, type, data });
+  const { ok, json } = await request('POST', '/rest/credentials', { name, type, data });
   if (!ok) {
-    console.warn(`  ⚠️  Could not create "${name}": ${JSON.stringify(json)}`);
+    console.warn(`  ⚠️  Could not create "${name}": ${JSON.stringify(json).slice(0, 120)}`);
     return null;
   }
-  console.log(`  ✅ Created credential "${name}" (id: ${json.id})`);
-  return json.id;
+  console.log(`  ✅ Created credential "${name}" (id: ${json?.data?.id ?? json?.id})`);
+  return json?.data?.id ?? json?.id;
 }
 
 // ── Workflow helpers ──────────────────────────────────────────────────────────
 async function listWorkflows() {
-  const { ok, json } = await n8n('GET', '/api/v1/workflows?limit=100');
-  return ok ? (json.data || []) : [];
+  const { json } = await request('GET', '/rest/workflows');
+  return json?.data || [];
 }
 
-async function upsertWorkflow(wfJson) {
-  const workflows = await listWorkflows();
-  const existing  = workflows.find(w => w.id === wfJson.id || w.name === wfJson.name);
+/**
+ * Upsert a workflow:
+ *  - If a workflow with same id/name exists → PATCH nodes+connections
+ *  - Otherwise → POST to create
+ */
+async function upsertWorkflow(wfJson, credMap) {
+  const patched = patchCredentials(wfJson, credMap);
+  const all     = await listWorkflows();
+  const found   = all.find(w => w.id === patched.id || w.name === patched.name);
 
-  if (existing) {
-    // Update existing workflow with the fixed JSON
-    const merged = { ...existing, ...wfJson, id: existing.id };
-    const { ok, json } = await n8n('PUT', `/api/v1/workflows/${existing.id}`, merged);
+  if (found) {
+    const merged = { ...found, nodes: patched.nodes, connections: patched.connections };
+    const { ok, json } = await request('PATCH', `/rest/workflows/${found.id}`, merged);
     if (!ok) {
-      console.warn(`  ⚠️  Could not update "${wfJson.name}": ${JSON.stringify(json).substring(0, 200)}`);
-      return existing.id;
+      console.warn(`  ⚠️  Update "${patched.name}": ${JSON.stringify(json).slice(0, 120)}`);
+      return found.id;
     }
-    console.log(`  ✅ Updated workflow "${wfJson.name}" (id: ${existing.id})`);
-    return existing.id;
-  } else {
-    const { ok, json } = await n8n('POST', '/api/v1/workflows', wfJson);
-    if (!ok) {
-      console.warn(`  ⚠️  Could not create "${wfJson.name}": ${JSON.stringify(json).substring(0, 200)}`);
-      return null;
-    }
-    console.log(`  ✅ Created workflow "${wfJson.name}" (id: ${json.id})`);
-    return json.id;
+    return found.id;
   }
+
+  const { ok, json } = await request('POST', '/rest/workflows', patched);
+  if (!ok) {
+    console.warn(`  ⚠️  Create "${patched.name}": ${JSON.stringify(json).slice(0, 120)}`);
+    return null;
+  }
+  return json?.data?.id ?? json?.id;
+}
+
+/** Replace REPLACE_* placeholder credential IDs with real IDs */
+function patchCredentials(wfJson, credMap) {
+  const clone = JSON.parse(JSON.stringify(wfJson));
+  for (const node of clone.nodes || []) {
+    for (const [ctype, cval] of Object.entries(node.credentials || {})) {
+      const cname = cval.name || '';
+      const cid   = cval.id   || '';
+      // Patch if placeholder or blank
+      if ((cid === '' || cid.startsWith('REPLACE') || cid.length < 5) && credMap[cname]) {
+        node.credentials[ctype].id = credMap[cname];
+      }
+    }
+    // Downgrade any postgres v2.5 → v2.4 (guard for future JSON additions)
+    if (node.type === 'n8n-nodes-base.postgres' && (node.typeVersion ?? 0) >= 2.5) {
+      node.typeVersion = 2.4;
+    }
+  }
+  // Replace expression-based timezone with literal
+  if (clone.settings?.timezone && clone.settings.timezone.includes('=')) {
+    clone.settings.timezone = env.TIMEZONE || 'Asia/Kolkata';
+  }
+  return clone;
 }
 
 async function activateWorkflow(wfId) {
-  const { ok } = await n8n('PATCH', `/api/v1/workflows/${wfId}`, { active: true });
-  return ok;
-}
-
-// ── Patch credential IDs into a workflow object ───────────────────────────────
-function patchCredentials(wfJson, postgresCredId, waCredId) {
-  const patched = JSON.parse(JSON.stringify(wfJson)); // deep clone
-  for (const node of patched.nodes || []) {
-    if (!node.credentials) continue;
-    if (node.credentials.postgres && postgresCredId) {
-      node.credentials.postgres.id   = postgresCredId;
-      node.credentials.postgres.name = 'Supabase (Postgres)';
-    }
-    if (node.credentials.httpHeaderAuth && waCredId) {
-      node.credentials.httpHeaderAuth.id   = waCredId;
-      node.credentials.httpHeaderAuth.name = 'WhatsApp Business API';
-    }
-  }
-  return patched;
+  // Fetch current versionId
+  const { json } = await request('GET', `/rest/workflows/${wfId}`);
+  const vid = json?.data?.versionId || '';
+  const { ok, json: r, status } = await request('POST', `/rest/workflows/${wfId}/activate`, { versionId: vid });
+  return { active: r?.data?.active ?? false, status };
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
   console.log('\n╔══════════════════════════════════════════════════════════╗');
-  console.log('║         Patient Retention Engine — n8n Setup             ║');
+  console.log('║     Patient Retention Engine — n8n Setup (v2.x)          ║');
   console.log('╚══════════════════════════════════════════════════════════╝');
-  console.log(`  n8n: ${N8N_URL}\n`);
+  console.log(`  Target: ${BASE}\n`);
 
   // 1. Health check
-  console.log('── 1. n8n connectivity ─────────────────────────────────────');
-  try {
-    const res = await fetch(`${N8N_URL}/healthz`);
-    if (!res.ok && res.status !== 401) throw new Error(`status ${res.status}`);
-    console.log('  ✅ n8n is reachable');
-  } catch (e) {
-    console.error(`  ❌ Cannot reach n8n at ${N8N_URL}: ${e.message}`);
-    console.error('     → Make sure docker compose is running: docker compose up -d --build');
-    process.exit(1);
-  }
+  console.log('── 1. Connectivity ─────────────────────────────────────────');
+  await waitForN8n();
 
-  // 2. Create Supabase Postgres credential
-  console.log('\n── 2. Credentials ──────────────────────────────────────────');
-  const postgresCredId = await createCredential(
-    'Supabase (Postgres)',
-    'postgres',
-    {
-      host:                 env.SUPABASE_DB_HOST,
-      port:                 parseInt(env.SUPABASE_DB_PORT || '5432'),
-      database:             env.SUPABASE_DB_NAME  || 'postgres',
-      user:                 env.SUPABASE_DB_USER  || 'postgres',
-      password:             env.SUPABASE_DB_PASSWORD,
-      ssl:                  true,
-      sslRejectUnauthorized: true,
-    }
-  );
+  // 2. Owner setup (first boot)
+  console.log('\n── 2. Owner account ────────────────────────────────────────');
+  await ensureOwner();
 
-  // Also create the "Supabase DB" alias used by some WF nodes
-  const postgresCredId2 = await createCredential(
-    'Supabase DB',
-    'postgres',
-    {
-      host:                 env.SUPABASE_DB_HOST,
-      port:                 parseInt(env.SUPABASE_DB_PORT || '5432'),
-      database:             env.SUPABASE_DB_NAME  || 'postgres',
-      user:                 env.SUPABASE_DB_USER  || 'postgres',
-      password:             env.SUPABASE_DB_PASSWORD,
-      ssl:                  true,
-      sslRejectUnauthorized: true,
-    }
-  );
+  // 3. Login
+  console.log('\n── 3. Login ────────────────────────────────────────────────');
+  await login();
 
-  // WhatsApp credential (httpHeaderAuth) — uses placeholder token so WA calls will fail
-  // gracefully (error logged, workflow continues). Tests only verify the trigger is reached.
-  const waToken      = env.WA_ACCESS_TOKEN || 'PLACEHOLDER_WA_TOKEN';
-  const waCredId     = await createCredential(
-    'WhatsApp Business API',
-    'httpHeaderAuth',
-    {
-      name:  'Authorization',
-      value: `Bearer ${waToken}`,
-    }
-  );
+  // 4. Credentials
+  console.log('\n── 4. Credentials ──────────────────────────────────────────');
 
-  // 3. Import / update fixed workflow JSONs
-  console.log('\n── 3. Workflow import (with patched credentials) ────────────');
-  const wfFiles = fs.readdirSync(WF_DIR).filter(f => f.endsWith('.json')).sort();
-  const wfIds   = {};
+  const pgData = {
+    host:                 env.SUPABASE_DB_HOST     || '',
+    port:                 parseInt(env.SUPABASE_DB_PORT || '5432'),
+    database:             env.SUPABASE_DB_NAME     || 'postgres',
+    user:                 env.SUPABASE_DB_USER     || 'postgres',
+    password:             env.SUPABASE_DB_PASSWORD || '',
+    ssl:                  'require',
+    // Supabase pooler uses an AWS intermediate CA; allow it without rejecting
+    allowUnauthorizedCerts: true,
+    sshTunnel:            false,
+  };
 
+  const pgId  = await upsertCredential('Supabase DB',          'postgres',       pgData);
+  const pgId2 = await upsertCredential('Supabase (Postgres)',  'postgres',       pgData);
+  const waToken = env.WA_ACCESS_TOKEN && !env.WA_ACCESS_TOKEN.includes('YOUR_')
+    ? env.WA_ACCESS_TOKEN
+    : 'PLACEHOLDER_WA_TOKEN';
+  const waId  = await upsertCredential('WhatsApp Business API','httpHeaderAuth', {
+    name:  'Authorization',
+    value: `Bearer ${waToken}`,
+  });
+
+  const credMap = {
+    'Supabase DB':           pgId,
+    'Supabase (Postgres)':   pgId2,
+    'WhatsApp Business API': waId,
+  };
+  console.log(`  Credential map: ${JSON.stringify(credMap)}`);
+
+  // 5. Import / patch workflows
+  console.log('\n── 5. Workflow upsert ──────────────────────────────────────');
+  const wfFiles = fs.readdirSync(WF_DIR)
+    .filter(f => f.endsWith('.json'))
+    .sort();
+
+  const wfIds = {};
   for (const file of wfFiles) {
     try {
-      const raw     = JSON.parse(fs.readFileSync(path.join(WF_DIR, file), 'utf8'));
-      const patched = patchCredentials(raw, postgresCredId || postgresCredId2, waCredId);
-      const id      = await upsertWorkflow(patched);
-      if (id) wfIds[raw.name] = id;
+      const raw = JSON.parse(fs.readFileSync(path.join(WF_DIR, file), 'utf8'));
+      const id  = await upsertWorkflow(raw, credMap);
+      if (id) { wfIds[raw.name] = id; process.stdout.write(`  ✅ ${raw.name}\n`); }
     } catch (e) {
-      console.warn(`  ⚠️  Failed to process ${file}: ${e.message}`);
+      console.warn(`  ⚠️  ${file}: ${e.message}`);
     }
   }
 
-  // 4. Activate all expected workflows
-  console.log('\n── 4. Activating workflows ─────────────────────────────────');
-  const all = await listWorkflows();
-  const toActivate = all.filter(w => WORKFLOW_FRAGMENTS.some(fragment => w.name.includes(fragment)));
+  // 6. Activate
+  console.log('\n── 6. Activate workflows ───────────────────────────────────');
+  const allWfs = await listWorkflows();
 
-  const missing = WORKFLOW_FRAGMENTS.filter(fragment =>
-    !all.some(w => w.name.includes(fragment))
-  );
-  if (missing.length > 0) {
-    console.warn(`  ⚠️  Missing workflows in n8n after import: ${missing.join(', ')}`);
-  }
-
-  for (const wf of toActivate) {
+  for (const wf of allWfs) {
     if (wf.active) {
-      console.log(`  ⏭  "${wf.name}" already active`);
+      console.log(`  ⏭  Already active: ${wf.name}`);
       continue;
     }
-    const ok = await activateWorkflow(wf.id);
-    console.log(ok ? `  ✅ Activated "${wf.name}"` : `  ⚠️  Could not activate "${wf.name}" (may need manual step in n8n UI)`);
+    const { active, status } = await activateWorkflow(wf.id);
+    console.log(`  ${active ? '✅' : '⚠️ '} ${wf.name}  (HTTP ${status})`);
   }
 
-  // 5. Summary
-  console.log('\n── 5. Setup complete ───────────────────────────────────────');
-  console.log('  Run tests with: node tests/run-tests.js\n');
+  // 7. Summary
+  console.log('\n── 7. Summary ──────────────────────────────────────────────');
+  const final = await listWorkflows();
+  const activeCount = final.filter(w => w.active).length;
+  console.log(`\n  🎉 ${activeCount}/${final.length} workflows active`);
+  for (const wf of final.sort((a, b) => a.name.localeCompare(b.name))) {
+    console.log(`  ${wf.active ? '✅' : '⚠️ '} ${wf.name}`);
+  }
+  if (waToken === 'PLACEHOLDER_WA_TOKEN') {
+    console.log('\n  ⚠️  WhatsApp token is a placeholder.');
+    console.log('     Set WA_ACCESS_TOKEN in .env, then re-run this script.\n');
+  } else {
+    console.log('\n  ✅ WhatsApp credential is configured with a real token.\n');
+  }
 }
 
 main().catch(e => {

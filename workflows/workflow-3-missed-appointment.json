@@ -52,7 +52,7 @@
       ],
       "credentials": {
         "postgres": {
-          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "id": "U3Ok26tbDrmjkBQr",
           "name": "Supabase DB"
         }
       }
@@ -204,7 +204,7 @@
       ],
       "credentials": {
         "postgres": {
-          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "id": "U3Ok26tbDrmjkBQr",
           "name": "Supabase DB"
         }
       }
@@ -235,7 +235,7 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "REPLACE_WITH_WA_CREDENTIAL_ID",
+          "id": "cpwYBQl1CU1nYjHS",
           "name": "WhatsApp Business API"
         }
       },
@@ -267,7 +267,7 @@
       ],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "REPLACE_WITH_WA_CREDENTIAL_ID",
+          "id": "cpwYBQl1CU1nYjHS",
           "name": "WhatsApp Business API"
         }
       },
@@ -289,7 +289,7 @@
       ],
       "credentials": {
         "postgres": {
-          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "id": "U3Ok26tbDrmjkBQr",
           "name": "Supabase DB"
         }
       }
@@ -334,7 +334,7 @@
       ],
       "credentials": {
         "postgres": {
-          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "id": "U3Ok26tbDrmjkBQr",
           "name": "Supabase DB"
         }
       }
@@ -376,7 +376,7 @@
       ],
       "credentials": {
         "postgres": {
-          "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID",
+          "id": "U3Ok26tbDrmjkBQr",
           "name": "Supabase DB"
         }
       }

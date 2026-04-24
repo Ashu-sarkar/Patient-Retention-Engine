@@ -1,10 +1,11 @@
 services:
   n8n:
     build: .
+    restart: unless-stopped
     ports:
       - "5678:5678"
     environment:
-      # n8n Auth
+      # ── n8n Auth ────────────────────────────────────────────────────────
       - N8N_BASIC_AUTH_ACTIVE=${N8N_BASIC_AUTH_ACTIVE:-true}
       - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER:-admin}
       - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD:-strongpass}
@@ -12,17 +13,17 @@ services:
       - N8N_PORT=${N8N_PORT:-5678}
       - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
       - WEBHOOK_URL=${WEBHOOK_URL:-http://localhost:5678}
-      # Stable encryption key — MUST be set before first launch and never changed afterwards.
+      # Stable encryption key — MUST be set before first launch and never changed.
       # Generate with: openssl rand -hex 32
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
-      # Scheduler timezone — n8n uses GENERIC_TIMEZONE for cron triggers (WF1-WF5)
-      - GENERIC_TIMEZONE=${TIMEZONE:-Asia/Kolkata}
-      # Allow session cookies over HTTP (required for local dev without TLS)
+      # Allow session cookies over plain HTTP (required for local dev without TLS)
       - N8N_SECURE_COOKIE=false
+      # Scheduler timezone — used by cron triggers (WF1–WF5)
+      - GENERIC_TIMEZONE=${TIMEZONE:-Asia/Kolkata}
 
-      # n8n internal DB — SQLite (local dev default)
+      # ── n8n internal DB (SQLite for local dev) ────────────────────────
       # Supabase direct host is IPv6-only; Docker on macOS cannot route IPv6.
-      # Workflow nodes still reach Supabase via HTTP/Postgres credentials below.
+      # Workflow nodes still reach Supabase via HTTP/Postgres credentials.
       # To switch back to Postgres, resolve the IPv6/pooler issue and uncomment:
       # - DB_TYPE=postgresdb
       # - DB_POSTGRESDB_HOST=${SUPABASE_DB_HOST}
@@ -34,18 +35,17 @@ services:
       # - DB_POSTGRESDB_SSL_REJECT_UNAUTHORIZED=true
       - DB_TYPE=sqlite
 
-      # Supabase — available as $env.SUPABASE_URL / $env.SUPABASE_SERVICE_ROLE_KEY
-      # inside n8n workflow Code nodes and HTTP Request nodes
+      # ── Supabase (available as $env.* inside n8n Code/HTTP nodes) ─────
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
 
-      # WhatsApp Business API (Meta Cloud API) — available as $env.WA_* inside n8n workflows
+      # ── WhatsApp Business API ─────────────────────────────────────────
       - WA_PHONE_NUMBER_ID=${WA_PHONE_NUMBER_ID}
       - WA_ACCESS_TOKEN=${WA_ACCESS_TOKEN}
       - WA_WEBHOOK_VERIFY_TOKEN=${WA_WEBHOOK_VERIFY_TOKEN}
       - WA_LANGUAGE_CODE=${WA_LANGUAGE_CODE:-en}
 
-      # Application settings — referenced by workflow expressions as $env.VARNAME
+      # ── Application settings ──────────────────────────────────────────
       - TIMEZONE=${TIMEZONE:-Asia/Kolkata}
       - MAX_MESSAGE_COUNT=${MAX_MESSAGE_COUNT:-5}
       - MIN_HOURS_BETWEEN_MESSAGES=${MIN_HOURS_BETWEEN_MESSAGES:-23}
@@ -53,10 +53,19 @@ services:
       - DEFAULT_DOCTOR_NAME=${DEFAULT_DOCTOR_NAME:-Your Doctor}
       # Plain E.164 digits, e.g. 919876543210
       - ADMIN_WHATSAPP_NUMBER=${ADMIN_WHATSAPP_NUMBER:-}
+
     env_file:
       - .env
+
     volumes:
       - n8n_data:/home/node/.n8n
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5678/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
 volumes:
   n8n_data:
