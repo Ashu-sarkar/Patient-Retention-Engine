@@ -97,56 +97,37 @@
     },
     {
       "parameters": {
-        "multipleMethods": true,
-        "httpMethod": [
-          "GET",
-          "POST"
-        ],
+        "httpMethod": "GET",
+        "path": "feedback-listener",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "66666666-6666-6666-6666-000000000018",
+      "name": "Webhook \u2014 Meta Verification (GET)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        240,
+        280
+      ],
+      "webhookId": "feedback-listener-verify-webhook"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
         "path": "feedback-listener",
         "responseMode": "responseNode",
         "options": {}
       },
       "id": "66666666-6666-6666-6666-000000000002",
-      "name": "Webhook \u2014 Feedback (GET + POST)",
+      "name": "Webhook \u2014 Inbound Message (POST)",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
         240,
-        380
+        480
       ],
       "webhookId": "feedback-listener-webhook"
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict"
-          },
-          "conditions": [
-            {
-              "id": "meta-verify-detect",
-              "leftValue": "={{ $json.query ? $json.query['hub.mode'] : '' }}",
-              "rightValue": "subscribe",
-              "operator": {
-                "type": "string",
-                "operation": "equals"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "66666666-6666-6666-6666-000000000018",
-      "name": "Is Meta Webhook Verify?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [
-        360,
-        380
-      ]
     },
     {
       "parameters": {
@@ -461,18 +442,7 @@
     }
   ],
   "connections": {
-    "Webhook \u2014 Feedback (GET + POST)": {
-      "main": [
-        [
-          {
-            "node": "Is Meta Webhook Verify?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Is Meta Webhook Verify?": {
+    "Webhook \u2014 Meta Verification (GET)": {
       "main": [
         [
           {
@@ -480,7 +450,11 @@
             "type": "main",
             "index": 0
           }
-        ],
+        ]
+      ]
+    },
+    "Webhook \u2014 Inbound Message (POST)": {
+      "main": [
         [
           {
             "node": "Parse and Classify Message",

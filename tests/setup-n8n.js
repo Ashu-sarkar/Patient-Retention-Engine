@@ -215,11 +215,30 @@ function patchCredentials(wfJson, credMap) {
 }
 
 async function activateWorkflow(wfId) {
-  // Fetch current versionId
+  // Ensure the active version matches the latest edited workflow version.
   const { json } = await request('GET', `/rest/workflows/${wfId}`);
-  const vid = json?.data?.versionId || '';
-  const { ok, json: r, status } = await request('POST', `/rest/workflows/${wfId}/activate`, { versionId: vid });
-  return { active: r?.data?.active ?? false, status };
+  const wf = json?.data || {};
+  const latestVersionId = wf.versionId || '';
+  const activeVersionId = wf.activeVersionId || '';
+  const isActive = !!wf.active;
+
+  if (!latestVersionId) return { active: false, status: 0, skipped: false, reactivated: false };
+
+  if (isActive && activeVersionId === latestVersionId) {
+    return { active: true, status: 200, skipped: true, reactivated: false };
+  }
+
+  let reactivated = false;
+  if (isActive && activeVersionId !== latestVersionId) {
+    const { ok: deactivated } = await request('POST', `/rest/workflows/${wfId}/deactivate`);
+    if (!deactivated) {
+      return { active: false, status: 500, skipped: false, reactivated: false };
+    }
+    reactivated = true;
+  }
+
+  const { ok, json: r, status } = await request('POST', `/rest/workflows/${wfId}/activate`, { versionId: latestVersionId });
+  return { active: r?.data?.active ?? ok ?? false, status, skipped: false, reactivated };
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -295,12 +314,14 @@ async function main() {
   const allWfs = await listWorkflows();
 
   for (const wf of allWfs) {
-    if (wf.active) {
+    const { active, status, skipped, reactivated } = await activateWorkflow(wf.id);
+    if (skipped) {
       console.log(`  ⏭  Already active: ${wf.name}`);
-      continue;
+    } else if (reactivated) {
+      console.log(`  🔄 Re-activated latest version: ${wf.name}  (HTTP ${status})`);
+    } else {
+      console.log(`  ${active ? '✅' : '⚠️ '} ${wf.name}  (HTTP ${status})`);
     }
-    const { active, status } = await activateWorkflow(wf.id);
-    console.log(`  ${active ? '✅' : '⚠️ '} ${wf.name}  (HTTP ${status})`);
   }
 
   // 7. Summary
