@@ -83,42 +83,78 @@ ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT 
 
 DO $$
 BEGIN
-  ALTER TABLE public.patients ADD CONSTRAINT patients_sex_check
-    CHECK (sex IS NULL OR sex IN ('Male','Female','Other'));
-EXCEPTION WHEN duplicate_object THEN NULL;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE n.nspname = 'public' AND t.relname = 'patients' AND c.conname = 'patients_sex_check'
+  ) THEN
+    ALTER TABLE public.patients ADD CONSTRAINT patients_sex_check
+      CHECK (sex IS NULL OR sex IN ('Male','Female','Other'));
+  END IF;
 END $$;
 
 DO $$
 BEGIN
-  ALTER TABLE public.patients ADD CONSTRAINT patients_follow_up_required_check
-    CHECK (follow_up_required IN ('Yes','No'));
-EXCEPTION WHEN duplicate_object THEN NULL;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE n.nspname = 'public' AND t.relname = 'patients' AND c.conname = 'patients_follow_up_required_check'
+  ) THEN
+    ALTER TABLE public.patients ADD CONSTRAINT patients_follow_up_required_check
+      CHECK (follow_up_required IN ('Yes','No'));
+  END IF;
 END $$;
 
 DO $$
 BEGIN
-  ALTER TABLE public.patients ADD CONSTRAINT patients_status_check
-    CHECK (status IN ('pending','completed','missed','inactive'));
-EXCEPTION WHEN duplicate_object THEN NULL;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE n.nspname = 'public' AND t.relname = 'patients' AND c.conname = 'patients_status_check'
+  ) THEN
+    ALTER TABLE public.patients ADD CONSTRAINT patients_status_check
+      CHECK (status IN ('pending','completed','missed','inactive'));
+  END IF;
 END $$;
 
 DO $$
 BEGIN
-  ALTER TABLE public.patients ADD CONSTRAINT patients_response_status_check
-    CHECK (response_status IN ('none','responded','confirmed','cancelled'));
-EXCEPTION WHEN duplicate_object THEN NULL;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE n.nspname = 'public' AND t.relname = 'patients' AND c.conname = 'patients_response_status_check'
+  ) THEN
+    ALTER TABLE public.patients ADD CONSTRAINT patients_response_status_check
+      CHECK (response_status IN ('none','responded','confirmed','cancelled'));
+  END IF;
 END $$;
 
 DO $$
 BEGIN
-  ALTER TABLE public.patients ADD CONSTRAINT patients_phone_unique UNIQUE (phone);
-EXCEPTION WHEN duplicate_object THEN NULL;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE n.nspname = 'public' AND t.relname = 'patients' AND c.conname = 'patients_phone_unique'
+  ) THEN
+    ALTER TABLE public.patients ADD CONSTRAINT patients_phone_unique UNIQUE (phone);
+  END IF;
 END $$;
 
 DO $$
 BEGIN
-  ALTER TABLE public.patients ADD CONSTRAINT patients_patient_code_unique UNIQUE (patient_code);
-EXCEPTION WHEN duplicate_object THEN NULL;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE n.nspname = 'public' AND t.relname = 'patients' AND c.conname = 'patients_patient_code_unique'
+  ) THEN
+    ALTER TABLE public.patients ADD CONSTRAINT patients_patient_code_unique UNIQUE (patient_code);
+  END IF;
 END $$;
 
 CREATE INDEX IF NOT EXISTS idx_patients_follow_up_date    ON public.patients (follow_up_date);
@@ -160,9 +196,15 @@ ALTER TABLE public.message_logs ADD COLUMN IF NOT EXISTS wa_message_id TEXT;
 
 DO $$
 BEGIN
-  ALTER TABLE public.message_logs ADD CONSTRAINT message_logs_delivery_status_check
-    CHECK (delivery_status IN ('sent','failed','delivered','read'));
-EXCEPTION WHEN duplicate_object THEN NULL;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE n.nspname = 'public' AND t.relname = 'message_logs' AND c.conname = 'message_logs_delivery_status_check'
+  ) THEN
+    ALTER TABLE public.message_logs ADD CONSTRAINT message_logs_delivery_status_check
+      CHECK (delivery_status IN ('sent','failed','delivered','read'));
+  END IF;
 END $$;
 
 CREATE INDEX IF NOT EXISTS idx_message_logs_patient_id ON public.message_logs (patient_id);
@@ -201,9 +243,15 @@ UPDATE public.system_logs SET log_level = 'INFO' WHERE log_level IS NULL OR log_
 
 DO $$
 BEGIN
-  ALTER TABLE public.system_logs ADD CONSTRAINT system_logs_log_level_check
-    CHECK (log_level IN ('INFO','WARN','ERROR'));
-EXCEPTION WHEN duplicate_object THEN NULL;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE n.nspname = 'public' AND t.relname = 'system_logs' AND c.conname = 'system_logs_log_level_check'
+  ) THEN
+    ALTER TABLE public.system_logs ADD CONSTRAINT system_logs_log_level_check
+      CHECK (log_level IN ('INFO','WARN','ERROR'));
+  END IF;
 END $$;
 
 CREATE INDEX IF NOT EXISTS idx_system_logs_timestamp ON public.system_logs (timestamp DESC);

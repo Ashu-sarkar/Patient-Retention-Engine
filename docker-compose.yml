@@ -18,6 +18,8 @@ services:
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
       # Allow session cookies over plain HTTP (required for local dev without TLS)
       - N8N_SECURE_COOKIE=false
+      # Required for WF6 Meta verify, WF8 IF on ADMIN_*, and any workflow Code using $env.*
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
       # Scheduler timezone — used by cron triggers (WF1–WF5)
       - GENERIC_TIMEZONE=${TIMEZONE:-Asia/Kolkata}
 

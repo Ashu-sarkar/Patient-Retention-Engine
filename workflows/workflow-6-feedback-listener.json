@@ -18,24 +18,7 @@
     },
     {
       "parameters": {
-        "path": "feedback-listener",
-        "httpMethod": "GET",
-        "responseMode": "responseNode",
-        "options": {}
-      },
-      "id": "66666666-6666-6666-6666-000000000015",
-      "name": "Webhook \u2014 Meta Verification (GET)",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
-      "position": [
-        240,
-        280
-      ],
-      "webhookId": "feedback-listener-webhook-get"
-    },
-    {
-      "parameters": {
-        "jsCode": "const params = $input.first().json.query || {};\nif (params['hub.mode'] === 'subscribe' && params['hub.verify_token'] === $env.WA_WEBHOOK_VERIFY_TOKEN) {\n  return [{ json: { challenge: params['hub.challenge'] } }];\n}\nthrow new Error('Webhook verification failed: invalid verify_token');"
+        "jsCode": "// Meta sends hub.* query params; n8n may nest them under .query, on the root item, or under .hub.\n// Requires N8N_BLOCK_ENV_ACCESS_IN_NODE=false in docker-compose (so $env is readable).\nconst j = $input.first().json || {};\nconst q = (j.query && typeof j.query === 'object') ? j.query : {};\nlet mode = q['hub.mode'] ?? j['hub.mode'];\nlet token = q['hub.verify_token'] ?? j['hub.verify_token'];\nlet challenge = q['hub.challenge'] ?? j['hub.challenge'];\nconst hub = j.hub;\nif (hub && typeof hub === 'object') {\n  mode = mode ?? hub.mode;\n  token = token ?? hub.verify_token;\n  challenge = challenge ?? hub.challenge;\n}\nconst envTok = String($env.WA_WEBHOOK_VERIFY_TOKEN || '');\nconst ok = String(mode) === 'subscribe' && String(token) === envTok;\nreturn [{ json: { challenge: String(challenge || ''), _verify_ok: ok } }];"
       },
       "id": "66666666-6666-6666-6666-000000000016",
       "name": "Verify Token and Return Challenge",
@@ -48,6 +31,38 @@
     },
     {
       "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "verify-ok-check",
+              "leftValue": "={{ $json._verify_ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "66666666-6666-6666-6666-000000000020",
+      "name": "Verify Token OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        580,
+        280
+      ]
+    },
+    {
+      "parameters": {
         "respondWith": "text",
         "responseBody": "={{ $json.challenge }}",
         "options": {
@@ -55,34 +70,87 @@
         }
       },
       "id": "66666666-6666-6666-6666-000000000017",
-      "name": "Respond with Challenge",
+      "name": "Respond Meta Challenge (200)",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        680,
-        280
+        820,
+        200
       ]
     },
     {
       "parameters": {
+        "respondWith": "text",
+        "responseBody": "verification failed",
+        "options": {
+          "responseCode": 403
+        }
+      },
+      "id": "66666666-6666-6666-6666-000000000021",
+      "name": "Respond Meta Verify Failed (403)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        820,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "multipleMethods": true,
+        "httpMethod": [
+          "GET",
+          "POST"
+        ],
         "path": "feedback-listener",
-        "httpMethod": "POST",
         "responseMode": "responseNode",
         "options": {}
       },
       "id": "66666666-6666-6666-6666-000000000002",
-      "name": "Webhook \u2014 Inbound WhatsApp (POST)",
+      "name": "Webhook \u2014 Feedback (GET + POST)",
       "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
+      "typeVersion": 2.1,
       "position": [
         240,
-        480
+        380
       ],
       "webhookId": "feedback-listener-webhook"
     },
     {
       "parameters": {
-        "jsCode": "// Meta Cloud API webhook format only\nconst body = $input.first().json.body || $input.first().json;\n\nlet fromPhone = '';\nlet messageBody = '';\n\nif (body.entry && Array.isArray(body.entry)) {\n  try {\n    const msg = body.entry[0].changes[0].value.messages[0];\n    // Meta sends phone without leading + \u2014 normalise to plain E.164 digits\n    fromPhone = String(msg.from || '').replace(/^\\+/, '').replace(/[\\s\\-().]/g, '');\n    messageBody = msg.text?.body || '';\n  } catch (e) {\n    return [{ json: { _skip: true, reason: 'Not a message event (Meta webhook ping or status update)' } }];\n  }\n} else {\n  return [{ json: { _skip: true, reason: 'Unrecognised webhook format', rawBody: JSON.stringify(body).substr(0, 200) } }];\n}\n\nif (!fromPhone || fromPhone.length < 7) {\n  return [{ json: { _skip: true, reason: 'Could not extract valid phone from webhook', rawFrom: fromPhone } }];\n}\n\nconst lowerMsg = messageBody.toLowerCase();\nlet classification = 'responded';\n\nconst confirmedKeywords = ['yes', 'confirm', 'confirmed', 'will come', 'coming', 'ok', 'okay', 'sure', 'yep', 'yup', 'absolutely', 'definitely', \"i'll be there\", 'see you', 'good'];\nconst cancelledKeywords = ['no', 'cancel', 'cancelled', 'reschedule', \"can't make it\", 'cannot come', 'not coming', 'postpone', 'change date'];\nconst bookKeywords = ['book', 'schedule', 'appointment', 'want to book', 'fix appointment'];\n\nif (lowerMsg === 'help' || ['not well','pain','emergency','urgent','need doctor','call me'].some(k => lowerMsg.includes(k))) {\n  classification = 'help';\n} else if (bookKeywords.some(k => lowerMsg.includes(k))) {\n  classification = 'book';\n} else if (confirmedKeywords.some(k => lowerMsg.includes(k))) {\n  classification = 'confirmed';\n} else if (cancelledKeywords.some(k => lowerMsg.includes(k))) {\n  classification = 'cancelled';\n}\n\nreturn [{\n  json: {\n    _from_phone: fromPhone,\n    _message_body: messageBody,\n    _classification: classification,\n    _received_at: new Date().toISOString()\n  }\n}];"
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "meta-verify-detect",
+              "leftValue": "={{ $json.query ? $json.query['hub.mode'] : '' }}",
+              "rightValue": "subscribe",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "66666666-6666-6666-6666-000000000018",
+      "name": "Is Meta Webhook Verify?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        360,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Meta Cloud API webhook format only\nconst body = $input.first().json.body || $input.first().json;\n\nlet fromPhone = '';\nlet messageBody = '';\n\nif (body.entry && Array.isArray(body.entry)) {\n  try {\n    const msg = body.entry[0].changes[0].value.messages[0];\n    // Meta sends phone without leading + \u2014 normalise to plain E.164 digits\n    fromPhone = String(msg.from || '').replace(/^\\+/, '').replace(/[\\s\\-().]/g, '');\n    messageBody = msg.text?.body || '';\n  } catch (e) {\n    return [{ json: { _skip: true, reason: 'Not a message event (Meta webhook ping or status update)' } }];\n  }\n} else {\n  return [{ json: { _skip: true, reason: 'Unrecognised webhook format', rawBody: JSON.stringify(body).substr(0, 200) } }];\n}\n\nif (!fromPhone || fromPhone.length < 7) {\n  return [{ json: { _skip: true, reason: 'Could not extract valid phone from webhook', rawFrom: fromPhone } }];\n}\n\nconst lowerMsg = messageBody.toLowerCase();\nlet classification = 'responded';\n\nconst confirmedKeywords = ['yes', 'confirm', 'confirmed', 'will come', 'coming', 'ok', 'okay', 'sure', 'yep', 'yup', 'absolutely', 'definitely', \"i'll be there\", 'see you', 'good'];\nconst cancelledKeywords = ['no', 'cancel', 'cancelled', 'reschedule', \"can't make it\", 'cannot come', 'not coming', 'postpone', 'change date'];\nconst bookKeywords = ['book', 'schedule', 'appointment', 'want to book', 'fix appointment'];\n\nif (lowerMsg === 'help' || ['not well','pain','emergency','urgent','need doctor','call me'].some(k => lowerMsg.includes(k))) {\n  classification = 'help';\n} else if (cancelledKeywords.some(k => lowerMsg.includes(k))) {\n  classification = 'cancelled';\n} else if (confirmedKeywords.some(k => lowerMsg.includes(k))) {\n  classification = 'confirmed';\n} else if (bookKeywords.some(k => lowerMsg.includes(k))) {\n  classification = 'book';\n}\n\nreturn [{\n  json: {\n    _from_phone: fromPhone,\n    _message_body: messageBody,\n    _classification: classification,\n    _received_at: new Date().toISOString()\n  }\n}];"
       },
       "id": "66666666-6666-6666-6666-000000000003",
       "name": "Parse and Classify Message",
@@ -156,6 +224,7 @@
         900,
         580
       ],
+      "alwaysOutputData": true,
       "credentials": {
         "postgres": {
           "id": "U3Ok26tbDrmjkBQr",
@@ -165,7 +234,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const patientRows = $input.all();\nconst parsed = $('Parse and Classify Message').first().json;\nconst inboundPhone = parsed._from_phone;\nconst classification = parsed._classification;\nconst messageBody = parsed._message_body;\nconst receivedAt = parsed._received_at;\n\nconst matchedPatient = patientRows.length > 0 && patientRows[0].json.id ? patientRows[0].json : null;\n\nif (!matchedPatient) {\n  return [{\n    json: {\n      _found: false,\n      _from_phone: inboundPhone,\n      _classification: classification,\n      _message_body: messageBody,\n      _received_at: receivedAt,\n      _log_message: `Unrecognised sender: ${inboundPhone}`\n    }\n  }];\n}\n\nconst patientName = matchedPatient.name || 'there';\nlet autoReply = null;\n\nif (classification === 'confirmed') {\n  autoReply = `Thank you, ${patientName}! \u2705 We've noted that you'll be coming in for your appointment. See you then!\\n\\nIf anything changes, feel free to message us.`;\n} else if (classification === 'cancelled') {\n  autoReply = `Hi ${patientName}, no problem at all! \ud83d\ude0a We've noted that you'd like to reschedule. A member of our team will reach out to you shortly to arrange a new time.\\n\\nThank you for letting us know!`;\n} else if (classification === 'help') {\n  autoReply = `Hi ${patientName}, we're sorry to hear that. \ud83d\ude4f Please stay calm \u2014 we've flagged this for our team and someone will reach out to you very soon. If this is an emergency, please call your nearest hospital.`;\n}\n\nreturn [{\n  json: {\n    _found: true,\n    _patient_id: matchedPatient.id,\n    _patient_name: patientName,\n    _from_phone: inboundPhone,\n    _classification: classification,\n    _message_body: messageBody,\n    _received_at: receivedAt,\n    _auto_reply: autoReply,\n    _should_reply: autoReply !== null\n  }\n}];"
+        "jsCode": "const patientRows = $input.all();\nconst parsed = $('Parse and Classify Message').first().json;\nconst inboundPhone = parsed._from_phone;\nconst classification = parsed._classification;\nconst messageBody = parsed._message_body;\nconst receivedAt = parsed._received_at;\n\nconst matchedPatient = patientRows.length > 0 && patientRows[0].json.id ? patientRows[0].json : null;\n\nif (!matchedPatient) {\n  return [{\n    json: {\n      _found: false,\n      _from_phone: inboundPhone,\n      _classification: classification,\n      _message_body: messageBody,\n      _received_at: receivedAt,\n      _log_message: `Unrecognised sender: ${inboundPhone}`\n    }\n  }];\n}\n\nconst patientName = matchedPatient.name || 'there';\nlet autoReply = null;\n\nif (classification === 'confirmed') {\n  autoReply = `Thank you, ${patientName}! \u2705 We've noted that you'll be coming in for your appointment. See you then!\\n\\nIf anything changes, feel free to message us.`;\n} else if (classification === 'cancelled') {\n  autoReply = `Hi ${patientName}, no problem at all! \ud83d\ude0a We've noted that you'd like to reschedule. A member of our team will reach out to you shortly to arrange a new time.\\n\\nThank you for letting us know!`;\n} else if (classification === 'help') {\n  autoReply = `Hi ${patientName}, we're sorry to hear that. \ud83d\ude4f Please stay calm \u2014 we've flagged this for our team and someone will reach out to you very soon. If this is an emergency, please call your nearest hospital.`;\n}\n\nlet responseStatusDb = 'responded';\nif (classification === 'confirmed') responseStatusDb = 'confirmed';\nelse if (classification === 'cancelled') responseStatusDb = 'cancelled';\n\nreturn [{\n  json: {\n    _found: true,\n    _patient_id: matchedPatient.id,\n    _patient_name: patientName,\n    _from_phone: inboundPhone,\n    _classification: classification,\n    _message_body: messageBody,\n    _received_at: receivedAt,\n    _auto_reply: autoReply,\n    _should_reply: autoReply !== null,\n    _response_status_db: responseStatusDb\n  }\n}];"
       },
       "id": "66666666-6666-6666-6666-000000000007",
       "name": "Prepare Reply",
@@ -211,7 +280,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=UPDATE public.patients SET response_status = '{{ $json._classification === 'confirmed' ? 'confirmed' : $json._classification === 'cancelled' ? 'cancelled' : 'responded' }}', last_response = '{{ $json._message_body.replace(/'/g, \"''\") }}', updated_at = NOW() WHERE id = '{{ $json._patient_id }}'",
+        "query": "=UPDATE public.patients SET response_status = '{{ $json._response_status_db }}', last_response = '{{ $json._message_body.replace(/'/g, \"''\") }}', updated_at = NOW() WHERE id = '{{ $json._patient_id }}'",
         "options": {}
       },
       "id": "66666666-6666-6666-6666-000000000009",
@@ -392,11 +461,29 @@
     }
   ],
   "connections": {
-    "Webhook \u2014 Meta Verification (GET)": {
+    "Webhook \u2014 Feedback (GET + POST)": {
+      "main": [
+        [
+          {
+            "node": "Is Meta Webhook Verify?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Meta Webhook Verify?": {
       "main": [
         [
           {
             "node": "Verify Token and Return Challenge",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Parse and Classify Message",
             "type": "main",
             "index": 0
           }
@@ -407,18 +494,25 @@
       "main": [
         [
           {
-            "node": "Respond with Challenge",
+            "node": "Verify Token OK?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Webhook \u2014 Inbound WhatsApp (POST)": {
+    "Verify Token OK?": {
       "main": [
         [
           {
-            "node": "Parse and Classify Message",
+            "node": "Respond Meta Challenge (200)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Meta Verify Failed (403)",
             "type": "main",
             "index": 0
           }
@@ -446,11 +540,6 @@
           }
         ],
         [
-          {
-            "node": "Respond 200 OK (Early)",
-            "type": "main",
-            "index": 0
-          },
           {
             "node": "Find Patient in Supabase",
             "type": "main",
@@ -533,6 +622,28 @@
         [
           {
             "node": "Log Patient Response to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Unknown Sender to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 OK (Skip Path)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Patient Response to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 OK (Early)",
             "type": "main",
             "index": 0
           }

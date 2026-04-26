@@ -285,9 +285,13 @@ async function main() {
   const skipRest = process.env.PREFLIGHT_REST_VERIFY === '0' || !env.SUPABASE_SERVICE_ROLE_KEY;
   if (!skipRest) {
     await sleep(1500);
-    const tables = ['patients', 'hospital_boarding', 'system_logs'];
-    for (const t of tables) {
-      const r = await fetch(`${env.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/${t}?select=id&limit=1`, {
+    const tables = [
+      { name: 'patients',           select: 'id' },
+      { name: 'hospital_boarding',  select: 'id' },
+      { name: 'system_logs',        select: 'log_id' },
+    ];
+    for (const { name: t, select: sel } of tables) {
+      const r = await fetch(`${env.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/${t}?select=${sel}&limit=1`, {
         headers: {
           apikey       : env.SUPABASE_SERVICE_ROLE_KEY,
           Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
