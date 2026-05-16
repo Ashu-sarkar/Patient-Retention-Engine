@@ -7,6 +7,7 @@
     "node": ">=18.0.0"
   },
   "scripts": {
+    "validate-env": "node scripts/validate-env.js",
     "preflight": "node scripts/preflight-supabase.js",
     "setup": "node tests/setup-n8n.js",
     "test": "node tests/run-tests.js",

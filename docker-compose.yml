@@ -18,7 +18,7 @@ services:
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
       # Allow session cookies over plain HTTP (required for local dev without TLS)
       - N8N_SECURE_COOKIE=false
-      # Required for WF6 Meta verify, WF8 IF on ADMIN_*, and any workflow Code using $env.*
+      # Required for workflow Code nodes using $env.*.
       - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
       # Scheduler timezone — used by cron triggers (WF1–WF5)
       - GENERIC_TIMEZONE=${TIMEZONE:-Asia/Kolkata}
@@ -42,11 +42,18 @@ services:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
 
-      # ── WhatsApp Business API ─────────────────────────────────────────
-      - WA_PHONE_NUMBER_ID=${WA_PHONE_NUMBER_ID}
-      - WA_ACCESS_TOKEN=${WA_ACCESS_TOKEN}
-      - WA_WEBHOOK_VERIFY_TOKEN=${WA_WEBHOOK_VERIFY_TOKEN}
-      - WA_LANGUAGE_CODE=${WA_LANGUAGE_CODE:-en}
+      # ── WhatsApp via Twilio Programmable Messaging ────────────────────
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - TWILIO_WHATSAPP_FROM=${TWILIO_WHATSAPP_FROM}
+      - TWILIO_STATUS_CALLBACK_URL=${TWILIO_STATUS_CALLBACK_URL}
+      - TWILIO_CONTENT_WELCOME=${TWILIO_CONTENT_WELCOME}
+      - TWILIO_CONTENT_FOLLOW_UP_REMINDER=${TWILIO_CONTENT_FOLLOW_UP_REMINDER}
+      - TWILIO_CONTENT_SAME_DAY_REMINDER=${TWILIO_CONTENT_SAME_DAY_REMINDER}
+      - TWILIO_CONTENT_MISSED_RECOVERY=${TWILIO_CONTENT_MISSED_RECOVERY}
+      - TWILIO_CONTENT_MISSED_NUDGE=${TWILIO_CONTENT_MISSED_NUDGE}
+      - TWILIO_CONTENT_HEALTH_CHECK=${TWILIO_CONTENT_HEALTH_CHECK}
+      - TWILIO_CONTENT_REACTIVATION=${TWILIO_CONTENT_REACTIVATION}
 
       # ── Application settings ──────────────────────────────────────────
       - TIMEZONE=${TIMEZONE:-Asia/Kolkata}

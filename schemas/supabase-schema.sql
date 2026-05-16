@@ -80,15 +80,45 @@ CREATE TABLE IF NOT EXISTS public.message_logs (
   message_type    TEXT,
   message_sent    TEXT,
   sent_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  scheduled_date  DATE,
   delivery_status TEXT        NOT NULL DEFAULT 'sent'
-                  CHECK (delivery_status IN ('sent','failed','delivered','read')),
+                  CHECK (delivery_status IN ('queued','sent','failed','delivered','read','undelivered')),
   error_message   TEXT,
-  wa_message_id   TEXT
+  provider_message_id TEXT,
+  twilio_message_sid  TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_message_logs_patient_id ON public.message_logs (patient_id);
 CREATE INDEX IF NOT EXISTS idx_message_logs_sent_at    ON public.message_logs (sent_at DESC);
 CREATE INDEX IF NOT EXISTS idx_message_logs_workflow   ON public.message_logs (workflow_name);
+CREATE INDEX IF NOT EXISTS idx_message_logs_provider_message_id ON public.message_logs (provider_message_id);
+CREATE INDEX IF NOT EXISTS idx_message_logs_twilio_message_sid  ON public.message_logs (twilio_message_sid);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_message_logs_patient_type_date
+  ON public.message_logs (patient_id, message_type, scheduled_date)
+  WHERE patient_id IS NOT NULL AND scheduled_date IS NOT NULL;
+
+-- -------------------------
+-- Table: message_ledger
+-- Idempotency ledger for proactive WhatsApp messages.
+-- -------------------------
+CREATE TABLE IF NOT EXISTS public.message_ledger (
+  id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id           UUID        REFERENCES public.patients (id) ON DELETE CASCADE,
+  message_type         TEXT        NOT NULL,
+  scheduled_date       DATE        NOT NULL,
+  workflow_name        TEXT,
+  provider_message_id  TEXT,
+  twilio_message_sid   TEXT,
+  status               TEXT        NOT NULL DEFAULT 'reserved'
+                      CHECK (status IN ('reserved','sent','failed','delivered','read','undelivered')),
+  error_message        TEXT,
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (patient_id, message_type, scheduled_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_message_ledger_provider_message_id ON public.message_ledger (provider_message_id);
+CREATE INDEX IF NOT EXISTS idx_message_ledger_twilio_message_sid  ON public.message_ledger (twilio_message_sid);
 
 -- -------------------------
 -- Table: system_logs
@@ -166,6 +196,7 @@ ALTER TABLE public.patients           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.message_logs       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.system_logs        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.hospital_boarding  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.message_ledger     ENABLE ROW LEVEL SECURITY;
 -- Note: daily_intake_sheets table removed — Google Sheets intake is no longer used.
 -- All patient data enters via the QR form (WF11) which writes directly to public.patients.
 
@@ -192,7 +223,7 @@ ALTER TABLE public.hospital_boarding  ENABLE ROW LEVEL SECURITY;
 -- SELECT * FROM public.patients WHERE status = 'pending' AND follow_up_date = CURRENT_DATE + 1;
 
 -- =============================================================================
--- Migration: Twilio → WhatsApp Business API
+-- Migration: legacy provider message IDs → Twilio/provider-neutral IDs.
 -- Run this in Supabase SQL Editor if the table was created before this migration.
 -- Safe to run even if already applied (IF EXISTS guard).
 -- =============================================================================
@@ -204,6 +235,20 @@ BEGIN
       AND table_name   = 'message_logs'
       AND column_name  = 'twilio_sid'
   ) THEN
-    ALTER TABLE public.message_logs RENAME COLUMN twilio_sid TO wa_message_id;
+    ALTER TABLE public.message_logs RENAME COLUMN twilio_sid TO twilio_message_sid;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name   = 'message_logs'
+      AND column_name  = 'wa_message_id'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name   = 'message_logs'
+      AND column_name  = 'provider_message_id'
+  ) THEN
+    ALTER TABLE public.message_logs RENAME COLUMN wa_message_id TO provider_message_id;
   END IF;
 END $$;

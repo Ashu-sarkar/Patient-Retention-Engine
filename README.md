@@ -1,156 +1,96 @@
 # Patient Retention Engine
 
-An event-driven, low-cost automation system that increases patient follow-up visits for clinics through timely, personalised WhatsApp communication.
+An event-driven automation system for clinic patient follow-ups using **n8n**, **Supabase/PostgreSQL**, and **Twilio WhatsApp**.
 
-Built on **n8n** (orchestration), **Google Sheets** (database), and **WhatsApp Business API** (messaging).
+## What It Does
 
----
+- Captures patient registrations from a QR form
+- Stores patients, message logs, delivery state, and operational logs in Supabase
+- Sends WhatsApp welcome, follow-up, missed appointment, health check, and reactivation messages through Twilio
+- Handles inbound WhatsApp replies from Twilio webhooks
+- Tracks Twilio delivery/read/failure callbacks
+- Logs workflow errors and can alert an admin on WhatsApp
 
-## What This System Does
+## Architecture
 
-- Sends follow-up appointment reminders the day before and on the day of the visit
-- Recovers missed appointments with escalating recovery messages
-- Checks on patients 2–3 days after their visit
-- Reactivates patients who have gone quiet for 30+ days
-- Listens for patient replies and updates records automatically
-- Logs everything — messages, errors, and system events
-
----
-
-## Architecture at a Glance
-
-```
-Google Forms / Manual Entry
-         │
-         ▼
-  Patients Sheet (Google Sheets)
-         │
-    ┌────┴────┐
-    │  n8n    │  ← 8 automated workflows
-    └────┬────┘
-         │
-   WhatsApp Business API (Twilio / Meta)
-         │
-         ▼
-   Patient Replies (Webhook → n8n)
-         │
-         ▼
-   Message Logs + System Logs (Google Sheets)
+```text
+Patient / staff QR form
+        |
+        v
+WF11 Form Intake webhook
+        |
+        v
+Supabase patients, message_logs, message_ledger, system_logs
+        |
+        +--> WF7 Welcome message
+        +--> WF1-WF5 Scheduled reminders
+        +--> WF6 Inbound Twilio replies
+        +--> WF9 Twilio delivery callbacks
+        +--> WF8 Error handler
+        |
+        v
+Twilio Programmable Messaging for WhatsApp
 ```
 
----
+Supabase is the source of truth. Twilio is the only WhatsApp provider in this setup.
 
 ## Repository Structure
 
-```
-Patient-Retention-Engine/
-├── README.md                          ← You are here
-├── .env.example                       ← Environment variable template
-│
-├── docs/
-│   ├── architecture.md                ← Full system architecture
-│   ├── setup-guide.md                 ← Step-by-step deployment guide
-│   └── message-templates.md          ← WhatsApp template approval guide
-│
-├── schemas/
-│   └── google-sheets-schema.md       ← Google Sheets column definitions
-│
-├── n8n-workflows/
-│   ├── workflow-1-followup-reminder.json    ← Day-before reminder
-│   ├── workflow-2-sameday-reminder.json     ← Same-day reminder
-│   ├── workflow-3-missed-appointment.json   ← Missed visit recovery
-│   ├── workflow-4-health-check.json         ← Post-visit health check
-│   ├── workflow-5-reactivation.json         ← 30-day reactivation
-│   ├── workflow-6-feedback-listener.json    ← Inbound reply handler
-│   ├── workflow-7-new-patient.json          ← New patient onboarding
-│   └── workflow-8-error-handler.json        ← Global error handler
-│
-├── message-templates/
-│   └── templates.json                ← All WhatsApp message templates
-│
-└── scripts/
-    └── validate-patient-data.js      ← Data validation CLI utility
+```text
+workflows/                 n8n workflow exports
+schemas/                   Supabase schema and idempotent preflight migration
+scripts/                   environment and database validation utilities
+tests/                     n8n setup and integration tests
+patient-form/              static QR patient intake form
+hospital-form/             static hospital/clinic onboarding form
+message-templates/         Twilio template metadata
+docs/                      architecture and setup notes
 ```
 
----
+## Required Credentials
 
-## Quick Start
+- `TWILIO_ACCOUNT_SID`
+- `TWILIO_AUTH_TOKEN`
+- `TWILIO_WHATSAPP_FROM`, for example `whatsapp:+14155238886`
+- `TWILIO_STATUS_CALLBACK_URL`, usually `${WEBHOOK_URL}/webhook/twilio-status-callback`
+- Twilio Content SIDs for proactive templates:
+  - `TWILIO_CONTENT_WELCOME`
+  - `TWILIO_CONTENT_FOLLOW_UP_REMINDER`
+  - `TWILIO_CONTENT_SAME_DAY_REMINDER`
+  - `TWILIO_CONTENT_MISSED_RECOVERY`
+  - `TWILIO_CONTENT_MISSED_NUDGE`
+  - `TWILIO_CONTENT_HEALTH_CHECK`
+  - `TWILIO_CONTENT_REACTIVATION`
+- Supabase URL, service role key, and Postgres pooler credentials
+- n8n owner credentials and a stable `N8N_ENCRYPTION_KEY`
 
-1. **Read the full setup guide**: [docs/setup-guide.md](docs/setup-guide.md)
-2. **Copy environment variables**: `cp .env.example .env` and fill in your credentials
-3. **Set up Google Sheets**: Follow [schemas/google-sheets-schema.md](schemas/google-sheets-schema.md)
-4. **Deploy n8n**: Use Docker (self-hosted) or n8n.cloud
-5. **Import workflows**: Upload each JSON from `n8n-workflows/` via n8n → Import
-6. **Configure credentials** in n8n (Google Sheets, Twilio/Meta)
-7. **Activate workflows** and test with a sample patient row
+## Local Start
 
----
+```bash
+cp .env.example .env
+npm install
+npm run validate-env
+./launch.sh
+```
 
-## Phase Rollout
+`./launch.sh` runs the Supabase preflight migration, starts n8n, creates credentials, imports workflows, and activates them.
 
-| Phase | Timeline | Scope |
-|-------|----------|-------|
-| Phase 1 | Week 1 | n8n setup, Google Sheets, Twilio sandbox, Workflow 7 |
-| Phase 2 | Week 2 | Workflows 1 & 2 (follow-up reminders) |
-| Phase 3 | Week 3 | Workflow 3 (missed appointment recovery) |
-| Phase 4 | Week 4 | Workflows 4, 5, 6 (health check, reactivation, feedback) |
-| Phase 5 | Month 2+ | Workflow 8, logging improvements, OpenAI message tuning |
+## Production Notes
 
----
+- Use a public HTTPS `WEBHOOK_URL`.
+- Register Twilio inbound WhatsApp replies to `/webhook/feedback-listener`.
+- Register Twilio status callbacks to `/webhook/twilio-status-callback`.
+- Use approved Twilio Content templates for proactive WhatsApp messages outside the 24-hour customer service window.
+- Keep `N8N_ENCRYPTION_KEY` stable forever after first launch.
+- Do not keep Legacy direct-provider variables in `.env`; `npm run validate-env` fails if they are present.
 
-## Key Workflows
+## Validation
 
-| # | Workflow | Trigger | Action |
-|---|----------|---------|--------|
-| 1 | Follow-Up Reminder | Daily 9 AM | Remind patients with follow-up tomorrow |
-| 2 | Same-Day Reminder | Daily 8 AM | Remind patients with follow-up today |
-| 3 | Missed Appointment Recovery | Daily 10 AM | Recover missed appointments (Day +1, +3) |
-| 4 | Health Check | Daily 10 AM | Check in 2–3 days after visit |
-| 5 | Reactivation | Weekly Monday 9 AM | Re-engage patients inactive 30+ days |
-| 6 | Feedback Listener | Webhook (always on) | Capture and classify patient replies |
-| 7 | New Patient Entry | New row in Sheets | Validate, initialise, send welcome message |
-| 8 | Error Handler | Any workflow failure | Log error, alert admin |
+```bash
+npm run validate-env
+npm run preflight
+npm run setup
+npm test
+```
 
----
-
-## Technology Stack
-
-| Component | Technology |
-|-----------|-----------|
-| Orchestration | n8n (self-hosted or cloud) |
-| Database | Google Sheets (extensible to Airtable / Postgres) |
-| Messaging | WhatsApp via Twilio (Phase 1–2) / Meta Cloud API (Phase 3+) |
-| Backend logic | JavaScript (n8n Code nodes) |
-| AI (Phase 5) | OpenAI API |
-| Forms | Google Forms / WhatsApp interactive replies |
-
----
-
-## Cost Estimate (Monthly)
-
-| Service | Estimated Cost |
-|---------|---------------|
-| n8n self-hosted (Railway/Render) | ~$5–10/month |
-| Twilio WhatsApp messages | ~$0.005–0.015 per message |
-| Google Sheets | Free |
-| Meta Cloud API | Free (first 1000 conversations/month) |
-
-For a clinic sending 500 messages/month: **~$12–20/month total**.
-
----
-
-## Documentation
-
-- [Architecture](docs/architecture.md) — System design, agent model, data flow
-- [Setup Guide](docs/setup-guide.md) — Complete deployment instructions
-- [Message Templates](docs/message-templates.md) — Template texts and Meta approval process
-- [Google Sheets Schema](schemas/google-sheets-schema.md) — Database structure
-
----
-
-## Notes for Clinic Staff
-
-- Patient phone numbers must include the country code (e.g. `+919876543210`)
-- Set `visit_date` and `follow_up_date` in `YYYY-MM-DD` format
-- Mark `status` as `completed` when a patient attends their follow-up
-- The system will automatically stop messaging patients marked as `inactive` or `completed`
+The integration tests cover form intake, hospital onboarding, inbound Twilio replies, Twilio status callbacks, workflow imports, and Supabase table access.

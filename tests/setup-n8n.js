@@ -19,7 +19,7 @@
  *   N8N_HOST, N8N_PORT, N8N_OWNER_EMAIL, N8N_OWNER_PASSWORD
  *   SUPABASE_DB_HOST, SUPABASE_DB_PORT, SUPABASE_DB_NAME,
  *   SUPABASE_DB_USER, SUPABASE_DB_PASSWORD
- *   WA_ACCESS_TOKEN  (optional — placeholder used if absent)
+ *   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN
  *
  * Run `npm run preflight` or `./launch.sh` first so Postgres columns match workflows
  * and PostgREST cache is reloaded (avoids name / workflow_name / hospital_boarding drift).
@@ -51,11 +51,11 @@ const PORT   = env.N8N_PORT     || '5678';
 const BASE   = `http://${HOST}:${PORT}`;
 const WF_DIR = path.join(__dirname, '..', 'workflows');
 
-// Owner credentials — prefer explicit env vars, fall back to n8n auth vars
-const OWNER_EMAIL     = env.N8N_OWNER_EMAIL    || 'sarkar.ashu15@gmail.com';
-const OWNER_PASSWORD  = env.N8N_OWNER_PASSWORD || 'Ashu1501@';
-const OWNER_FIRSTNAME = env.N8N_OWNER_FIRSTNAME || 'Ashutosh';
-const OWNER_LASTNAME  = env.N8N_OWNER_LASTNAME  || 'Sarkar';
+// Owner credentials must be explicit so production never falls back to a known password.
+const OWNER_EMAIL     = env.N8N_OWNER_EMAIL    || '';
+const OWNER_PASSWORD  = env.N8N_OWNER_PASSWORD || '';
+const OWNER_FIRSTNAME = env.N8N_OWNER_FIRSTNAME || 'Admin';
+const OWNER_LASTNAME  = env.N8N_OWNER_LASTNAME  || 'User';
 
 // ── HTTP helpers ──────────────────────────────────────────────────────────────
 let sessionCookie = '';
@@ -248,6 +248,10 @@ async function main() {
   console.log('╚══════════════════════════════════════════════════════════╝');
   console.log(`  Target: ${BASE}\n`);
 
+  if (!OWNER_EMAIL || !OWNER_PASSWORD) {
+    throw new Error('Set N8N_OWNER_EMAIL and N8N_OWNER_PASSWORD in .env before running setup.');
+  }
+
   // 1. Health check
   console.log('── 1. Connectivity ─────────────────────────────────────────');
   await waitForN8n();
@@ -275,20 +279,19 @@ async function main() {
     sshTunnel:            false,
   };
 
-  const pgId  = await upsertCredential('Supabase DB',          'postgres',       pgData);
-  const pgId2 = await upsertCredential('Supabase (Postgres)',  'postgres',       pgData);
-  const waToken = env.WA_ACCESS_TOKEN && !env.WA_ACCESS_TOKEN.includes('YOUR_')
-    ? env.WA_ACCESS_TOKEN
-    : 'PLACEHOLDER_WA_TOKEN';
-  const waId  = await upsertCredential('WhatsApp Business API','httpHeaderAuth', {
-    name:  'Authorization',
-    value: `Bearer ${waToken}`,
+  const pgId  = await upsertCredential('Supabase DB',          'postgres',      pgData);
+  const pgId2 = await upsertCredential('Supabase (Postgres)',  'postgres',      pgData);
+  const twilioSid = env.TWILIO_ACCOUNT_SID || '';
+  const twilioToken = env.TWILIO_AUTH_TOKEN || '';
+  const twilioId  = await upsertCredential('Twilio Basic Auth','httpBasicAuth', {
+    user: twilioSid,
+    password: twilioToken,
   });
 
   const credMap = {
     'Supabase DB':           pgId,
     'Supabase (Postgres)':   pgId2,
-    'WhatsApp Business API': waId,
+    'Twilio Basic Auth':     twilioId,
   };
   console.log(`  Credential map: ${JSON.stringify(credMap)}`);
 
@@ -332,11 +335,11 @@ async function main() {
   for (const wf of final.sort((a, b) => a.name.localeCompare(b.name))) {
     console.log(`  ${wf.active ? '✅' : '⚠️ '} ${wf.name}`);
   }
-  if (waToken === 'PLACEHOLDER_WA_TOKEN') {
-    console.log('\n  ⚠️  WhatsApp token is a placeholder.');
-    console.log('     Set WA_ACCESS_TOKEN in .env, then re-run this script.\n');
+  if (!twilioSid || !twilioToken) {
+    console.log('\n  ⚠️  Twilio credential is incomplete.');
+    console.log('     Set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN in .env, then re-run this script.\n');
   } else {
-    console.log('\n  ✅ WhatsApp credential is configured with a real token.\n');
+    console.log('\n  ✅ Twilio Basic Auth credential is configured.\n');
   }
 }
 

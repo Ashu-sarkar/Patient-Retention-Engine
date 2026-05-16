@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS public.patients (
 
 DO $$
 BEGIN
+  ALTER TABLE public.message_logs DROP CONSTRAINT IF EXISTS message_logs_delivery_status_check;
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'patients' AND column_name = 'name'
@@ -83,6 +84,7 @@ ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT 
 
 DO $$
 BEGIN
+  ALTER TABLE public.message_ledger DROP CONSTRAINT IF EXISTS message_ledger_status_check;
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint c
     JOIN pg_class t ON t.oid = c.conrelid
@@ -178,9 +180,11 @@ CREATE TABLE IF NOT EXISTS public.message_logs (
   message_type    TEXT,
   message_sent    TEXT,
   sent_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  scheduled_date  DATE,
   delivery_status TEXT        NOT NULL DEFAULT 'sent',
   error_message   TEXT,
-  wa_message_id   TEXT
+  provider_message_id TEXT,
+  twilio_message_sid  TEXT
 );
 
 ALTER TABLE public.message_logs ADD COLUMN IF NOT EXISTS patient_id UUID;
@@ -190,9 +194,33 @@ ALTER TABLE public.message_logs ADD COLUMN IF NOT EXISTS workflow_name TEXT;
 ALTER TABLE public.message_logs ADD COLUMN IF NOT EXISTS message_type TEXT;
 ALTER TABLE public.message_logs ADD COLUMN IF NOT EXISTS message_sent TEXT;
 ALTER TABLE public.message_logs ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE public.message_logs ADD COLUMN IF NOT EXISTS scheduled_date DATE;
 ALTER TABLE public.message_logs ADD COLUMN IF NOT EXISTS delivery_status TEXT NOT NULL DEFAULT 'sent';
 ALTER TABLE public.message_logs ADD COLUMN IF NOT EXISTS error_message TEXT;
-ALTER TABLE public.message_logs ADD COLUMN IF NOT EXISTS wa_message_id TEXT;
+ALTER TABLE public.message_logs ADD COLUMN IF NOT EXISTS provider_message_id TEXT;
+ALTER TABLE public.message_logs ADD COLUMN IF NOT EXISTS twilio_message_sid TEXT;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'message_logs' AND column_name = 'twilio_sid'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'message_logs' AND column_name = 'twilio_message_sid'
+  ) THEN
+    ALTER TABLE public.message_logs RENAME COLUMN twilio_sid TO twilio_message_sid;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'message_logs' AND column_name = 'wa_message_id'
+  ) THEN
+    UPDATE public.message_logs
+       SET provider_message_id = COALESCE(provider_message_id, wa_message_id)
+     WHERE provider_message_id IS NULL;
+  END IF;
+END $$;
 
 DO $$
 BEGIN
@@ -203,23 +231,18 @@ BEGIN
     WHERE n.nspname = 'public' AND t.relname = 'message_logs' AND c.conname = 'message_logs_delivery_status_check'
   ) THEN
     ALTER TABLE public.message_logs ADD CONSTRAINT message_logs_delivery_status_check
-      CHECK (delivery_status IN ('sent','failed','delivered','read'));
+      CHECK (delivery_status IN ('queued','sent','failed','delivered','read','undelivered'));
   END IF;
 END $$;
 
 CREATE INDEX IF NOT EXISTS idx_message_logs_patient_id ON public.message_logs (patient_id);
 CREATE INDEX IF NOT EXISTS idx_message_logs_sent_at    ON public.message_logs (sent_at DESC);
 CREATE INDEX IF NOT EXISTS idx_message_logs_workflow   ON public.message_logs (workflow_name);
-
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'message_logs' AND column_name = 'twilio_sid'
-  ) THEN
-    ALTER TABLE public.message_logs RENAME COLUMN twilio_sid TO wa_message_id;
-  END IF;
-END $$;
+CREATE INDEX IF NOT EXISTS idx_message_logs_provider_message_id ON public.message_logs (provider_message_id);
+CREATE INDEX IF NOT EXISTS idx_message_logs_twilio_message_sid  ON public.message_logs (twilio_message_sid);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_message_logs_patient_type_date
+  ON public.message_logs (patient_id, message_type, scheduled_date)
+  WHERE patient_id IS NOT NULL AND scheduled_date IS NOT NULL;
 
 -- ── system_logs ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.system_logs (
@@ -258,6 +281,54 @@ CREATE INDEX IF NOT EXISTS idx_system_logs_timestamp ON public.system_logs (time
 CREATE INDEX IF NOT EXISTS idx_system_logs_log_level ON public.system_logs (log_level);
 CREATE INDEX IF NOT EXISTS idx_system_logs_workflow  ON public.system_logs (workflow_name);
 CREATE INDEX IF NOT EXISTS idx_system_logs_details   ON public.system_logs USING GIN (details);
+
+-- ── message_ledger ──────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.message_ledger (
+  id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id           UUID        REFERENCES public.patients (id) ON DELETE CASCADE,
+  message_type         TEXT        NOT NULL,
+  scheduled_date       DATE        NOT NULL,
+  workflow_name        TEXT,
+  provider_message_id  TEXT,
+  twilio_message_sid   TEXT,
+  status               TEXT        NOT NULL DEFAULT 'reserved',
+  error_message        TEXT,
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (patient_id, message_type, scheduled_date)
+);
+
+ALTER TABLE public.message_ledger ADD COLUMN IF NOT EXISTS patient_id UUID;
+ALTER TABLE public.message_ledger ADD COLUMN IF NOT EXISTS message_type TEXT;
+ALTER TABLE public.message_ledger ADD COLUMN IF NOT EXISTS scheduled_date DATE;
+ALTER TABLE public.message_ledger ADD COLUMN IF NOT EXISTS workflow_name TEXT;
+ALTER TABLE public.message_ledger ADD COLUMN IF NOT EXISTS provider_message_id TEXT;
+ALTER TABLE public.message_ledger ADD COLUMN IF NOT EXISTS twilio_message_sid TEXT;
+ALTER TABLE public.message_ledger ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'reserved';
+ALTER TABLE public.message_ledger ADD COLUMN IF NOT EXISTS error_message TEXT;
+ALTER TABLE public.message_ledger ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE public.message_ledger ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE n.nspname = 'public' AND t.relname = 'message_ledger' AND c.conname = 'message_ledger_status_check'
+  ) THEN
+    ALTER TABLE public.message_ledger ADD CONSTRAINT message_ledger_status_check
+      CHECK (status IN ('reserved','sent','failed','delivered','read','undelivered'));
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_message_ledger_provider_message_id ON public.message_ledger (provider_message_id);
+CREATE INDEX IF NOT EXISTS idx_message_ledger_twilio_message_sid  ON public.message_ledger (twilio_message_sid);
+
+DROP TRIGGER IF EXISTS trg_message_ledger_updated_at ON public.message_ledger;
+CREATE TRIGGER trg_message_ledger_updated_at
+  BEFORE UPDATE ON public.message_ledger
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 -- ── hospital_boarding ─────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.hospital_boarding (
@@ -309,5 +380,6 @@ ALTER TABLE public.patients           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.message_logs       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.system_logs        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.hospital_boarding  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.message_ledger     ENABLE ROW LEVEL SECURITY;
 
 NOTIFY pgrst, 'reload schema';

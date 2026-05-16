@@ -1,9 +1,9 @@
 {
-  "name": "WF3 \u2014 Missed Appointment Recovery",
+  "name": "WF3 — Missed Appointment Recovery",
   "nodes": [
     {
       "parameters": {
-        "content": "## Workflow 3: Missed Appointment Recovery\n\n**Trigger:** Daily at 10:00 AM\n\n**Logic (from Supabase):**\n- Day +1: Empathetic recovery message (template: patient_missed_recovery)\n- Day +3: Second nudge referencing the doctor (template: patient_missed_nudge)\n- Day +7: Marks patient status as `missed` in Supabase (stops messaging)\n\nReads ONLY from Supabase `public.patients`.\n\n**Before activating:**\n1. Set credential on all Postgres nodes \u2192 Supabase DB\n2. Set credential on HTTP nodes \u2192 WhatsApp Business API (HTTP Header Auth)\n3. Ensure both `patient_missed_recovery` and `patient_missed_nudge` templates are approved",
+        "content": "## Workflow 3: Missed Appointment Recovery\n\n**Trigger:** Daily at 10:00 AM\n\n**Logic (from Supabase):**\n- Day +1: Empathetic recovery message (template: patient_missed_recovery)\n- Day +3: Second nudge referencing the doctor (template: patient_missed_nudge)\n- Day +7: Marks patient status as `missed` in Supabase (stops messaging)\n\nReads ONLY from Supabase `public.patients`.\n\n**Before activating:**\n1. Set credential on all Postgres nodes → Supabase DB\n2. Set credential on HTTP nodes → Twilio Basic Auth\n3. Ensure both `patient_missed_recovery` and `patient_missed_nudge` templates are approved",
         "height": 260,
         "width": 400
       },
@@ -39,7 +39,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT * FROM public.patients WHERE follow_up_date < CURRENT_DATE AND status NOT IN ('completed','inactive')",
+        "query": "SELECT p.* FROM public.patients p WHERE p.follow_up_date < CURRENT_DATE AND p.status NOT IN ('completed','inactive')",
         "options": {}
       },
       "id": "33333333-3333-3333-3333-000000000003",
@@ -59,7 +59,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Filter patients with missed appointments and calculate days overdue\nconst items = $input.all();\nconst tz = $env.TIMEZONE || 'Asia/Kolkata';\nconst maxMessages = parseInt($env.MAX_MESSAGE_COUNT) || 5;\nconst minHours = parseInt($env.MIN_HOURS_BETWEEN_MESSAGES) || 23;\n\nconst now = new Date();\nconst todayStr = now.toLocaleDateString('en-CA', { timeZone: tz });\nconst todayDate = new Date(todayStr);\n\nconst actionable = [];\n\nfor (const item of items) {\n  const p = item.json;\n\n  if (!p.follow_up_date) continue;\n\n  const followUpDate = new Date(p.follow_up_date);\n  if (isNaN(followUpDate.getTime())) continue;\n\n  if (followUpDate >= todayDate) continue;\n\n  const status = p.status || 'pending';\n  if (status === 'completed' || status === 'inactive') continue;\n\n  const diffMs = todayDate - followUpDate;\n  const daysOverdue = Math.floor(diffMs / (1000 * 60 * 60 * 24));\n\n  const hasValidPhone = p.phone && /^\\+[1-9]\\d{6,14}$/.test(p.phone);\n  const msgCount = parseInt(p.message_count) || 0;\n\n  let recentlyMessaged = false;\n  if (p.last_message_sent) {\n    const lastSent = new Date(p.last_message_sent);\n    const hoursSince = (now - lastSent) / (1000 * 60 * 60);\n    recentlyMessaged = hoursSince < minHours;\n  }\n\n  const doctorName = p.doctor_name || $env.DEFAULT_DOCTOR_NAME || 'your doctor';\n  const clinicName = p.clinic_name || $env.DEFAULT_CLINIC_NAME || 'our clinic';\n  const patientName = p.name || 'there';\n\n  if (daysOverdue >= 7) {\n    actionable.push({\n      json: {\n        ...p,\n        _action: 'mark_missed',\n        _days_overdue: daysOverdue,\n        _workflow: 'workflow-3-missed-appointment'\n      }\n    });\n  } else if (daysOverdue === 3 && hasValidPhone && msgCount < maxMessages && !recentlyMessaged) {\n    actionable.push({\n      json: {\n        ...p,\n        _action: 'send_nudge',\n        _days_overdue: daysOverdue,\n        _workflow: 'workflow-3-missed-appointment',\n        _message_type: 'missed_appointment_nudge',\n        _to_phone: p.phone.replace(/^\\+/, ''),\n        _name: patientName,\n        _doctor_name: doctorName,\n        _clinic_name: clinicName\n      }\n    });\n  } else if (daysOverdue === 1 && hasValidPhone && msgCount < maxMessages && !recentlyMessaged) {\n    actionable.push({\n      json: {\n        ...p,\n        _action: 'send_recovery',\n        _days_overdue: daysOverdue,\n        _workflow: 'workflow-3-missed-appointment',\n        _message_type: 'missed_appointment_recovery',\n        _to_phone: p.phone.replace(/^\\+/, ''),\n        _name: patientName,\n        _doctor_name: doctorName\n      }\n    });\n  }\n}\n\nif (actionable.length === 0) {\n  return [{ json: { _skip: true, reason: 'No missed appointments to process', todayStr } }];\n}\n\nreturn actionable;"
+        "jsCode": "// Filter missed appointments and calculate the Twilio template to send.\nconst items = $input.all();\nconst tz = $env.TIMEZONE || 'Asia/Kolkata';\nconst maxMessages = parseInt($env.MAX_MESSAGE_COUNT) || 5;\nconst minHours = parseInt($env.MIN_HOURS_BETWEEN_MESSAGES) || 23;\nconst now = new Date();\nconst todayStr = now.toLocaleDateString('en-CA', { timeZone: tz });\nconst todayDate = new Date(todayStr);\nconst actionable = [];\nfor (const item of items) {\n  const p = item.json;\n  if (!p.follow_up_date) continue;\n  const followUpDate = new Date(new Date(p.follow_up_date).toLocaleDateString('en-CA', { timeZone: tz }));\n  if (isNaN(followUpDate.getTime()) || followUpDate >= todayDate) continue;\n  const status = p.status || 'pending';\n  if (status === 'completed' || status === 'inactive') continue;\n  const daysOverdue = Math.floor((todayDate - followUpDate) / (1000 * 60 * 60 * 24));\n  const hasValidPhone = p.phone && /^\\+[1-9]\\d{6,14}$/.test(p.phone);\n  const msgCount = parseInt(p.message_count) || 0;\n  let recentlyMessaged = false;\n  if (p.last_message_sent) {\n    const hoursSince = (now - new Date(p.last_message_sent)) / (1000 * 60 * 60);\n    recentlyMessaged = hoursSince < minHours;\n  }\n  const doctor = p.doctor_name || $env.DEFAULT_DOCTOR_NAME || 'your doctor';\n  const clinic = p.clinic_name || $env.DEFAULT_CLINIC_NAME || 'our clinic';\n  const name = p.name || 'there';\n  if (daysOverdue >= 7) {\n    actionable.push({ json: { ...p, _action: 'mark_missed', _days_overdue: daysOverdue, _workflow: 'workflow-3-missed-appointment' } });\n  } else if (daysOverdue === 3 && hasValidPhone && msgCount < maxMessages && !recentlyMessaged) {\n    const scheduledDate = todayStr;\n    actionable.push({ json: { ...p, _action: 'send_nudge', _days_overdue: daysOverdue, _workflow: 'workflow-3-missed-appointment', _message_type: 'missed_appointment_nudge', _scheduled_date: scheduledDate, _to_phone: 'whatsapp:' + p.phone, _name: name, _doctor_name: doctor, _clinic_name: clinic, _content_sid: $env.TWILIO_CONTENT_MISSED_NUDGE || '', _content_variables: JSON.stringify({ '1': name, '2': doctor, '3': clinic }), _message_body: `Hi ${name}, ${doctor} wanted us to check in on you. It has been a few days since your scheduled follow-up at ${clinic}. Reply BOOK if you would like to arrange a new appointment.` } });\n  } else if (daysOverdue === 1 && hasValidPhone && msgCount < maxMessages && !recentlyMessaged) {\n    const scheduledDate = todayStr;\n    actionable.push({ json: { ...p, _action: 'send_recovery', _days_overdue: daysOverdue, _workflow: 'workflow-3-missed-appointment', _message_type: 'missed_appointment_recovery', _scheduled_date: scheduledDate, _to_phone: 'whatsapp:' + p.phone, _name: name, _doctor_name: doctor, _content_sid: $env.TWILIO_CONTENT_MISSED_RECOVERY || '', _content_variables: JSON.stringify({ '1': name, '2': doctor }), _message_body: `Hi ${name}, we noticed you missed your follow-up appointment with ${doctor} yesterday. Would you like to reschedule? Reply RESCHEDULE and our team will get back to you.` } });\n  }\n}\nif (actionable.length === 0) return [{ json: { _skip: true, reason: 'No missed appointments to process', todayStr } }];\nreturn actionable;"
       },
       "id": "33333333-3333-3333-3333-000000000004",
       "name": "Filter Missed Appointments",
@@ -212,12 +212,35 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ 'https://graph.facebook.com/v19.0/' + $env.WA_PHONE_NUMBER_ID + '/messages' }}",
+        "url": "={{ 'https://api.twilio.com/2010-04-01/Accounts/' + $env.TWILIO_ACCOUNT_SID + '/Messages.json' }}",
         "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
+        "genericAuthType": "httpBasicAuth",
         "sendBody": true,
-        "contentType": "json",
-        "body": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $json._to_phone, type: 'template', template: { name: 'patient_missed_recovery', language: { code: $env.WA_LANGUAGE_CODE || 'en' }, components: [{ type: 'body', parameters: [ { type: 'text', text: $json._name }, { type: 'text', text: $json._doctor_name } ] }] } }) }}",
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "From",
+              "value": "={{ $env.TWILIO_WHATSAPP_FROM }}"
+            },
+            {
+              "name": "To",
+              "value": "={{ $json._to_phone }}"
+            },
+            {
+              "name": "ContentSid",
+              "value": "={{ $json._content_sid }}"
+            },
+            {
+              "name": "ContentVariables",
+              "value": "={{ $json._content_variables }}"
+            },
+            {
+              "name": "StatusCallback",
+              "value": "={{ $env.TWILIO_STATUS_CALLBACK_URL || \"\" }}"
+            }
+          ]
+        },
         "options": {
           "retry": {
             "maxTries": 3,
@@ -234,9 +257,9 @@
         300
       ],
       "credentials": {
-        "httpHeaderAuth": {
-          "id": "cpwYBQl1CU1nYjHS",
-          "name": "WhatsApp Business API"
+        "httpBasicAuth": {
+          "id": "REPLACE_TWILIO_BASIC_AUTH",
+          "name": "Twilio Basic Auth"
         }
       },
       "onError": "continueRegularOutput"
@@ -244,12 +267,35 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ 'https://graph.facebook.com/v19.0/' + $env.WA_PHONE_NUMBER_ID + '/messages' }}",
+        "url": "={{ 'https://api.twilio.com/2010-04-01/Accounts/' + $env.TWILIO_ACCOUNT_SID + '/Messages.json' }}",
         "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
+        "genericAuthType": "httpBasicAuth",
         "sendBody": true,
-        "contentType": "json",
-        "body": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $json._to_phone, type: 'template', template: { name: 'patient_missed_nudge', language: { code: $env.WA_LANGUAGE_CODE || 'en' }, components: [{ type: 'body', parameters: [ { type: 'text', text: $json._name }, { type: 'text', text: $json._doctor_name }, { type: 'text', text: $json._clinic_name } ] }] } }) }}",
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "From",
+              "value": "={{ $env.TWILIO_WHATSAPP_FROM }}"
+            },
+            {
+              "name": "To",
+              "value": "={{ $json._to_phone }}"
+            },
+            {
+              "name": "ContentSid",
+              "value": "={{ $json._content_sid }}"
+            },
+            {
+              "name": "ContentVariables",
+              "value": "={{ $json._content_variables }}"
+            },
+            {
+              "name": "StatusCallback",
+              "value": "={{ $env.TWILIO_STATUS_CALLBACK_URL || \"\" }}"
+            }
+          ]
+        },
         "options": {
           "retry": {
             "maxTries": 3,
@@ -266,9 +312,9 @@
         460
       ],
       "credentials": {
-        "httpHeaderAuth": {
-          "id": "cpwYBQl1CU1nYjHS",
-          "name": "WhatsApp Business API"
+        "httpBasicAuth": {
+          "id": "REPLACE_TWILIO_BASIC_AUTH",
+          "name": "Twilio Basic Auth"
         }
       },
       "onError": "continueRegularOutput"
@@ -317,7 +363,10 @@
             "message_type": "={{ $('Filter Missed Appointments').item.json._message_type }}",
             "message_sent": "={{ $('Filter Missed Appointments').item.json._message_body }}",
             "sent_at": "={{ new Date().toISOString() }}",
-            "delivery_status": "sent"
+            "delivery_status": "sent",
+            "scheduled_date": "={{ $('Filter Missed Appointments').item.json._scheduled_date }}",
+            "provider_message_id": "={{ $json.sid || $json.Sid || \"\" }}",
+            "twilio_message_sid": "={{ $json.sid || $json.Sid || \"\" }}"
           },
           "matchingColumns": [],
           "schema": []
@@ -378,6 +427,27 @@
         "postgres": {
           "id": "U3Ok26tbDrmjkBQr",
           "name": "Supabase DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO public.message_ledger (patient_id, message_type, scheduled_date, workflow_name, provider_message_id, twilio_message_sid, status) VALUES ( {{ $json.patient_id ? \"'\" + $json.patient_id + \"'\" : 'NULL' }}, '{{ $json.message_type }}', '{{ $json.scheduled_date }}', '{{ $json.workflow_name }}', '{{ ($json.provider_message_id || '').replace(/'/g, \"''\") }}', '{{ ($json.twilio_message_sid || '').replace(/'/g, \"''\") }}', 'sent' ) ON CONFLICT (patient_id, message_type, scheduled_date) DO UPDATE SET provider_message_id = EXCLUDED.provider_message_id, twilio_message_sid = EXCLUDED.twilio_message_sid, status = EXCLUDED.status, updated_at = NOW();",
+        "options": {}
+      },
+      "id": "ledger-03-000000000001",
+      "name": "Record Message Ledger",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        2000,
+        380
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_SUPABASE_POSTGRES",
+          "name": "Supabase (Postgres)"
         }
       }
     }
@@ -491,6 +561,17 @@
         [
           {
             "node": "Log Message to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Message to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Record Message Ledger",
             "type": "main",
             "index": 0
           }

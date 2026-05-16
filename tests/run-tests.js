@@ -2,7 +2,7 @@
 /**
  * Patient Retention Engine — Integration Test Suite
  *
- * Tests all 10 workflows end-to-end against a live n8n + Supabase stack.
+ * Tests all Twilio-only workflows end-to-end against a live n8n + Supabase stack.
  * WhatsApp notifications are NOT sent — the test verifies the trigger
  * reaches the WA send node (system_logs ERROR confirms the attempt).
  *
@@ -42,7 +42,6 @@ let n8nSessionCookie = '';
 
 const SB_URL       = env.SUPABASE_URL;
 const SB_KEY       = env.SUPABASE_SERVICE_ROLE_KEY;
-const WA_VER_TOKEN = env.WA_WEBHOOK_VERIFY_TOKEN || '';
 
 // Dedicated test phone numbers (10-digit raw; WF11 prepends +91)
 // Using 900000XXXX range to avoid collision with real patients
@@ -249,19 +248,27 @@ async function cleanup() {
   }
 }
 
-// ── Meta-style webhook payload builder ───────────────────────────────────────
-function metaMsg(fromPhone, text) {
+// ── Twilio-style webhook payload builders ────────────────────────────────────
+function twilioMsg(fromPhone, text, extra = {}) {
   return {
-    entry: [{
-      changes: [{
-        value: {
-          messages: [{
-            from: fromPhone.replace(/^\+/, ''),
-            text: { body: text },
-          }],
-        },
-      }],
-    }],
+    From      : `whatsapp:${fromPhone}`,
+    To        : env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886',
+    Body      : text,
+    MessageSid: extra.MessageSid || 'SM00000000000000000000000000000001',
+    WaId      : fromPhone.replace(/^\+/, ''),
+    ProfileName: extra.ProfileName || 'Test Patient',
+    NumMedia  : extra.NumMedia || '0',
+    ...extra,
+  };
+}
+
+function twilioStatus(messageSid, status, extra = {}) {
+  return {
+    MessageSid,
+    MessageStatus: status,
+    To: extra.To || 'whatsapp:+919000000003',
+    From: extra.From || env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886',
+    ...extra,
   };
 }
 
@@ -293,39 +300,41 @@ async function main() {
   });
 
   let allWorkflows = [];
-  await test('1.3  All 10 workflows imported in n8n', async () => {
+  await test('1.3  All Twilio workflows imported in n8n', async () => {
     const { ok, data, message } = await n8nListWorkflows();
     assert(ok, `n8n workflow list failed (${message || 'login: set N8N_OWNER_EMAIL / N8N_OWNER_PASSWORD in .env'})`);
     allWorkflows = data;
     const names   = allWorkflows.map(w => w.name);
-    const REQUIRED = ['WF1', 'WF2', 'WF3', 'WF4', 'WF5', 'WF6', 'WF7', 'WF8', 'WF11', 'WF12'];
+    const REQUIRED = ['WF1', 'WF2', 'WF3', 'WF4', 'WF5', 'WF6', 'WF7', 'WF8', 'WF9', 'WF11', 'WF12'];
     const missing  = REQUIRED.filter(r => !names.some(n => n.includes(r)));
     assert(missing.length === 0,
       `Missing workflows: ${missing.join(', ')}. Run: docker compose down -v && docker compose up --build -d`);
   });
 
-  await test('1.4  Webhook workflows (WF11, WF12, WF7, WF6) are active', async () => {
+  await test('1.4  Webhook workflows (WF11, WF12, WF7, WF6, WF9) are active', async () => {
     const relevant = allWorkflows.filter(w =>
-      w.name.includes('WF11') || w.name.includes('WF12') || w.name.includes('WF7') || w.name.includes('WF6'));
-    assert(relevant.length === 4,
-      `Expected WF11/WF12/WF7/WF6 in n8n, found ${relevant.length}. Run: node tests/setup-n8n.js`);
+      w.name.includes('WF11') || w.name.includes('WF12') || w.name.includes('WF7') || w.name.includes('WF6') || w.name.includes('WF9'));
+    assert(relevant.length === 5,
+      `Expected WF11/WF12/WF7/WF6/WF9 in n8n, found ${relevant.length}. Run: node tests/setup-n8n.js`);
     const inactive = relevant.filter(w => !w.active).map(w => w.name);
     assert(inactive.length === 0,
       `Inactive: ${inactive.join(', ')}. Run: node tests/setup-n8n.js`);
   });
 
-  await test('1.5  Supabase tables exist (patients, message_logs, system_logs, hospital_boarding)', async () => {
-    const [p, m, s, h] = await Promise.all([
+  await test('1.5  Supabase tables exist (patients, message_logs, system_logs, hospital_boarding, message_ledger)', async () => {
+    const [p, m, s, h, l] = await Promise.all([
       sbGet('patients',     'select=id&limit=1'),
       sbGet('message_logs', 'select=log_id&limit=1'),
       sbGet('system_logs',  'select=log_id&limit=1'),
       sbGet('hospital_boarding', 'select=id&limit=1'),
+      sbGet('message_ledger', 'select=id&limit=1'),
     ]);
     assert(Array.isArray(p), 'patients table missing or inaccessible');
     assert(Array.isArray(m), 'message_logs table missing or inaccessible');
     assert(Array.isArray(s), 'system_logs table missing or inaccessible');
     assert(Array.isArray(h),
       'hospital_boarding missing or PostgREST cache stale. Run schemas/migration-align-legacy-schema.sql (or migration-add-hospital-boarding.sql) in Supabase SQL Editor, then reload schema.');
+    assert(Array.isArray(l), 'message_ledger table missing or inaccessible');
   });
 
   // ── §2  WF12 — Hospital Boarding ─────────────────────────────────────────
@@ -418,9 +427,9 @@ async function main() {
     assert(pat.follow_up_required === 'Yes', 'follow_up_required should be Yes');
   });
 
-  await test('2.3  WA welcome trigger logged (WF7 system_log)', async () => {
+  await test('2.3  Twilio welcome trigger logged (WF7 system_log)', async () => {
     await sleep(2000); // allow WF7 to run
-    // Either a success log from WF11, or an ERROR log from WF7 (WA creds invalid)
+    // Either a success log from WF11, or an ERROR log from WF7 (Twilio creds invalid)
     const logs = await recentSystemLogs('workflow-11-form-intake');
     assert(logs.length > 0,
       'No system_log from WF11 — check Supabase credentials are set in n8n');
@@ -503,10 +512,10 @@ async function main() {
       visit_date        : date(-1),
     });
     assert([200, 202].includes(status), `Expected 200/202, got ${status}: ${JSON.stringify(json)}`);
-    // After ~2s, WF7 should have logged an ERROR (WA creds invalid) or INFO (WA succeeded)
+    // After ~2s, WF7 should have logged an ERROR (Twilio creds invalid) or INFO (Twilio succeeded)
     await sleep(2500);
     const logs = await recentSystemLogs('workflow-7-new-patient');
-    // Either an ERROR (WA failed — expected with placeholder creds) or nothing (creds valid, succeeded)
+    // Either an ERROR (Twilio failed with placeholder creds) or nothing (creds valid, succeeded)
     console.log(`       WF7 system_logs in last 60s: ${logs.length} entries`);
     // Not asserting on log content — just verifying the workflow ran without crashing
   });
@@ -541,7 +550,7 @@ async function main() {
   });
 
   // ── §5  WF6 — Feedback Listener ──────────────────────────────────────────
-  section('§5  WF6 — Feedback Listener  (GET + POST /webhook/feedback-listener)');
+  section('§5  WF6 — Feedback Listener  (POST /webhook/feedback-listener)');
 
   // Seed a known patient for WF6 tests
   await seedPatient(TP.wf6, {
@@ -554,29 +563,13 @@ async function main() {
   });
   await sleep(500);
 
-  await test('4.1  GET verification with correct token → hub.challenge echoed', async () => {
-    const challenge = 'challenge_abc_123';
-    const url       = `${N8N_URL}/webhook/feedback-listener?hub.mode=subscribe&hub.verify_token=${encodeURIComponent(WA_VER_TOKEN)}&hub.challenge=${challenge}`;
-    const res       = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    const text      = await res.text();
-    assert(res.ok, `Expected 200, got ${res.status}`);
-    assert(text.includes(challenge),
-      `Expected challenge "${challenge}" in body. Got: ${text.substring(0, 100)}`);
-  });
-
-  await test('4.2  GET verification with wrong token → non-200', async () => {
-    const url = `${N8N_URL}/webhook/feedback-listener?hub.mode=subscribe&hub.verify_token=WRONG_TOKEN&hub.challenge=xyz`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    assert(!res.ok, `Expected error status, got ${res.status}`);
-  });
-
-  await test('4.3  POST confirmed message → response_status = confirmed in DB', async () => {
+  await test('4.1  POST confirmed Twilio message → response_status = confirmed in DB', async () => {
     // Reset patient status first
     await sbDelete('patients', `phone=eq.${encodeURIComponent(TP.wf6)}`);
     await seedPatient(TP.wf6, { name: 'WF6 Test Patient', message_count: 1, status: 'pending' });
     await sleep(300);
 
-    const { status } = await wh('feedback-listener', 'POST', metaMsg(TP.wf6, 'Yes, I will come'));
+    const { status } = await wh('feedback-listener', 'POST', twilioMsg(TP.wf6, 'Yes, I will come'));
     assert([200, 202].includes(status), `Expected 200, got ${status}`);
     await sleep(2500);
     const pat = await getPatient(TP.wf6);
@@ -586,9 +579,9 @@ async function main() {
     assert(pat.last_response, 'last_response should be set');
   });
 
-  await test('4.4  POST cancelled message → response_status = cancelled in DB', async () => {
+  await test('4.2  POST cancelled Twilio message → response_status = cancelled in DB', async () => {
     const { status } = await wh('feedback-listener', 'POST',
-      metaMsg(TP.wf6, 'No, please cancel my appointment'));
+      twilioMsg(TP.wf6, 'No, please cancel my appointment'));
     assert([200, 202].includes(status), `Expected 200, got ${status}`);
     await sleep(2000);
     const pat = await getPatient(TP.wf6);
@@ -596,10 +589,10 @@ async function main() {
       `Expected cancelled, got "${pat?.response_status}"`);
   });
 
-  await test('4.5  POST from unknown number → WARN logged in system_logs', async () => {
+  await test('4.3  POST from unknown number → WARN logged in system_logs', async () => {
     const before = await recentSystemLogs('workflow-6-feedback-listener');
     const { status } = await wh('feedback-listener', 'POST',
-      metaMsg('+919999999999', 'Hello there'));
+      twilioMsg('+919999999999', 'Hello there'));
     assert([200, 202].includes(status), `Expected 200, got ${status}`);
     await sleep(2000);
     const after  = await recentSystemLogs('workflow-6-feedback-listener');
@@ -607,30 +600,48 @@ async function main() {
     assert(warns.length > 0, 'Expected at least one WARN log for unknown sender');
   });
 
-  await test('4.6  POST non-message event (status update) → skipped gracefully', async () => {
-    const payload = {
-      entry: [{
-        changes: [{
-          value: { statuses: [{ id: 'msg123', status: 'delivered' }] }, // No "messages" key
-        }],
-      }],
-    };
-    const { status } = await wh('feedback-listener', 'POST', payload);
+  await test('4.4  POST blank Twilio message → skipped gracefully', async () => {
+    const { status } = await wh('feedback-listener', 'POST', twilioMsg(TP.wf6, '', { NumMedia: '0' }));
     assert([200, 202].includes(status), `Expected graceful 200, got ${status}`);
   });
 
-  await test('4.7  POST help keyword → classified as "help" (not confirmed/cancelled)', async () => {
+  await test('4.5  POST help keyword → classified as "help" (not confirmed/cancelled)', async () => {
     // Reset to clean state
     await sbDelete('patients', `phone=eq.${encodeURIComponent(TP.wf6)}`);
     await seedPatient(TP.wf6, { name: 'WF6 Test Patient', message_count: 1, status: 'pending' });
     await sleep(300);
 
-    await wh('feedback-listener', 'POST', metaMsg(TP.wf6, 'I need urgent help'));
+    await wh('feedback-listener', 'POST', twilioMsg(TP.wf6, 'I need urgent help'));
     await sleep(2000);
     const pat = await getPatient(TP.wf6);
     // "help" maps to response_status = 'responded' (the generic fallback in WF6)
     assert(pat?.response_status === 'responded',
       `Expected responded for help keyword, got "${pat?.response_status}"`);
+  });
+
+  await test('4.6  WF9 Twilio status callback → message_logs delivery_status updates', async () => {
+    const pat = await getPatient(TP.wf6);
+    assert(pat?.id, 'Seed patient missing for status callback test');
+    const sid = 'SM99999999999999999999999999999999';
+    await sbDelete('message_logs', `twilio_message_sid=eq.${encodeURIComponent(sid)}`).catch(() => {});
+    await sbInsert('message_logs', {
+      patient_id: pat.id,
+      patient_name: pat.name,
+      phone: pat.phone,
+      workflow_name: 'workflow-test',
+      message_type: 'status_callback_test',
+      message_sent: 'status callback test',
+      scheduled_date: date(0),
+      delivery_status: 'sent',
+      provider_message_id: sid,
+      twilio_message_sid: sid,
+    });
+    const { status } = await wh('twilio-status-callback', 'POST', twilioStatus(sid, 'delivered'));
+    assert([200, 202].includes(status), `Expected 200/202, got ${status}`);
+    await sleep(1200);
+    const rows = await sbGet('message_logs', `twilio_message_sid=eq.${encodeURIComponent(sid)}&select=delivery_status`);
+    assert(rows[0]?.delivery_status === 'delivered',
+      `Expected delivery_status=delivered, got ${rows[0]?.delivery_status}`);
   });
 
   // ── §6  Cron Workflow DB Query Validation ────────────────────────────────
@@ -762,14 +773,14 @@ async function main() {
       }
       await sleep(4000); // allow execution to complete
       const logs = await recentSystemLogs(logWorkflow, 60);
-      console.log(`\n       WA trigger status: ${logs.length} log entries from ${logWorkflow}`);
-      // Either a WARN/ERROR (WA creds invalid) or INFO/no entry (no matching patients)
+      console.log(`\n       Twilio trigger status: ${logs.length} log entries from ${logWorkflow}`);
+      // Either a WARN/ERROR (Twilio creds invalid) or INFO/no entry (no matching patients)
       // Both are acceptable — confirms the workflow ran without crashing
     });
   }
 
   // ── §8  End-to-End Flow ───────────────────────────────────────────────────
-  section('§8  End-to-End — Full Intake → DB Write → WA Trigger → Feedback');
+  section('§8  End-to-End — Full Intake → DB Write → Twilio Trigger → Feedback');
 
   let e2ePatientCode = null;
 
@@ -814,7 +825,7 @@ async function main() {
     assert(pat, 'Patient not found');
 
     const { status } = await wh('feedback-listener', 'POST',
-      metaMsg(`+91${TP.e2e}`, 'Yes I will come'));
+      twilioMsg(`+91${TP.e2e}`, 'Yes I will come'));
     assert([200, 202].includes(status), `WF6 returned ${status}`);
 
     await sleep(2500);

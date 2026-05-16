@@ -1,9 +1,9 @@
 {
-  "name": "WF4 \u2014 Post-Visit Health Check",
+  "name": "WF4 — Post-Visit Health Check",
   "nodes": [
     {
       "parameters": {
-        "content": "## Workflow 4: Post-Visit Health Check\n\n**Trigger:** Daily at 10:15 AM\n\n**Logic:** Reads from Supabase. Finds patients who visited 2\u20133 days ago and haven't received a health check message. Sends a caring check-in via Meta Cloud API (template: patient_health_check). Sets `health_check_sent = TRUE` after sending.\n\n**Data source:** Supabase `public.patients`\n\n**Before activating:**\n1. Set credential on all Postgres nodes \u2192 Supabase DB\n2. Set credential on HTTP node \u2192 WhatsApp Business API (HTTP Header Auth)\n3. Ensure the `patient_health_check` template is approved in Meta Business Manager",
+        "content": "## Workflow 4: Post-Visit Health Check\n\n**Trigger:** Daily at 10:15 AM\n\n**Logic:** Reads from Supabase. Finds patients who visited 2–3 days ago and haven't received a health check message. Sends a caring check-in via Twilio WhatsApp (template: patient_health_check). Sets `health_check_sent = TRUE` after sending.\n\n**Data source:** Supabase `public.patients`\n\n**Before activating:**\n1. Set credential on all Postgres nodes → Supabase DB\n2. Set credential on HTTP node → Twilio Basic Auth\n3. Ensure the `patient_health_check` template is approved in Twilio Content Template Manager",
         "height": 240,
         "width": 400
       },
@@ -39,7 +39,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT * FROM public.patients WHERE health_check_sent = FALSE AND status <> 'inactive' AND visit_date BETWEEN CURRENT_DATE - INTERVAL '3 days' AND CURRENT_DATE - INTERVAL '2 days'",
+        "query": "SELECT p.* FROM public.patients p WHERE p.health_check_sent = FALSE AND p.status <> 'inactive' AND p.visit_date BETWEEN CURRENT_DATE - INTERVAL '3 days' AND CURRENT_DATE - INTERVAL '2 days' AND NOT EXISTS (SELECT 1 FROM public.message_logs ml WHERE ml.patient_id = p.id AND ml.message_type = 'health_check' AND ml.scheduled_date = CURRENT_DATE)",
         "options": {}
       },
       "id": "44444444-4444-4444-4444-000000000003",
@@ -59,7 +59,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Filter patients who visited 2-3 days ago and haven't received health check\nconst items = $input.all();\nconst tz = $env.TIMEZONE || 'Asia/Kolkata';\n\nconst now = new Date();\nconst todayStr = now.toLocaleDateString('en-CA', { timeZone: tz });\nconst todayDate = new Date(todayStr);\n\nconst filtered = items.filter(item => {\n  const p = item.json;\n\n  if (!p.visit_date) return false;\n\n  const visitDate = new Date(p.visit_date);\n  if (isNaN(visitDate.getTime())) return false;\n\n  const diffMs = todayDate - visitDate;\n  const daysSinceVisit = Math.floor(diffMs / (1000 * 60 * 60 * 24));\n\n  if (daysSinceVisit < 2 || daysSinceVisit > 3) return false;\n\n  // health_check_sent comes as boolean from Supabase\n  if (p.health_check_sent === true) return false;\n\n  if (p.status === 'inactive') return false;\n\n  if (!p.phone || !/^\\+[1-9]\\d{6,14}$/.test(p.phone)) return false;\n\n  return true;\n});\n\nif (filtered.length === 0) {\n  return [{ json: { _skip: true, reason: 'No patients due for health check', todayStr } }];\n}\n\nreturn filtered.map(item => ({\n  json: {\n    ...item.json,\n    _workflow: 'workflow-4-health-check',\n    _message_type: 'health_check',\n    _to_phone: item.json.phone.replace(/^\\+/, ''),\n    _name: item.json.name || 'there',\n    _doctor_name: item.json.doctor_name || $env.DEFAULT_DOCTOR_NAME || 'your doctor'\n  }\n}));"
+        "jsCode": "// Filter patients who visited 2-3 days ago and have not received a health check.\nconst items = $input.all();\nconst tz = $env.TIMEZONE || 'Asia/Kolkata';\nconst todayStr = new Date().toLocaleDateString('en-CA', { timeZone: tz });\nconst todayDate = new Date(todayStr);\nconst filtered = items.filter(item => {\n  const p = item.json;\n  if (!p.visit_date) return false;\n  const visitDate = new Date(p.visit_date);\n  if (isNaN(visitDate.getTime())) return false;\n  const daysSinceVisit = Math.floor((todayDate - visitDate) / (1000 * 60 * 60 * 24));\n  if (daysSinceVisit < 2 || daysSinceVisit > 3) return false;\n  if (p.health_check_sent === true || p.status === 'inactive') return false;\n  if (!p.phone || !/^\\+[1-9]\\d{6,14}$/.test(p.phone)) return false;\n  return true;\n});\nif (filtered.length === 0) return [{ json: { _skip: true, reason: 'No patients due for health check', todayStr } }];\nreturn filtered.map(item => {\n  const p = item.json;\n  const name = p.name || 'there';\n  const doctor = p.doctor_name || $env.DEFAULT_DOCTOR_NAME || 'your doctor';\n  return { json: { ...p, _workflow: 'workflow-4-health-check', _message_type: 'health_check', _scheduled_date: todayStr, _to_phone: 'whatsapp:' + p.phone, _name: name, _doctor_name: doctor, _content_sid: $env.TWILIO_CONTENT_HEALTH_CHECK || '', _content_variables: JSON.stringify({ '1': name, '2': doctor }), _message_body: `Hi ${name}. Hope you are feeling better after your visit with ${doctor}. Reply GOOD, OKAY, or HELP so our team knows how you are doing.` } };\n});"
       },
       "id": "44444444-4444-4444-4444-000000000004",
       "name": "Filter Health Check Due",
@@ -105,12 +105,35 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ 'https://graph.facebook.com/v19.0/' + $env.WA_PHONE_NUMBER_ID + '/messages' }}",
+        "url": "={{ 'https://api.twilio.com/2010-04-01/Accounts/' + $env.TWILIO_ACCOUNT_SID + '/Messages.json' }}",
         "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
+        "genericAuthType": "httpBasicAuth",
         "sendBody": true,
-        "contentType": "json",
-        "body": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $json._to_phone, type: 'template', template: { name: 'patient_health_check', language: { code: $env.WA_LANGUAGE_CODE || 'en' }, components: [{ type: 'body', parameters: [ { type: 'text', text: $json._name }, { type: 'text', text: $json._doctor_name } ] }] } }) }}",
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "From",
+              "value": "={{ $env.TWILIO_WHATSAPP_FROM }}"
+            },
+            {
+              "name": "To",
+              "value": "={{ $json._to_phone }}"
+            },
+            {
+              "name": "ContentSid",
+              "value": "={{ $json._content_sid }}"
+            },
+            {
+              "name": "ContentVariables",
+              "value": "={{ $json._content_variables }}"
+            },
+            {
+              "name": "StatusCallback",
+              "value": "={{ $env.TWILIO_STATUS_CALLBACK_URL || \"\" }}"
+            }
+          ]
+        },
         "options": {
           "retry": {
             "maxTries": 3,
@@ -127,9 +150,9 @@
         280
       ],
       "credentials": {
-        "httpHeaderAuth": {
-          "id": "cpwYBQl1CU1nYjHS",
-          "name": "WhatsApp Business API"
+        "httpBasicAuth": {
+          "id": "REPLACE_TWILIO_BASIC_AUTH",
+          "name": "Twilio Basic Auth"
         }
       },
       "onError": "continueErrorOutput"
@@ -179,7 +202,9 @@
             "message_sent": "={{ $('Filter Health Check Due').item.json._message_body }}",
             "sent_at": "={{ new Date().toISOString() }}",
             "delivery_status": "sent",
-            "wa_message_id": "={{ $json.messages?.[0]?.id || '' }}"
+            "scheduled_date": "={{ $('Filter Health Check Due').item.json._scheduled_date }}",
+            "provider_message_id": "={{ $json.sid || $json.Sid || \"\" }}",
+            "twilio_message_sid": "={{ $json.sid || $json.Sid || \"\" }}"
           },
           "matchingColumns": [],
           "schema": []
@@ -240,6 +265,27 @@
         "postgres": {
           "id": "U3Ok26tbDrmjkBQr",
           "name": "Supabase DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO public.message_ledger (patient_id, message_type, scheduled_date, workflow_name, provider_message_id, twilio_message_sid, status) VALUES ( {{ $json.patient_id ? \"'\" + $json.patient_id + \"'\" : 'NULL' }}, '{{ $json.message_type }}', '{{ $json.scheduled_date }}', '{{ $json.workflow_name }}', '{{ ($json.provider_message_id || '').replace(/'/g, \"''\") }}', '{{ ($json.twilio_message_sid || '').replace(/'/g, \"''\") }}', 'sent' ) ON CONFLICT (patient_id, message_type, scheduled_date) DO UPDATE SET provider_message_id = EXCLUDED.provider_message_id, twilio_message_sid = EXCLUDED.twilio_message_sid, status = EXCLUDED.status, updated_at = NOW();",
+        "options": {}
+      },
+      "id": "ledger-04-000000000001",
+      "name": "Record Message Ledger",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1560,
+        380
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_SUPABASE_POSTGRES",
+          "name": "Supabase (Postgres)"
         }
       }
     }
@@ -307,6 +353,17 @@
         [
           {
             "node": "Log Send Failure to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Message to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Record Message Ledger",
             "type": "main",
             "index": 0
           }
