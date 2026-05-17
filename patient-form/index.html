@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#EA580C" />
+  <meta name="color-scheme" content="light dark" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="description" content="Patient registration form" />
@@ -43,6 +44,33 @@
       --shadow-md: 0 4px 8px rgba(0,0,0,.07), 0 2px 4px rgba(0,0,0,.05);
     }
 
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --accent-50:  #15110d;
+        --accent-100: #281a13;
+        --accent-200: #4a2d1b;
+        --accent-500: #f97316;
+        --accent-600: #fb7d2d;
+        --accent-700: #fd9a5a;
+        --green-50: #102218;
+        --green-100: #163324;
+        --green-600: #22c55e;
+        --amber-50: #22190a;
+        --amber-200: #8a6510;
+        --red-50: #2a1313;
+        --red-500: #f87171;
+        --gray-50: #111827;
+        --gray-100: #1f2937;
+        --gray-200: #334155;
+        --gray-300: #475569;
+        --gray-400: #64748b;
+        --gray-500: #94a3b8;
+        --gray-700: #cbd5e1;
+        --gray-900: #f8fafc;
+        --white: #0f172a;
+      }
+    }
+
     /* ── RESET ─────────────────────────────────────────────── */
     *, *::before, *::after {
       box-sizing: border-box; margin: 0; padding: 0;
@@ -56,6 +84,13 @@
       min-height: 100dvh;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
+    }
+    @media (prefers-color-scheme: dark) {
+      body {
+        background:
+          radial-gradient(circle at top, rgba(249, 115, 22, 0.12), transparent 40%),
+          linear-gradient(180deg, #110d0a 0%, #15110d 100%);
+      }
     }
 
     /* ── APP SHELL ─────────────────────────────────────────── */
@@ -310,6 +345,24 @@
       -webkit-backdrop-filter: blur(10px);
       border-top: 1px solid var(--accent-100);
       z-index: 100;
+    }
+    @media (prefers-color-scheme: dark) {
+      .submit-wrap {
+        background: rgba(15, 23, 42, 0.96);
+        border-top-color: var(--gray-200);
+      }
+      .success-screen {
+        background: #111827;
+      }
+      .toast {
+        background: #e2e8f0;
+        color: #0f172a;
+      }
+      .toast.error {
+        background: #b91c1c;
+        color: #fff;
+      }
+      :focus-visible { outline-color: var(--accent-500); }
     }
     .submit-btn {
       width: 100%; height: 54px;
@@ -629,15 +682,27 @@
 </div><!-- /app -->
 
 <script>
+function applyThemeColor() {
+  const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', isDark ? '#15110d' : '#EA580C');
+}
+applyThemeColor();
+if (window.matchMedia) {
+  const mq = window.matchMedia('(prefers-color-scheme: dark)');
+  const onChange = () => applyThemeColor();
+  if (mq.addEventListener) mq.addEventListener('change', onChange);
+  else if (mq.addListener) mq.addListener(onChange);
+}
 /* ═══════════════════════════════════════════════════════════════════
    CONFIGURATION
    Update WEBHOOK_URL with your actual n8n public URL.
    Update HOSPITALS with your real hospital → doctor mapping.
    ═══════════════════════════════════════════════════════════════════ */
-const WEBHOOK_URL = 'YOUR_N8N_WEBHOOK_URL/webhook/patient-form-intake';
+const WEBHOOK_URL = 'https://vaitalcare-production.up.railway.app/webhook/patient-form-intake';
 
 const HOSPITALS = {
-  'City Hospital':    ['Dr. Sharma', 'Dr. Mehta', 'Dr. Patel'],
+  'City Hospital':    ['Dr. Sharma', 'Dr. Mehta', 'Dr. Patel', 'Dr. Divya Rai Shukla'],
   'General Hospital': ['Dr. Kumar', 'Dr. Patel', 'Dr. Sharma'],
   'Metro Clinic':     ['Dr. Mehta', 'Dr. Kumar'],
 };

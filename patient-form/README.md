@@ -24,7 +24,7 @@ const WEBHOOK_URL = 'https://your-n8n-domain.com/webhook/patient-form-intake';
 
 // 2. Replace with your real hospitals and their doctors
 const HOSPITALS = {
-  'City Hospital':    ['Dr. Sharma', 'Dr. Mehta', 'Dr. Patel'],
+  'City Hospital':    ['Dr. Sharma', 'Dr. Mehta', 'Dr. Patel', 'Dr. Divya Rai Shukla'],
   'General Hospital': ['Dr. Kumar', 'Dr. Patel', 'Dr. Sharma'],
   'Metro Clinic':     ['Dr. Mehta', 'Dr. Kumar'],
 };

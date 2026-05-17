@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#0d9488" />
+  <meta name="color-scheme" content="light dark" />
   <meta name="description" content="Hospital and clinic onboarding" />
   <title>Hospital / Clinic Boarding</title>
 
@@ -31,6 +32,28 @@
       --shadow-sm: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
     }
 
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --accent-50:  #0f1f1d;
+        --accent-100: #14302d;
+        --accent-200: #23544c;
+        --accent-500: #14b8a6;
+        --accent-600: #2dd4bf;
+        --accent-700: #5eead4;
+        --green-50: #102218;
+        --green-600: #22c55e;
+        --red-500: #f87171;
+        --gray-50: #111827;
+        --gray-100: #1f2937;
+        --gray-200: #334155;
+        --gray-400: #64748b;
+        --gray-500: #94a3b8;
+        --gray-700: #cbd5e1;
+        --gray-900: #f8fafc;
+        --white: #0f172a;
+      }
+    }
+
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html { height: 100%; }
     body {
@@ -39,6 +62,13 @@
       color: var(--gray-900);
       min-height: 100dvh;
       -webkit-font-smoothing: antialiased;
+    }
+    @media (prefers-color-scheme: dark) {
+      body {
+        background:
+          radial-gradient(circle at top, rgba(45, 212, 191, 0.12), transparent 40%),
+          linear-gradient(180deg, #091413 0%, #0f1f1d 100%);
+      }
     }
 
     .app {
@@ -177,6 +207,24 @@
       backdrop-filter: blur(10px);
       border-top: 1px solid var(--accent-100);
       z-index: 100;
+    }
+    @media (prefers-color-scheme: dark) {
+      .submit-wrap {
+        background: rgba(15, 23, 42, 0.96);
+        border-top-color: var(--gray-200);
+      }
+      .success-screen {
+        background: #111827;
+      }
+      .toast {
+        background: #e2e8f0;
+        color: #0f172a;
+      }
+      .toast.error {
+        background: #b91c1c;
+        color: #fff;
+      }
+      :focus-visible { outline-color: var(--accent-500); }
     }
     .submit-btn {
       width: 100%;
@@ -390,7 +438,19 @@
 </div>
 
 <script>
-const WEBHOOK_URL = 'YOUR_N8N_WEBHOOK_URL/webhook/hospital-boarding';
+function applyThemeColor() {
+  const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', isDark ? '#091413' : '#0d9488');
+}
+applyThemeColor();
+if (window.matchMedia) {
+  const mq = window.matchMedia('(prefers-color-scheme: dark)');
+  const onChange = () => applyThemeColor();
+  if (mq.addEventListener) mq.addEventListener('change', onChange);
+  else if (mq.addListener) mq.addListener(onChange);
+}
+const WEBHOOK_URL = 'https://vaitalcare-production.up.railway.app/webhook/hospital-boarding';
 
 const $ = id => document.getElementById(id);
 const form = $('boarding-form');
