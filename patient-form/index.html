@@ -920,12 +920,12 @@ form.addEventListener('submit', async function (e) {
     follow_up_required: fuReq,
     follow_up_date:     fuReq === 'Yes' ? $('follow_up_date').value : '',
   };
+  const body = new URLSearchParams(payload);
 
   try {
     const res  = await fetch(WEBHOOK_URL, {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(payload),
+      body,
     });
 
     if (!res.ok) throw new Error(`HTTP ${res.status}`);

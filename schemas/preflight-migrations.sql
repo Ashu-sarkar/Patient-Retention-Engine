@@ -84,7 +84,6 @@ ALTER TABLE public.patients ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT 
 
 DO $$
 BEGIN
-  ALTER TABLE public.message_ledger DROP CONSTRAINT IF EXISTS message_ledger_status_check;
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint c
     JOIN pg_class t ON t.oid = c.conrelid

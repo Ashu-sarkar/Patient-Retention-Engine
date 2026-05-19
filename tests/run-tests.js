@@ -32,7 +32,18 @@ function parseEnv(filePath) {
 }
 
 const env          = parseEnv(path.join(__dirname, '..', '.env'));
-const N8N_URL      = `http://${env.N8N_HOST || 'localhost'}:${env.N8N_PORT || '5678'}`;
+function deriveBaseUrl(env) {
+  if (env.N8N_BASE_URL) return env.N8N_BASE_URL.replace(/\/$/, '');
+  if (env.WEBHOOK_URL) return env.WEBHOOK_URL.replace(/\/$/, '');
+  const protocol = env.N8N_PROTOCOL || 'http';
+  const host = env.N8N_HOST || 'localhost';
+  const port = env.N8N_PORT || '5678';
+  const isDefaultPort =
+    (protocol === 'http' && String(port) === '80') ||
+    (protocol === 'https' && String(port) === '443');
+  return `${protocol}://${host}${isDefaultPort ? '' : `:${port}`}`;
+}
+const N8N_URL      = deriveBaseUrl(env);
 const N8N_B64      = Buffer.from(`${env.N8N_BASIC_AUTH_USER || 'admin'}:${env.N8N_BASIC_AUTH_PASSWORD || 'strongpass'}`).toString('base64');
 const N8N_API_KEY  = env.N8N_API_KEY || '';
 const N8N_OWNER_EMAIL    = env.N8N_OWNER_EMAIL    || '';
@@ -264,7 +275,7 @@ function twilioMsg(fromPhone, text, extra = {}) {
 
 function twilioStatus(messageSid, status, extra = {}) {
   return {
-    MessageSid,
+    MessageSid: messageSid,
     MessageStatus: status,
     To: extra.To || 'whatsapp:+919000000003',
     From: extra.From || env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886',

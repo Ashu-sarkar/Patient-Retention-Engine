@@ -46,9 +46,18 @@ function parseEnv(filePath) {
 }
 
 const env    = parseEnv(path.join(__dirname, '..', '.env'));
-const HOST   = env.N8N_HOST     || 'localhost';
-const PORT   = env.N8N_PORT     || '5678';
-const BASE   = `http://${HOST}:${PORT}`;
+function deriveBaseUrl(env) {
+  if (env.N8N_BASE_URL) return env.N8N_BASE_URL.replace(/\/$/, '');
+  if (env.WEBHOOK_URL) return env.WEBHOOK_URL.replace(/\/$/, '');
+  const protocol = env.N8N_PROTOCOL || 'http';
+  const host = env.N8N_HOST || 'localhost';
+  const port = env.N8N_PORT || '5678';
+  const isDefaultPort =
+    (protocol === 'http' && String(port) === '80') ||
+    (protocol === 'https' && String(port) === '443');
+  return `${protocol}://${host}${isDefaultPort ? '' : `:${port}`}`;
+}
+const BASE   = deriveBaseUrl(env);
 const WF_DIR = path.join(__dirname, '..', 'workflows');
 
 // Owner credentials must be explicit so production never falls back to a known password.

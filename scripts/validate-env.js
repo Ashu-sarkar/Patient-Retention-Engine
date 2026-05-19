@@ -66,10 +66,26 @@ const contentSidKeys = [
   'TWILIO_CONTENT_REACTIVATION',
 ];
 
+const simplifiedContentSidKeys = [
+  'TWILIO_CONTENT_PATIENT_ONBOARDING',
+  'TWILIO_CONTENT_HOSPITAL_ONBOARDING',
+  'TWILIO_CONTENT_PATIENT_REMINDER',
+];
+
+const hasSimplifiedTemplateSet = simplifiedContentSidKeys.some(key => !isMissing(env[key]));
+
 for (const key of contentSidKeys) {
   if (isMissing(env[key])) {
-    warnings.push(`${key} is empty. Sandbox/session tests can use Body fallback, but production proactive WhatsApp sends need approved Twilio Content templates.`);
+    if (!hasSimplifiedTemplateSet) {
+      warnings.push(`${key} is empty. Sandbox/session tests can use Body fallback, but production proactive WhatsApp sends need approved Twilio Content templates.`);
+    }
   } else if (!/^HX[a-f0-9]{32}$/i.test(env[key])) {
+    warnings.push(`${key} does not look like a Twilio Content SID (expected HX...).`);
+  }
+}
+
+for (const key of simplifiedContentSidKeys) {
+  if (!isMissing(env[key]) && !/^HX[a-f0-9]{32}$/i.test(env[key])) {
     warnings.push(`${key} does not look like a Twilio Content SID (expected HX...).`);
   }
 }
