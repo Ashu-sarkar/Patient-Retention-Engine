@@ -184,7 +184,7 @@ async function main() {
 
   const repoRoot = path.join(__dirname, '..');
   const envPath  = path.join(repoRoot, '.env');
-  const env      = parseEnv(envPath);
+  const env      = { ...parseEnv(envPath), ...process.env };
 
   if (!env.SUPABASE_URL || env.SUPABASE_URL.includes('YOUR_')) {
     die('Missing or placeholder SUPABASE_URL in .env');

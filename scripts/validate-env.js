@@ -27,7 +27,7 @@ function isMissing(value) {
   return !value || /^YOUR_|^PLACEHOLDER/i.test(value) || value.includes('YOUR_');
 }
 
-const env = parseEnv(envPath);
+const env = { ...parseEnv(envPath), ...process.env };
 const errors = [];
 const warnings = [];
 

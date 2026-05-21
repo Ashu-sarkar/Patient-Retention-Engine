@@ -5,6 +5,7 @@ This is the minimum data needed to launch the current stack:
 - Frontend:
   - Patient form URL: `https://vaitalcare-patient.vercel.app/`
   - Hospital form URL: `https://vaitalcare-hospital.vercel.app/`
+  - Doctor dashboard URL: configure after deploying `doctor-dashboard/`
 
 - Backend:
   - Railway URL: `https://vaitalcare-production.up.railway.app`
@@ -84,6 +85,9 @@ These are the values still required from your side before production works:
 - `TWILIO_AUTH_TOKEN`
 - `TWILIO_WHATSAPP_FROM`
 - `ADMIN_WHATSAPP_NUMBER`
+- Doctor dashboard `SUPABASE_ANON_KEY`
+- Doctor dashboard `PRESCRIPTION_WEBHOOK_URL`
+- At least one Supabase Auth doctor user and matching `doctor_profiles` row
 
 ## Needed For Proactive WhatsApp Templates
 
@@ -105,9 +109,13 @@ After Railway variables are added:
 
 1. Open `https://vaitalcare-production.up.railway.app`
 2. Confirm n8n login works
-3. Confirm WF11, WF12, WF6, WF7, WF8, and WF9 are active
+3. Confirm WF11, WF12, WF13, WF6, WF7, WF8, and WF9 are active
 4. Register Twilio inbound webhook:
    `https://vaitalcare-production.up.railway.app/webhook/feedback-listener`
 5. Register Twilio status callback:
    `https://vaitalcare-production.up.railway.app/webhook/twilio-status-callback`
 6. Submit one patient form and one hospital form test entry
+7. Confirm the patient form creates both `public.patients` and `public.patient_visits`
+8. Sign in to the doctor dashboard and confirm the visit appears in the queue
+9. Issue a test prescription and confirm a PDF is stored in the `prescriptions` bucket
+10. Confirm WF13 logs a `prescription_pdf` row in `message_logs`

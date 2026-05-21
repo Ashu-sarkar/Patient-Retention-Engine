@@ -45,7 +45,7 @@ function parseEnv(filePath) {
   } catch { return {}; }
 }
 
-const env    = parseEnv(path.join(__dirname, '..', '.env'));
+const env    = { ...parseEnv(path.join(__dirname, '..', '.env')), ...process.env };
 function deriveBaseUrl(env) {
   if (env.N8N_BASE_URL) return env.N8N_BASE_URL.replace(/\/$/, '');
   if (env.WEBHOOK_URL) return env.WEBHOOK_URL.replace(/\/$/, '');
@@ -205,11 +205,9 @@ function patchCredentials(wfJson, credMap) {
   for (const node of clone.nodes || []) {
     for (const [ctype, cval] of Object.entries(node.credentials || {})) {
       const cname = cval.name || '';
-      const cid   = cval.id   || '';
-      // Patch if placeholder or blank
-      if ((cid === '' || cid.startsWith('REPLACE') || cid.length < 5) && credMap[cname]) {
-        node.credentials[ctype].id = credMap[cname];
-      }
+      // Always patch by credential name when we know the destination ID.
+      // This prevents stale credential IDs from leaking across environments.
+      if (credMap[cname]) node.credentials[ctype].id = credMap[cname];
     }
     // Downgrade any postgres v2.5 → v2.4 (guard for future JSON additions)
     if (node.type === 'n8n-nodes-base.postgres' && (node.typeVersion ?? 0) >= 2.5) {

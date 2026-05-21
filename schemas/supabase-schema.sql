@@ -185,6 +185,189 @@ CREATE TRIGGER trg_hospital_boarding_updated_at
   BEFORE UPDATE ON public.hospital_boarding
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
+-- -------------------------
+-- Doctor dashboard and prescriptions
+-- -------------------------
+CREATE TABLE IF NOT EXISTS public.doctor_profiles (
+  id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id             UUID        UNIQUE REFERENCES auth.users (id) ON DELETE CASCADE,
+  doctor_name         TEXT        NOT NULL,
+  clinic_name         TEXT        NOT NULL,
+  registration_number TEXT        NOT NULL,
+  specialty           TEXT,
+  signature_label     TEXT,
+  stamp_label         TEXT,
+  is_clinic_admin     BOOLEAN     NOT NULL DEFAULT FALSE,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_doctor_profiles_clinic_doctor
+  ON public.doctor_profiles (lower(trim(clinic_name)), lower(trim(doctor_name)));
+
+DROP TRIGGER IF EXISTS trg_doctor_profiles_updated_at ON public.doctor_profiles;
+CREATE TRIGGER trg_doctor_profiles_updated_at
+  BEFORE UPDATE ON public.doctor_profiles
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+CREATE TABLE IF NOT EXISTS public.patient_visits (
+  id                    UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id            UUID        NOT NULL REFERENCES public.patients (id) ON DELETE CASCADE,
+  doctor_profile_id     UUID        REFERENCES public.doctor_profiles (id) ON DELETE SET NULL,
+  patient_code          TEXT,
+  clinic_name           TEXT        NOT NULL,
+  doctor_name           TEXT        NOT NULL,
+  visit_date            DATE        NOT NULL DEFAULT CURRENT_DATE,
+  visit_status          TEXT        NOT NULL DEFAULT 'waiting'
+                    CHECK (visit_status IN ('waiting','in_consultation','completed','cancelled','no_show')),
+  chief_complaint       TEXT,
+  symptoms_duration     TEXT,
+  known_allergies       TEXT,
+  current_medicines     TEXT,
+  existing_conditions   TEXT,
+  vitals_notes          TEXT,
+  staff_notes           TEXT,
+  checked_in_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  consultation_started_at TIMESTAMPTZ,
+  completed_at          TIMESTAMPTZ,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_patient_visits_patient_id ON public.patient_visits (patient_id);
+CREATE INDEX IF NOT EXISTS idx_patient_visits_doctor_profile ON public.patient_visits (doctor_profile_id);
+CREATE INDEX IF NOT EXISTS idx_patient_visits_queue
+  ON public.patient_visits (visit_date DESC, visit_status, lower(trim(clinic_name)), lower(trim(doctor_name)));
+
+DROP TRIGGER IF EXISTS trg_patient_visits_updated_at ON public.patient_visits;
+CREATE TRIGGER trg_patient_visits_updated_at
+  BEFORE UPDATE ON public.patient_visits
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+CREATE TABLE IF NOT EXISTS public.prescriptions (
+  id                    UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id            UUID        NOT NULL REFERENCES public.patients (id) ON DELETE CASCADE,
+  visit_id              UUID        REFERENCES public.patient_visits (id) ON DELETE SET NULL,
+  doctor_profile_id     UUID        REFERENCES public.doctor_profiles (id) ON DELETE SET NULL,
+  status                TEXT        NOT NULL DEFAULT 'draft'
+                    CHECK (status IN ('draft','issued','cancelled')),
+  diagnosis             TEXT,
+  clinical_remarks      TEXT,
+  advice                TEXT,
+  follow_up_date        DATE,
+  issued_at             TIMESTAMPTZ,
+  pdf_url               TEXT,
+  pdf_storage_path      TEXT,
+  delivery_status       TEXT        NOT NULL DEFAULT 'not_sent'
+                    CHECK (delivery_status IN ('not_sent','queued','sent','failed')),
+  created_by            UUID        DEFAULT auth.uid(),
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_prescriptions_patient_id ON public.prescriptions (patient_id);
+CREATE INDEX IF NOT EXISTS idx_prescriptions_visit_id ON public.prescriptions (visit_id);
+CREATE INDEX IF NOT EXISTS idx_prescriptions_doctor_status
+  ON public.prescriptions (doctor_profile_id, status, created_at DESC);
+
+DROP TRIGGER IF EXISTS trg_prescriptions_updated_at ON public.prescriptions;
+CREATE TRIGGER trg_prescriptions_updated_at
+  BEFORE UPDATE ON public.prescriptions
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+CREATE OR REPLACE FUNCTION public.prevent_issued_prescription_mutation()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  IF OLD.status = 'issued' AND (
+    NEW.patient_id IS DISTINCT FROM OLD.patient_id OR
+    NEW.visit_id IS DISTINCT FROM OLD.visit_id OR
+    NEW.doctor_profile_id IS DISTINCT FROM OLD.doctor_profile_id OR
+    NEW.status IS DISTINCT FROM OLD.status OR
+    NEW.diagnosis IS DISTINCT FROM OLD.diagnosis OR
+    NEW.clinical_remarks IS DISTINCT FROM OLD.clinical_remarks OR
+    NEW.advice IS DISTINCT FROM OLD.advice OR
+    NEW.follow_up_date IS DISTINCT FROM OLD.follow_up_date OR
+    NEW.issued_at IS DISTINCT FROM OLD.issued_at
+  ) THEN
+    RAISE EXCEPTION 'Issued prescriptions are immutable except delivery/PDF metadata';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_prescriptions_prevent_issued_mutation ON public.prescriptions;
+CREATE TRIGGER trg_prescriptions_prevent_issued_mutation
+  BEFORE UPDATE ON public.prescriptions
+  FOR EACH ROW EXECUTE FUNCTION public.prevent_issued_prescription_mutation();
+
+CREATE TABLE IF NOT EXISTS public.prescription_medicines (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  prescription_id UUID        NOT NULL REFERENCES public.prescriptions (id) ON DELETE CASCADE,
+  medicine_name   TEXT        NOT NULL,
+  generic_name    TEXT,
+  dosage          TEXT        NOT NULL,
+  frequency       TEXT        NOT NULL,
+  timing          TEXT        NOT NULL,
+  duration        TEXT        NOT NULL,
+  instructions    TEXT,
+  sort_order      INTEGER     NOT NULL DEFAULT 1,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_prescription_medicines_prescription_id
+  ON public.prescription_medicines (prescription_id, sort_order);
+
+CREATE OR REPLACE FUNCTION public.prevent_issued_prescription_medicine_mutation()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  parent_status TEXT;
+  parent_id UUID;
+BEGIN
+  IF TG_OP = 'INSERT' OR TG_OP = 'UPDATE' THEN
+    parent_id := NEW.prescription_id;
+  ELSE
+    parent_id := OLD.prescription_id;
+  END IF;
+
+  SELECT status INTO parent_status
+  FROM public.prescriptions
+  WHERE id = parent_id;
+
+  IF parent_status = 'issued' THEN
+    RAISE EXCEPTION 'Medicines on issued prescriptions are immutable';
+  END IF;
+
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_prescription_medicines_prevent_issued_update ON public.prescription_medicines;
+CREATE TRIGGER trg_prescription_medicines_prevent_issued_update
+  BEFORE UPDATE OR DELETE ON public.prescription_medicines
+  FOR EACH ROW EXECUTE FUNCTION public.prevent_issued_prescription_medicine_mutation();
+
+DROP TRIGGER IF EXISTS trg_prescription_medicines_prevent_issued_insert ON public.prescription_medicines;
+CREATE TRIGGER trg_prescription_medicines_prevent_issued_insert
+  BEFORE INSERT ON public.prescription_medicines
+  FOR EACH ROW EXECUTE FUNCTION public.prevent_issued_prescription_medicine_mutation();
+
+CREATE TABLE IF NOT EXISTS public.prescription_audit_logs (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  prescription_id UUID        REFERENCES public.prescriptions (id) ON DELETE CASCADE,
+  visit_id        UUID        REFERENCES public.patient_visits (id) ON DELETE SET NULL,
+  actor_user_id   UUID        DEFAULT auth.uid(),
+  action          TEXT        NOT NULL,
+  details         JSONB,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('prescriptions', 'prescriptions', false)
+ON CONFLICT (id) DO NOTHING;
+
 -- =============================================================================
 -- Row Level Security (RLS)
 -- Enable after verifying n8n can connect with the service-role key.
@@ -197,6 +380,11 @@ ALTER TABLE public.message_logs       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.system_logs        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.hospital_boarding  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.message_ledger     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.doctor_profiles    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.patient_visits      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.prescriptions       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.prescription_medicines ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.prescription_audit_logs ENABLE ROW LEVEL SECURITY;
 -- Note: daily_intake_sheets table removed — Google Sheets intake is no longer used.
 -- All patient data enters via the QR form (WF11) which writes directly to public.patients.
 

@@ -31,7 +31,7 @@ function parseEnv(filePath) {
   } catch { return {}; }
 }
 
-const env          = parseEnv(path.join(__dirname, '..', '.env'));
+const env          = { ...parseEnv(path.join(__dirname, '..', '.env')), ...process.env };
 function deriveBaseUrl(env) {
   if (env.N8N_BASE_URL) return env.N8N_BASE_URL.replace(/\/$/, '');
   if (env.WEBHOOK_URL) return env.WEBHOOK_URL.replace(/\/$/, '');
@@ -219,6 +219,12 @@ async function getHospitalBoarding(hospitalName) {
   return Array.isArray(rows) ? rows[0] || null : null;
 }
 
+async function getLatestVisitByPatient(patientId) {
+  const rows = await sbGet('patient_visits',
+    `patient_id=eq.${encodeURIComponent(patientId)}&order=checked_in_at.desc&select=*`);
+  return Array.isArray(rows) ? rows[0] || null : null;
+}
+
 async function recentSystemLogs(workflowName, windowSec = 45) {
   const since = new Date(Date.now() - windowSec * 1000).toISOString();
   const rows  = await sbGet('system_logs',
@@ -316,29 +322,34 @@ async function main() {
     assert(ok, `n8n workflow list failed (${message || 'login: set N8N_OWNER_EMAIL / N8N_OWNER_PASSWORD in .env'})`);
     allWorkflows = data;
     const names   = allWorkflows.map(w => w.name);
-    const REQUIRED = ['WF1', 'WF2', 'WF3', 'WF4', 'WF5', 'WF6', 'WF7', 'WF8', 'WF9', 'WF11', 'WF12'];
+    const REQUIRED = ['WF1', 'WF2', 'WF3', 'WF4', 'WF5', 'WF6', 'WF7', 'WF8', 'WF9', 'WF11', 'WF12', 'WF13'];
     const missing  = REQUIRED.filter(r => !names.some(n => n.includes(r)));
     assert(missing.length === 0,
       `Missing workflows: ${missing.join(', ')}. Run: docker compose down -v && docker compose up --build -d`);
   });
 
-  await test('1.4  Webhook workflows (WF11, WF12, WF7, WF6, WF9) are active', async () => {
+  await test('1.4  Webhook workflows (WF11, WF12, WF13, WF7, WF6, WF9) are active', async () => {
     const relevant = allWorkflows.filter(w =>
-      w.name.includes('WF11') || w.name.includes('WF12') || w.name.includes('WF7') || w.name.includes('WF6') || w.name.includes('WF9'));
-    assert(relevant.length === 5,
-      `Expected WF11/WF12/WF7/WF6/WF9 in n8n, found ${relevant.length}. Run: node tests/setup-n8n.js`);
+      w.name.includes('WF11') || w.name.includes('WF12') || w.name.includes('WF13') || w.name.includes('WF7') || w.name.includes('WF6') || w.name.includes('WF9'));
+    assert(relevant.length === 6,
+      `Expected WF11/WF12/WF13/WF7/WF6/WF9 in n8n, found ${relevant.length}. Run: node tests/setup-n8n.js`);
     const inactive = relevant.filter(w => !w.active).map(w => w.name);
     assert(inactive.length === 0,
       `Inactive: ${inactive.join(', ')}. Run: node tests/setup-n8n.js`);
   });
 
-  await test('1.5  Supabase tables exist (patients, message_logs, system_logs, hospital_boarding, message_ledger)', async () => {
-    const [p, m, s, h, l] = await Promise.all([
+  await test('1.5  Supabase tables exist for retention + doctor dashboard', async () => {
+    const [p, m, s, h, l, dp, pv, pr, pm, al] = await Promise.all([
       sbGet('patients',     'select=id&limit=1'),
       sbGet('message_logs', 'select=log_id&limit=1'),
       sbGet('system_logs',  'select=log_id&limit=1'),
       sbGet('hospital_boarding', 'select=id&limit=1'),
       sbGet('message_ledger', 'select=id&limit=1'),
+      sbGet('doctor_profiles', 'select=id&limit=1'),
+      sbGet('patient_visits', 'select=id&limit=1'),
+      sbGet('prescriptions', 'select=id&limit=1'),
+      sbGet('prescription_medicines', 'select=id&limit=1'),
+      sbGet('prescription_audit_logs', 'select=id&limit=1'),
     ]);
     assert(Array.isArray(p), 'patients table missing or inaccessible');
     assert(Array.isArray(m), 'message_logs table missing or inaccessible');
@@ -346,6 +357,11 @@ async function main() {
     assert(Array.isArray(h),
       'hospital_boarding missing or PostgREST cache stale. Run schemas/migration-align-legacy-schema.sql (or migration-add-hospital-boarding.sql) in Supabase SQL Editor, then reload schema.');
     assert(Array.isArray(l), 'message_ledger table missing or inaccessible');
+    assert(Array.isArray(dp), 'doctor_profiles table missing or inaccessible');
+    assert(Array.isArray(pv), 'patient_visits table missing or inaccessible');
+    assert(Array.isArray(pr), 'prescriptions table missing or inaccessible');
+    assert(Array.isArray(pm), 'prescription_medicines table missing or inaccessible');
+    assert(Array.isArray(al), 'prescription_audit_logs table missing or inaccessible');
   });
 
   // ── §2  WF12 — Hospital Boarding ─────────────────────────────────────────
@@ -417,15 +433,22 @@ async function main() {
     hospital_name    : 'Test Hospital',
     doctor_name      : 'Dr Alpha',
     visit_date       : date(-1),             // yesterday
+    chief_complaint  : 'Fever and cough for two days',
+    symptoms_duration: 'Two days, mild body ache',
+    known_allergies  : 'None reported',
+    current_medicines: 'Paracetamol once yesterday',
+    existing_conditions: 'No known chronic condition',
+    vitals_notes     : 'Temp 99F, pulse 82',
     follow_up_required: 'Yes',
     follow_up_date   : date(3),             // 3 days from now
   };
 
-  await test('2.1  Valid registration → 200 + patient_code in response', async () => {
+  await test('2.1  Valid registration → 200 + patient_code + visit_id in response', async () => {
     const { status, json } = await wh('patient-form-intake', 'POST', BASE);
     assert(status === 200, `Expected 200, got ${status}: ${JSON.stringify(json)}`);
     assert(json.status === 'success', `Expected status=success: ${JSON.stringify(json)}`);
     assert(json.patient_code, `No patient_code in response: ${JSON.stringify(json)}`);
+    assert(json.visit_id, `No visit_id in response: ${JSON.stringify(json)}`);
   });
 
   await test('2.2  Patient row persisted in Supabase', async () => {
@@ -436,6 +459,16 @@ async function main() {
     assert(pat.patient_code?.startsWith('PAT-'), `patient_code looks wrong: ${pat.patient_code}`);
     assert(pat.status === 'pending', `Expected status=pending, got ${pat.status}`);
     assert(pat.follow_up_required === 'Yes', 'follow_up_required should be Yes');
+  });
+
+  await test('2.2b Patient visit queue row persisted in Supabase', async () => {
+    await sleep(1500);
+    const pat = await getPatient(`+91${TP.wf11_new}`);
+    const visit = await getLatestVisitByPatient(pat.id);
+    assert(visit, 'patient_visits row not found for registered patient');
+    assert(visit.visit_status === 'waiting', `Expected waiting, got ${visit.visit_status}`);
+    assert(visit.chief_complaint === BASE.chief_complaint, `chief_complaint mismatch: ${visit.chief_complaint}`);
+    assert(visit.doctor_name === BASE.doctor_name, `doctor_name mismatch: ${visit.doctor_name}`);
   });
 
   await test('2.3  Twilio welcome trigger logged (WF7 system_log)', async () => {
@@ -804,6 +837,9 @@ async function main() {
       hospital_name     : 'E2E Hospital',
       doctor_name       : 'Dr E2E',
       visit_date        : date(-1),
+      chief_complaint   : 'E2E headache and nausea',
+      symptoms_duration : 'Started this morning',
+      known_allergies   : 'None',
       follow_up_required: 'Yes',
       follow_up_date    : date(4),
     });
@@ -811,6 +847,7 @@ async function main() {
     assert(json.status === 'success', `Expected success: ${JSON.stringify(json)}`);
     e2ePatientCode = json.patient_code;
     assert(e2ePatientCode?.match(/^PAT-\d{4}$/), `Bad patient_code format: ${e2ePatientCode}`);
+    assert(json.visit_id, `Missing visit_id: ${JSON.stringify(json)}`);
     console.log(`\n       Patient code: ${e2ePatientCode}`);
   });
 
@@ -829,6 +866,14 @@ async function main() {
     const info  = logs.find(l => l.log_level === 'INFO');
     assert(info, 'No INFO log from WF11 — check Supabase credential in n8n');
     console.log(`\n       Log: "${info.message}"`);
+  });
+
+  await test('7.3b E2E visit is visible as waiting queue row', async () => {
+    const pat = await getPatient(`+91${TP.e2e}`);
+    const visit = await getLatestVisitByPatient(pat.id);
+    assert(visit, 'No patient_visits row for E2E patient');
+    assert(visit.visit_status === 'waiting', `Expected waiting, got ${visit.visit_status}`);
+    assert(visit.chief_complaint === 'E2E headache and nausea', `chief_complaint mismatch: ${visit.chief_complaint}`);
   });
 
   await test('7.4  Patient replies "confirm" → response_status = confirmed', async () => {
@@ -853,6 +898,7 @@ async function main() {
       hospital_name     : 'E2E Hospital 2',
       doctor_name       : 'Dr New',
       visit_date        : date(0),
+      chief_complaint   : 'Follow-up consultation',
       follow_up_required: 'No',
     });
     assert(status === 200, `Re-reg failed: ${status} ${JSON.stringify(json)}`);

@@ -1,0 +1,488 @@
+{
+  "name": "WF13 — Prescription Delivery",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## WF13 — Prescription Delivery\n\n**Trigger:** POST webhook from `doctor-dashboard/index.html` after a prescription is issued.\n**Path:** `/webhook/prescription-delivery`\n\n**Flow:**\n1. Receive prescription_id, patient_id, visit_id, patient_name, phone, doctor_name, clinic_name, pdf_url\n2. Validate phone and PDF URL\n3. Send a WhatsApp message with the prescription PDF link through Twilio\n4. Update `public.prescriptions.delivery_status`\n5. Write `public.message_logs` and `public.system_logs` entries\n\nUse an approved Twilio Content template if the clinic sends prescriptions outside the active WhatsApp service window.",
+        "height": 360,
+        "width": 440
+      },
+      "id": "13131313-1313-1313-1313-000000000001",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        100,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "prescription-delivery",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "13131313-1313-1313-1313-000000000002",
+      "name": "Webhook — Prescription Delivery",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        100,
+        500
+      ],
+      "webhookId": "prescription-delivery-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst clean = value => String(value || '').trim();\nconst prescriptionId = clean(body.prescription_id);\nconst patientId = clean(body.patient_id);\nconst visitId = clean(body.visit_id);\nconst patientName = clean(body.patient_name) || 'there';\nconst phone = clean(body.phone);\nconst doctorName = clean(body.doctor_name) || $env.DEFAULT_DOCTOR_NAME || 'your doctor';\nconst clinicName = clean(body.clinic_name) || $env.DEFAULT_CLINIC_NAME || 'our clinic';\nconst pdfUrl = clean(body.pdf_url);\nconst errors = [];\nif (!prescriptionId) errors.push('prescription_id is required');\nif (!patientId) errors.push('patient_id is required');\nif (!phone || !/^\\+[1-9]\\d{6,14}$/.test(phone)) errors.push('phone must be E.164 format');\nif (!pdfUrl || !/^https:\\/\\//i.test(pdfUrl)) errors.push('pdf_url must be an HTTPS URL');\nif (errors.length) return [{ json: { _valid: false, _errors: errors } }];\nconst bodyText = `Hi ${patientName}, your prescription from ${doctorName} at ${clinicName} is ready. You can open it here: ${pdfUrl}`;\nreturn [{ json: { _valid: true, prescription_id: prescriptionId, patient_id: patientId, visit_id: visitId || null, patient_name: patientName, phone, doctor_name: doctorName, clinic_name: clinicName, pdf_url: pdfUrl, _to_phone: 'whatsapp:' + phone, _message_type: 'prescription_pdf', _scheduled_date: new Date().toLocaleDateString('en-CA', { timeZone: $env.TIMEZONE || 'Asia/Kolkata' }), _message_body: bodyText } }];"
+      },
+      "id": "13131313-1313-1313-1313-000000000003",
+      "name": "Validate Delivery Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "valid-payload",
+              "leftValue": "={{ $json._valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "13131313-1313-1313-1313-000000000004",
+      "name": "Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        540,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.twilio.com/2010-04-01/Accounts/' + $env.TWILIO_ACCOUNT_SID + '/Messages.json' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "From",
+              "value": "={{ $env.TWILIO_WHATSAPP_FROM }}"
+            },
+            {
+              "name": "To",
+              "value": "={{ $json._to_phone }}"
+            },
+            {
+              "name": "Body",
+              "value": "={{ $json._message_body }}"
+            },
+            {
+              "name": "StatusCallback",
+              "value": "={{ $env.TWILIO_STATUS_CALLBACK_URL || '' }}"
+            }
+          ]
+        },
+        "options": {
+          "retry": {
+            "maxTries": 2,
+            "waitBetweenTries": 15000
+          }
+        }
+      },
+      "id": "13131313-1313-1313-1313-000000000005",
+      "name": "Send Prescription WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        400
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "REPLACE_TWILIO_BASIC_AUTH",
+          "name": "Twilio Basic Auth"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=UPDATE public.prescriptions\nSET delivery_status = 'sent', updated_at = NOW()\nWHERE id = '{{ $('Validate Delivery Payload').first().json.prescription_id }}';",
+        "options": {}
+      },
+      "id": "13131313-1313-1313-1313-000000000006",
+      "name": "Mark Prescription Sent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        980,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_SUPABASE_POSTGRES",
+          "name": "Supabase (Postgres)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "message_logs",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "patient_id": "={{ $('Validate Delivery Payload').first().json.patient_id }}",
+            "patient_name": "={{ $('Validate Delivery Payload').first().json.patient_name }}",
+            "phone": "={{ $('Validate Delivery Payload').first().json.phone }}",
+            "workflow_name": "workflow-13-prescription-delivery",
+            "message_type": "prescription_pdf",
+            "message_sent": "={{ $('Validate Delivery Payload').first().json._message_body }}",
+            "sent_at": "={{ new Date().toISOString() }}",
+            "delivery_status": "sent",
+            "scheduled_date": "={{ $('Validate Delivery Payload').first().json._scheduled_date }}",
+            "provider_message_id": "={{ $json.sid || $json.Sid || '' }}",
+            "twilio_message_sid": "={{ $json.sid || $json.Sid || '' }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "13131313-1313-1313-1313-000000000007",
+      "name": "Log Prescription Message",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        980,
+        480
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_SUPABASE_POSTGRES",
+          "name": "Supabase (Postgres)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=UPDATE public.prescriptions\nSET delivery_status = 'failed', updated_at = NOW()\nWHERE id = '{{ $('Validate Delivery Payload').first().json.prescription_id }}';",
+        "options": {}
+      },
+      "id": "13131313-1313-1313-1313-000000000008",
+      "name": "Mark Prescription Failed",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        980,
+        660
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_SUPABASE_POSTGRES",
+          "name": "Supabase (Postgres)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "system_logs",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "workflow_name": "workflow-13-prescription-delivery",
+            "execution_id": "={{ $execution.id }}",
+            "log_level": "ERROR",
+            "message": "Prescription delivery failed",
+            "details": "={{ JSON.stringify({ prescription_id: $('Validate Delivery Payload').first().json.prescription_id, phone: $('Validate Delivery Payload').first().json.phone, error: $json.error?.message || 'HTTP request failed' }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "13131313-1313-1313-1313-000000000009",
+      "name": "Log Prescription Failure",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1200,
+        660
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_SUPABASE_POSTGRES",
+          "name": "Supabase (Postgres)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "system_logs",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "workflow_name": "workflow-13-prescription-delivery",
+            "execution_id": "={{ $execution.id }}",
+            "log_level": "WARN",
+            "message": "Prescription delivery rejected by validation",
+            "details": "={{ JSON.stringify({ errors: $('Validate Delivery Payload').first().json._errors }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "13131313-1313-1313-1313-000000000010",
+      "name": "Log Validation Failure",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        760,
+        760
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_SUPABASE_POSTGRES",
+          "name": "Supabase (Postgres)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"ok\", \"message\": \"Prescription delivery queued\" }",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "13131313-1313-1313-1313-000000000011",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1200,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'error', message: 'Validation failed', errors: $('Validate Delivery Payload').first().json._errors }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "13131313-1313-1313-1313-000000000012",
+      "name": "Respond Invalid",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        980,
+        760
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"error\", \"message\": \"Prescription delivery failed\" }",
+        "options": {
+          "responseCode": 502
+        }
+      },
+      "id": "13131313-1313-1313-1313-000000000013",
+      "name": "Respond Failed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1420,
+        660
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook — Prescription Delivery": {
+      "main": [
+        [
+          {
+            "node": "Validate Delivery Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Delivery Payload": {
+      "main": [
+        [
+          {
+            "node": "Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid?": {
+      "main": [
+        [
+          {
+            "node": "Send Prescription WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Validation Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Prescription WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Mark Prescription Sent",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Prescription Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Prescription Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Prescription Sent": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Prescription Failed": {
+      "main": [
+        [
+          {
+            "node": "Log Prescription Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Prescription Failure": {
+      "main": [
+        [
+          {
+            "node": "Respond Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Validation Failure": {
+      "main": [
+        [
+          {
+            "node": "Respond Invalid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "workflow-8-error-handler"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "id": "wf13-tag",
+      "name": "prescriptions"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-05-19T00:00:00.000Z",
+  "versionId": "wf13-v1",
+  "id": "wf13-prescription-delivery",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

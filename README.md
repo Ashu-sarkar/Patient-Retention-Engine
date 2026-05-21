@@ -5,8 +5,10 @@ An event-driven automation system for clinic patient follow-ups using **n8n**, *
 ## What It Does
 
 - Captures patient registrations from a QR form
-- Stores patients, message logs, delivery state, and operational logs in Supabase
-- Sends WhatsApp welcome, follow-up, missed appointment, health check, and reactivation messages through Twilio
+- Creates a doctor waiting-room queue from each QR submission
+- Lets doctors issue prescription PDFs from an authenticated dashboard
+- Stores patients, visits, prescriptions, message logs, delivery state, and operational logs in Supabase
+- Sends WhatsApp welcome, follow-up, missed appointment, health check, reactivation, and prescription messages through Twilio
 - Handles inbound WhatsApp replies from Twilio webhooks
 - Tracks Twilio delivery/read/failure callbacks
 - Logs workflow errors and can alert an admin on WhatsApp
@@ -20,10 +22,11 @@ Patient / staff QR form
 WF11 Form Intake webhook
         |
         v
-Supabase patients, message_logs, message_ledger, system_logs
+Supabase patients, patient_visits, prescriptions, message_logs, message_ledger, system_logs
         |
         +--> WF7 Welcome message
         +--> WF1-WF5 Scheduled reminders
+        +--> Doctor dashboard + WF13 Prescription delivery
         +--> WF6 Inbound Twilio replies
         +--> WF9 Twilio delivery callbacks
         +--> WF8 Error handler
@@ -42,6 +45,7 @@ schemas/                   Supabase schema and idempotent preflight migration
 scripts/                   environment and database validation utilities
 tests/                     n8n setup and integration tests
 patient-form/              static QR patient intake form
+doctor-dashboard/          authenticated doctor queue + prescription dashboard
 hospital-form/             static hospital/clinic onboarding form
 message-templates/         Twilio template metadata
 docs/                      architecture and setup notes
@@ -75,11 +79,14 @@ npm run validate-env
 
 `./launch.sh` runs the Supabase preflight migration, starts n8n, creates credentials, imports workflows, and activates them.
 
+Configure and deploy `doctor-dashboard/index.html` after creating Supabase Auth users and matching `doctor_profiles` rows.
+
 ## Production Notes
 
 - Use a public HTTPS `WEBHOOK_URL`.
 - Register Twilio inbound WhatsApp replies to `/webhook/feedback-listener`.
 - Register Twilio status callbacks to `/webhook/twilio-status-callback`.
+- Import and activate WF13, then set `PRESCRIPTION_WEBHOOK_URL` in `doctor-dashboard/index.html` to `/webhook/prescription-delivery`.
 - Use approved Twilio Content templates for proactive WhatsApp messages outside the 24-hour customer service window.
 - Keep `N8N_ENCRYPTION_KEY` stable forever after first launch.
 - Do not keep Legacy direct-provider variables in `.env`; `npm run validate-env` fails if they are present.

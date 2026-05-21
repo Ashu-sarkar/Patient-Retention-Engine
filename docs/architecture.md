@@ -13,7 +13,9 @@ The current production target is **n8n + Supabase + Twilio WhatsApp**.
 ```text
 QR form submission
   -> WF11 Form Intake
-  -> Supabase patients
+  -> Supabase patients + patient_visits
+  -> Doctor dashboard queue
+  -> prescription PDF issue + WF13 delivery
   -> WF7 Welcome / WF1-WF5 scheduled messages
   -> Twilio WhatsApp Messages API
   -> WF6 inbound reply webhook
@@ -24,8 +26,9 @@ QR form submission
 ## Layers
 
 - **Input:** `patient-form/index.html` and `hospital-form/index.html` are static forms that POST to n8n webhooks.
+- **Doctor app:** `doctor-dashboard/index.html` is a Supabase Auth dashboard for queue review, prescription drafting, PDF issue, and delivery handoff.
 - **Orchestration:** n8n workflows implement validation, scheduling, messaging, reply handling, status callbacks, and error handling.
-- **Database:** Supabase PostgreSQL stores patients, message logs, idempotency ledger, hospital boarding, and system logs.
+- **Database:** Supabase PostgreSQL stores patients, visit queue rows, doctor profiles, prescriptions, medicines, message logs, idempotency ledger, hospital boarding, and system logs.
 - **Messaging:** Twilio Programmable Messaging sends and receives WhatsApp messages.
 - **Observability:** `message_logs`, `message_ledger`, and `system_logs` capture send attempts, delivery state, and operational events.
 
@@ -44,6 +47,20 @@ QR form submission
 | WF9 | Twilio status callback | Delivery/read/failure tracking |
 | WF11 | Form webhook | Patient intake |
 | WF12 | Form webhook | Hospital/clinic onboarding |
+| WF13 | Form webhook | Prescription PDF WhatsApp delivery |
+
+## Doctor Dashboard Flow
+
+```text
+Patient QR form
+  -> WF11 validates demographics + basic clinical context
+  -> public.patients upsert
+  -> public.patient_visits insert, visit_status = waiting
+  -> Doctor Dashboard reads assigned visits via Supabase Auth + RLS
+  -> Doctor saves prescription draft
+  -> Doctor issues PDF to Supabase Storage
+  -> WF13 sends PDF link on WhatsApp and logs delivery state
+```
 
 ## Twilio Contract
 

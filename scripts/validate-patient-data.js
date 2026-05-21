@@ -4,17 +4,23 @@
  *
  * Patient Retention Engine — QR Form Intake Validator
  *
- * Used by WF11 (n8n Code node) to perform server-side validation of the 9-field
+ * Used by WF11 (n8n Code node) to perform server-side validation of the
  * payload sent by the patient registration form.
  *
  * Can also be run as a CLI tool for testing:
  *   node validate-patient-data.js
  *
- * FORM PAYLOAD SCHEMA (9 fields):
+ * FORM PAYLOAD SCHEMA:
  *   patient_name       — Required text, min 2 chars
  *   phone_number       — Required, exactly 10 digits (no country code)
  *   dob                — Optional, YYYY-MM-DD, must be in the past
  *   sex                — Optional, one of: Male | Female | Other
+ *   chief_complaint    — Required text, min 2 chars
+ *   symptoms_duration  — Optional visit context
+ *   known_allergies    — Optional visit context
+ *   current_medicines  — Optional visit context
+ *   existing_conditions — Optional visit context
+ *   vitals_notes       — Optional staff/vitals notes
  *   hospital_name      — Required, non-empty string
  *   doctor_name        — Required, non-empty string
  *   visit_date         — Required, YYYY-MM-DD, must not be in the future
@@ -27,6 +33,7 @@
 const REQUIRED_FIELDS = [
   'patient_name',
   'phone_number',
+  'chief_complaint',
   'hospital_name',
   'doctor_name',
   'visit_date',
@@ -94,6 +101,12 @@ function validateIntakeRow(row) {
   const name = String(row.patient_name || '').trim();
   if (name && name.length < 2) {
     errors.push('patient_name: minimum 2 characters');
+  }
+
+  // ── chief_complaint ───────────────────────────────────────
+  const chiefComplaint = String(row.chief_complaint || '').trim();
+  if (chiefComplaint && chiefComplaint.length < 2) {
+    errors.push('chief_complaint: minimum 2 characters');
   }
 
   // ── phone_number ───────────────────────────────────────────
@@ -166,6 +179,12 @@ function validateIntakeRow(row) {
     clinic_name:        String(row.hospital_name).trim(),
     doctor_name:        String(row.doctor_name).trim(),
     visit_date:         String(row.visit_date).trim(),
+    chief_complaint:    chiefComplaint,
+    symptoms_duration:  row.symptoms_duration ? String(row.symptoms_duration).trim() : null,
+    known_allergies:    row.known_allergies ? String(row.known_allergies).trim() : null,
+    current_medicines:  row.current_medicines ? String(row.current_medicines).trim() : null,
+    existing_conditions: row.existing_conditions ? String(row.existing_conditions).trim() : null,
+    vitals_notes:       row.vitals_notes ? String(row.vitals_notes).trim() : null,
     follow_up_required: fuReq,
     follow_up_date:     fuReq === 'Yes' ? String(row.follow_up_date).trim() : null,
   };
@@ -186,6 +205,9 @@ if (typeof process !== 'undefined' && process.argv[1] && process.argv[1].endsWit
       row: {
         patient_name: 'Ramesh Kumar', phone_number: '9876543210',
         dob: '1990-05-15', sex: 'Male',
+        chief_complaint: 'Fever and cough',
+        symptoms_duration: 'Two days',
+        known_allergies: 'None',
         hospital_name: 'City Hospital', doctor_name: 'Dr. Sharma',
         visit_date: new Date().toLocaleDateString('en-CA'),
         follow_up_required: 'Yes', follow_up_date: '2099-12-31',
@@ -196,6 +218,7 @@ if (typeof process !== 'undefined' && process.argv[1] && process.argv[1].endsWit
       row: {
         patient_name: 'Priya', phone_number: '9000000001',
         dob: '', sex: '',
+        chief_complaint: 'Routine consultation',
         hospital_name: 'Metro Clinic', doctor_name: 'Dr. Mehta',
         visit_date: new Date().toLocaleDateString('en-CA'),
         follow_up_required: 'No', follow_up_date: '',
@@ -206,6 +229,7 @@ if (typeof process !== 'undefined' && process.argv[1] && process.argv[1].endsWit
       row: {
         patient_name: 'A', phone_number: '98765',
         dob: '', sex: 'Unknown',
+        chief_complaint: '',
         hospital_name: 'City Hospital', doctor_name: 'Dr. Patel',
         visit_date: '2099-01-01',
         follow_up_required: 'Yes', follow_up_date: '',
@@ -216,6 +240,7 @@ if (typeof process !== 'undefined' && process.argv[1] && process.argv[1].endsWit
       row: {
         patient_name: 'Suresh Gupta', phone_number: '8888888888',
         dob: '', sex: 'Male',
+        chief_complaint: 'Follow-up visit',
         hospital_name: 'General Hospital', doctor_name: 'Dr. Kumar',
         visit_date: '2025-06-10',
         follow_up_required: 'Yes', follow_up_date: '2025-06-10',

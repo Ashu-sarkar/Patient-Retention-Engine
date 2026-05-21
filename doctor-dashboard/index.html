@@ -1,0 +1,1616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0f766e" />
+  <title>Doctor Dashboard</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root {
+      --bg: #f4f8f7;
+      --panel: #ffffff;
+      --panel-soft: #fbfcfd;
+      --ink: #13201f;
+      --muted: #667975;
+      --faint: #8da09c;
+      --line: #dbe7e4;
+      --line-strong: #bed1cc;
+      --teal: #117c72;
+      --teal-dark: #0c5f58;
+      --teal-2: #e5f4f1;
+      --mint: #dff8ec;
+      --blue: #2f65d5;
+      --blue-2: #edf4ff;
+      --amber: #b76519;
+      --amber-2: #fff5e8;
+      --rose: #bc3151;
+      --rose-2: #fff0f3;
+      --red: #b91c1c;
+      --green: #157d46;
+      --shadow: 0 24px 60px rgba(19, 32, 31, 0.13);
+      --shadow-soft: 0 10px 28px rgba(19, 32, 31, 0.08);
+      --ease: cubic-bezier(.2, .8, .2, 1);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        linear-gradient(135deg, rgba(17, 124, 114, 0.14), transparent 34%),
+        linear-gradient(225deg, rgba(183, 101, 25, 0.10), transparent 30%),
+        linear-gradient(180deg, #eef8f5 0, var(--bg) 230px);
+      color: var(--ink);
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+    button, input, select, textarea { font: inherit; }
+    button {
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    button:disabled { cursor: wait; opacity: 0.68; }
+    .hidden { display: none !important; }
+    .app-shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 340px minmax(0, 1fr);
+      isolation: isolate;
+      position: relative;
+    }
+    .app-shell::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(19, 32, 31, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(19, 32, 31, 0.03) 1px, transparent 1px);
+      background-size: 42px 42px;
+      mask-image: linear-gradient(180deg, rgba(0,0,0,.85), transparent 68%);
+      z-index: -1;
+    }
+    .sidebar {
+      border-right: 1px solid rgba(190, 209, 204, 0.72);
+      background: rgba(255, 255, 255, 0.78);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      padding: 20px;
+      overflow-y: auto;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      box-shadow: 14px 0 38px rgba(19, 32, 31, 0.05);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 18px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid rgba(219, 231, 228, 0.9);
+    }
+    .brand h1 {
+      font-size: 21px;
+      margin: 0;
+      letter-spacing: -0.02em;
+    }
+    .brand p { margin: 3px 0 0; color: var(--muted); font-size: 13px; }
+    .brand-mark {
+      width: 38px;
+      height: 38px;
+      border-radius: 8px;
+      display: inline-grid;
+      place-items: center;
+      color: #fff;
+      background: linear-gradient(145deg, var(--teal), #33a06f);
+      box-shadow: 0 12px 26px rgba(17, 124, 114, 0.25);
+      margin-right: 10px;
+      flex: 0 0 auto;
+    }
+    .brand-title {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+    }
+    .profile-pill {
+      padding: 8px 11px;
+      background: rgba(229, 244, 241, 0.9);
+      color: var(--teal);
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+      border: 1px solid rgba(17, 124, 114, 0.12);
+    }
+    .filters {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .filter-box {
+      background: var(--panel-soft);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      box-shadow: 0 8px 24px rgba(19, 32, 31, 0.04) inset;
+    }
+    .field { display: grid; gap: 6px; }
+    label { font-size: 12px; color: var(--muted); font-weight: 700; }
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 11px 12px;
+      background: rgba(255, 255, 255, 0.94);
+      color: var(--ink);
+      outline: none;
+      transition: border-color 0.14s ease, box-shadow 0.14s ease, background 0.14s ease;
+    }
+    textarea { min-height: 82px; resize: vertical; }
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--teal);
+      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+    }
+    .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .btn {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 8px;
+      padding: 10px 13px;
+      font-weight: 700;
+      min-height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      transition: transform 0.16s var(--ease), box-shadow 0.16s var(--ease), background 0.16s var(--ease), border-color 0.16s var(--ease);
+    }
+    .btn:hover:not(:disabled) {
+      border-color: var(--line-strong);
+      box-shadow: var(--shadow-soft);
+      transform: translateY(-1px);
+    }
+    .btn:active:not(:disabled) {
+      transform: translateY(0);
+      box-shadow: none;
+    }
+    .btn.primary {
+      background: linear-gradient(180deg, #16897e, var(--teal-dark));
+      border-color: rgba(12, 95, 88, 0.8);
+      color: #fff;
+      box-shadow: 0 10px 24px rgba(17, 124, 114, 0.20);
+    }
+    .btn.primary:hover:not(:disabled) { background: var(--teal-dark); border-color: var(--teal-dark); }
+    .btn.warn { background: var(--amber-2); border-color: #f6d6aa; color: var(--amber); }
+    .btn.danger { color: var(--red); }
+    .queue-list { display: grid; gap: 10px; contain: content; }
+    .clinic-footer {
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 11px;
+      text-align: center;
+      opacity: 0.8;
+      letter-spacing: 0.01em;
+    }
+    .queue-card {
+      border: 1px solid rgba(219, 231, 228, 0.92);
+      border-radius: 8px;
+      padding: 13px;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.98), rgba(250,252,252,0.94));
+      text-align: left;
+      width: 100%;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.18s var(--ease), box-shadow 0.18s var(--ease), transform 0.18s var(--ease), background 0.18s var(--ease);
+    }
+    .queue-card::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 12px;
+      bottom: 12px;
+      width: 3px;
+      border-radius: 999px;
+      background: transparent;
+    }
+    .queue-card:hover {
+      border-color: var(--line-strong);
+      box-shadow: var(--shadow-soft);
+      transform: translateY(-1px);
+    }
+    .queue-card.active {
+      border-color: var(--teal);
+      background: linear-gradient(180deg, #ffffff, #f1faf7);
+      box-shadow: 0 0 0 3px rgba(17, 124, 114, 0.13), var(--shadow-soft);
+    }
+    .queue-card.active::before { background: var(--teal); }
+    .patient-line {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .avatar {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      color: #fff;
+      font-weight: 800;
+      background: linear-gradient(145deg, #117c72, #4f8a5b);
+      box-shadow: 0 8px 16px rgba(17, 124, 114, 0.18);
+    }
+    .queue-card strong { display: block; font-size: 15px; letter-spacing: -0.01em; }
+    .queue-card span { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; }
+    .queue-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .status {
+      display: inline-flex;
+      width: fit-content;
+      border-radius: 999px;
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 800;
+      margin-top: 8px;
+      background: var(--teal-2);
+      color: var(--teal);
+    }
+    .status.in_consultation { background: var(--blue-2); color: var(--blue); }
+    .status.completed { background: #ecfdf3; color: var(--green); }
+    .status.cancelled, .status.no_show { background: #fef2f2; color: var(--red); }
+    .app-banner {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      margin-bottom: 14px;
+      border-radius: 8px;
+      border: 1px solid #f3d1a7;
+      background: rgba(255, 245, 232, 0.92);
+      color: #7c3f0b;
+      box-shadow: var(--shadow-soft);
+    }
+    .app-banner strong { display: block; margin-bottom: 2px; }
+    .app-banner p { margin: 0; color: inherit; font-size: 13px; }
+    .app-banner.error {
+      border-color: #fecdd3;
+      background: rgba(255, 240, 243, 0.94);
+      color: var(--rose);
+    }
+    .main {
+      min-width: 0;
+      padding: 24px;
+      overflow-y: auto;
+    }
+    .summary-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .summary {
+      background: rgba(255, 255, 255, 0.84);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      box-shadow: var(--shadow-soft);
+      position: relative;
+      overflow: hidden;
+    }
+    .summary::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--teal), #55a36e, var(--amber));
+      opacity: 0.7;
+    }
+    .summary small {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .summary strong {
+      display: block;
+      margin-top: 4px;
+      font-size: 22px;
+      letter-spacing: 0;
+    }
+    .journey {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .journey-step {
+      border: 1px solid rgba(219, 231, 228, 0.88);
+      background: rgba(255, 255, 255, 0.76);
+      border-radius: 8px;
+      padding: 10px;
+      text-align: left;
+      position: relative;
+      overflow: hidden;
+      min-height: 74px;
+      transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease), border-color 0.18s var(--ease);
+    }
+    .journey-step:hover {
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-soft);
+    }
+    .journey-step::after {
+      content: "";
+      position: absolute;
+      left: 10px;
+      right: 10px;
+      bottom: 0;
+      height: 3px;
+      border-radius: 999px 999px 0 0;
+      background: var(--line-strong);
+    }
+    .journey-step.done::after { background: var(--green); }
+    .journey-step.active {
+      border-color: rgba(17, 124, 114, 0.45);
+      box-shadow: 0 0 0 3px rgba(17, 124, 114, 0.10);
+    }
+    .journey-step.active::after { background: var(--teal); }
+    .journey-step small {
+      display: block;
+      color: var(--faint);
+      font-weight: 800;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .journey-step strong {
+      display: block;
+      margin-top: 4px;
+      font-size: 13px;
+    }
+    .journey-step span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-top: 3px;
+    }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 18px;
+      background: rgba(255,255,255,0.58);
+      border: 1px solid rgba(219,231,228,0.76);
+      border-radius: 8px;
+      padding: 14px 15px;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+    .topbar h2 { margin: 0; font-size: 26px; letter-spacing: -0.035em; }
+    .topbar p { margin: 4px 0 0; color: var(--muted); }
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 0.9fr) minmax(420px, 1.1fr);
+      gap: 16px;
+      align-items: start;
+    }
+    .panel {
+      background: rgba(255, 255, 255, 0.88);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(219, 231, 228, 0.88);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      padding: 17px;
+      animation: panelIn 0.28s var(--ease) both;
+      transform-origin: top center;
+    }
+    @keyframes panelIn {
+      from { opacity: 0; transform: translateY(10px) scale(0.99); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .panel h3 {
+      margin: 0 0 12px;
+      font-size: 16px;
+    }
+    .panel-title {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .panel-title h3 { margin: 0; }
+    .section-kicker {
+      color: var(--faint);
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 4px;
+    }
+    .facts {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .fact {
+      border: 1px solid rgba(219, 231, 228, 0.86);
+      background: rgba(251, 252, 253, 0.85);
+      border-radius: 8px;
+      padding: 10px;
+      min-height: 48px;
+    }
+    .fact small { display: block; color: var(--muted); font-weight: 700; font-size: 11px; }
+    .fact span { display: block; margin-top: 3px; word-break: break-word; }
+    .clinical-note {
+      background: var(--amber-2);
+      border: 1px solid #fed7aa;
+      border-radius: 8px;
+      padding: 12px;
+      margin-top: 12px;
+      box-shadow: 0 8px 22px rgba(183, 101, 25, 0.06);
+    }
+    .clinical-note p { margin: 6px 0 0; color: #78350f; white-space: pre-wrap; }
+    .clinical-note.context {
+      background: var(--blue-2);
+      border-color: #bfdbfe;
+      box-shadow: 0 8px 22px rgba(47, 101, 213, 0.06);
+    }
+    .clinical-note.context p { color: #1e3a8a; }
+    .medicine-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      margin-bottom: 10px;
+      background: linear-gradient(180deg, #fbfcfd, #f7faf9);
+      animation: panelIn 0.22s var(--ease) both;
+    }
+    .medicine-row .wide { grid-column: 1 / -1; }
+    .medicine-head {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .history-item {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      margin-top: 8px;
+      background: #fff;
+      box-shadow: var(--shadow-soft);
+    }
+    .toast {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      max-width: 360px;
+      background: var(--ink);
+      color: #fff;
+      padding: 12px 14px;
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      z-index: 30;
+      animation: toastIn 0.18s ease both;
+    }
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .login {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    .login .panel {
+      width: min(440px, 100%);
+      border: 1px solid rgba(255,255,255,0.72);
+      background: rgba(255,255,255,0.82);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+    }
+    .login h1 { margin: 0; font-size: 26px; }
+    .empty {
+      min-height: 320px;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      color: var(--muted);
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.82);
+      box-shadow: var(--shadow-soft);
+    }
+    .empty strong { color: var(--ink); }
+    .empty .btn { margin-top: 10px; }
+    .content-swap {
+      animation: contentSwap 0.24s var(--ease) both;
+    }
+    @keyframes contentSwap {
+      from { opacity: 0.45; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .skeleton {
+      min-height: 78px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background:
+        linear-gradient(90deg, transparent, rgba(255,255,255,0.75), transparent),
+        linear-gradient(180deg, #eef3f5, #f7fafb);
+      background-size: 180px 100%, 100% 100%;
+      background-position: -180px 0, 0 0;
+      animation: shimmer 1.05s linear infinite;
+    }
+    @keyframes shimmer {
+      to { background-position: calc(100% + 180px) 0, 0 0; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: 0.001ms !important;
+      }
+    }
+    @media (max-width: 980px) {
+      .app-shell { grid-template-columns: 1fr; }
+      .sidebar { border-right: 0; border-bottom: 1px solid var(--line); max-height: 520px; height: auto; position: relative; }
+      .grid { grid-template-columns: 1fr; }
+      .journey { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 620px) {
+      .main, .sidebar { padding: 14px; }
+      .facts, .medicine-row, .summary-strip { grid-template-columns: 1fr; }
+      .topbar { align-items: flex-start; flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <section id="login-screen" class="login">
+    <div class="panel">
+      <h1>Doctor Dashboard</h1>
+      <p style="color: var(--muted); margin-top: 4px;">Sign in with the doctor account created in Supabase Auth.</p>
+      <form id="login-form" class="filters" style="margin-top: 18px;">
+        <div class="field">
+          <label for="email">Email</label>
+          <input id="email" type="email" autocomplete="email" required />
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input id="password" type="password" autocomplete="current-password" required />
+        </div>
+        <button class="btn primary" type="submit">Sign In</button>
+      </form>
+    </div>
+  </section>
+
+  <section id="app" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-title">
+          <div class="brand-mark" aria-hidden="true">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none">
+              <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div>
+            <h1>Doctor Queue</h1>
+            <p id="doctor-subtitle">Loading profile...</p>
+          </div>
+        </div>
+        <span class="profile-pill" id="queue-count">0</span>
+      </div>
+
+      <div class="filters filter-box">
+        <div class="field">
+          <label for="visit-date">Visit Date</label>
+          <input id="visit-date" type="date" />
+        </div>
+        <div class="field">
+          <label for="status-filter">Status</label>
+          <select id="status-filter">
+            <option value="">All statuses</option>
+            <option value="waiting">Waiting</option>
+            <option value="in_consultation">In consultation</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+            <option value="no_show">No show</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="search">Search</label>
+          <input id="search" type="search" placeholder="Name, phone, patient code" />
+        </div>
+        <div class="btn-row">
+          <button id="refresh" class="btn primary" type="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Refresh
+          </button>
+          <button id="sign-out" class="btn" type="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Sign Out
+          </button>
+        </div>
+      </div>
+      <div id="queue-list" class="queue-list"></div>
+      <p id="clinic-footer" class="clinic-footer">Loading clinic...</p>
+    </aside>
+
+    <main class="main">
+      <div id="app-banner" class="app-banner hidden" role="status" aria-live="polite">
+        <div>
+          <strong id="banner-title">Connection notice</strong>
+          <p id="banner-body">Some dashboard data may be delayed.</p>
+        </div>
+        <button id="banner-action" class="btn hidden" type="button">Retry</button>
+      </div>
+
+      <div class="summary-strip" aria-label="Queue summary">
+        <div class="summary"><small>Waiting</small><strong id="stat-waiting">0</strong></div>
+        <div class="summary"><small>In Consult</small><strong id="stat-consult">0</strong></div>
+        <div class="summary"><small>Completed</small><strong id="stat-completed">0</strong></div>
+        <div class="summary"><small>Total Today</small><strong id="stat-total">0</strong></div>
+      </div>
+
+      <nav class="journey" aria-label="Consultation workflow">
+        <button class="journey-step active" type="button" data-jump="queue">
+          <small>Step 1</small>
+          <strong>Queue</strong>
+          <span>Pick today&apos;s patient</span>
+        </button>
+        <button class="journey-step" type="button" data-jump="intake">
+          <small>Step 2</small>
+          <strong>Intake</strong>
+          <span>Review QR details</span>
+        </button>
+        <button class="journey-step" type="button" data-jump="consult">
+          <small>Step 3</small>
+          <strong>Consult</strong>
+          <span>Add diagnosis</span>
+        </button>
+        <button class="journey-step" type="button" data-jump="medicines">
+          <small>Step 4</small>
+          <strong>Medicines</strong>
+          <span>Dosage and timing</span>
+        </button>
+        <button class="journey-step" type="button" data-jump="issue">
+          <small>Step 5</small>
+          <strong>Issue</strong>
+          <span>PDF and follow-up</span>
+        </button>
+      </nav>
+
+      <div class="topbar">
+        <div>
+          <h2 id="main-title">Select a patient</h2>
+          <p id="main-subtitle">Waiting-room submissions appear here as soon as WF11 creates a visit.</p>
+        </div>
+        <div class="btn-row">
+          <button id="mark-consult" class="btn warn hidden" type="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M8 5h8M8 9h8M8 13h5M6 21h12a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            Start Consult
+          </button>
+          <button id="mark-complete" class="btn primary hidden" type="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="m5 13 4 4L19 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Mark Complete
+          </button>
+        </div>
+      </div>
+
+      <div id="empty-state" class="empty">
+        <div>
+          <strong>No patient selected</strong>
+          <p>Choose a queue item to review intake details and issue a prescription.</p>
+          <button class="btn primary" type="button" id="empty-refresh">Refresh Queue</button>
+        </div>
+      </div>
+
+      <div id="detail-grid" class="grid hidden">
+        <section class="panel" id="intake-panel">
+          <div class="panel-title">
+            <div>
+              <div class="section-kicker">Step 2 · Intake Review</div>
+              <h3>Patient Details</h3>
+            </div>
+            <span class="status" id="intake-status">Ready</span>
+          </div>
+          <div class="facts" id="patient-facts"></div>
+          <div class="clinical-note">
+            <strong>Main Complaint</strong>
+            <p id="chief-complaint"></p>
+          </div>
+          <div class="clinical-note context">
+            <strong>Clinical Context</strong>
+            <p id="clinical-context"></p>
+          </div>
+          <div class="panel-title" style="margin-top: 18px;">
+            <div>
+              <div class="section-kicker">Reference</div>
+              <h3>Prescription History</h3>
+            </div>
+          </div>
+          <div id="history"></div>
+        </section>
+
+        <section class="panel" id="consult-panel">
+          <div class="panel-title">
+            <div>
+              <div class="section-kicker">Steps 3-5 · Consultation</div>
+              <h3>Prescription</h3>
+            </div>
+            <span class="status in_consultation" id="draft-state">Draft</span>
+          </div>
+          <form id="prescription-form" class="filters">
+            <div class="field" id="consult-section">
+              <label for="diagnosis">Diagnosis</label>
+              <textarea id="diagnosis" placeholder="Clinical diagnosis"></textarea>
+            </div>
+            <div class="field">
+              <label for="remarks">Remarks</label>
+              <textarea id="remarks" placeholder="Doctor remarks and examination notes"></textarea>
+            </div>
+            <div class="field">
+              <label for="advice">Advice</label>
+              <textarea id="advice" placeholder="Diet, tests, precautions, or follow-up advice"></textarea>
+            </div>
+            <div class="field">
+              <label for="rx-follow-up">Follow-up Date</label>
+              <input id="rx-follow-up" type="date" />
+            </div>
+            <div id="medicine-section">
+              <div class="btn-row" style="justify-content: space-between; margin-bottom: 8px;">
+                <label>Medicines</label>
+                <button id="add-medicine" class="btn" type="button">Add Medicine</button>
+              </div>
+              <div id="medicine-list"></div>
+            </div>
+            <div class="btn-row" id="issue-section">
+              <button class="btn" type="submit">Save Draft</button>
+              <button id="issue" class="btn primary" type="button">Issue PDF + WhatsApp</button>
+            </div>
+          </form>
+        </section>
+      </div>
+    </main>
+  </section>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script>
+    const SUPABASE_URL = 'https://crsdccqseuhnimoxxeky.supabase.co';
+    const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+    const PRESCRIPTION_WEBHOOK_URL = 'https://vaitalcare-production.up.railway.app/webhook/prescription-delivery';
+
+    const HAS_SUPABASE_CONFIG = Boolean(
+      window.supabase?.createClient &&
+      SUPABASE_URL.startsWith('https://') &&
+      SUPABASE_ANON_KEY &&
+      !SUPABASE_ANON_KEY.includes('YOUR_')
+    );
+    const sb = HAS_SUPABASE_CONFIG
+      ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+      : null;
+    const $ = id => document.getElementById(id);
+    const state = {
+      session: null,
+      profile: null,
+      visits: [],
+      selected: null,
+      currentDraft: null,
+      medicines: [],
+      loadingVisits: false,
+      pdfLibraryPromise: null,
+      demo: false,
+      demoHistory: [],
+      lastQueueError: null,
+    };
+
+    function todayISO() {
+      return new Date().toLocaleDateString('en-CA');
+    }
+
+    function showToast(message, isError = false) {
+      const el = $('toast');
+      el.textContent = message;
+      el.style.background = isError ? 'var(--red)' : 'var(--ink)';
+      el.classList.remove('hidden');
+      clearTimeout(showToast.timer);
+      showToast.timer = setTimeout(() => el.classList.add('hidden'), 4200);
+    }
+
+    function showBanner(title, body, { error = false, action = null } = {}) {
+      $('banner-title').textContent = title;
+      $('banner-body').textContent = body;
+      $('app-banner').classList.toggle('error', error);
+      $('app-banner').classList.remove('hidden');
+      $('banner-action').classList.toggle('hidden', !action);
+      $('banner-action').onclick = action;
+    }
+
+    function hideBanner() {
+      $('app-banner').classList.add('hidden');
+      $('banner-action').onclick = null;
+    }
+
+    function setButtonBusy(button, busy, label) {
+      if (!button) return;
+      if (busy) {
+        button.dataset.originalHtml = button.innerHTML;
+        button.textContent = label || 'Working...';
+        button.disabled = true;
+      } else {
+        button.innerHTML = button.dataset.originalHtml || button.innerHTML;
+        button.disabled = false;
+      }
+    }
+
+    function initials(name) {
+      return String(name || '?')
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map(part => part[0]?.toUpperCase() || '')
+        .join('') || '?';
+    }
+
+    function withTransition(fn) {
+      fn();
+      const target = $('detail-grid').classList.contains('hidden') ? $('empty-state') : $('detail-grid');
+      target.classList.remove('content-swap');
+      void target.offsetWidth;
+      target.classList.add('content-swap');
+    }
+
+    function updateJourney(stage = 'queue') {
+      const order = ['queue', 'intake', 'consult', 'medicines', 'issue'];
+      const activeIndex = order.indexOf(stage);
+      document.querySelectorAll('.journey-step').forEach(step => {
+        const stepIndex = order.indexOf(step.dataset.jump);
+        step.classList.toggle('active', stepIndex === activeIndex);
+        step.classList.toggle('done', stepIndex > -1 && stepIndex < activeIndex);
+      });
+    }
+
+    function jumpTo(stage) {
+      if (stage === 'queue') {
+        document.querySelector('.sidebar')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        updateJourney('queue');
+        return;
+      }
+      if (!state.selected) {
+        showToast('Select a patient from the queue first.', true);
+        updateJourney('queue');
+        return;
+      }
+      const targets = {
+        intake: 'intake-panel',
+        consult: 'consult-section',
+        medicines: 'medicine-section',
+        issue: 'issue-section',
+      };
+      $(targets[stage])?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      updateJourney(stage);
+    }
+
+    function renderSkeleton(count = 5) {
+      $('queue-list').innerHTML = Array.from({ length: count }, () => '<div class="skeleton"></div>').join('');
+    }
+
+    function escapeHtml(value) {
+      return String(value || '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+      }[ch]));
+    }
+
+    async function init() {
+      state.demo = new URLSearchParams(location.search).get('demo') === '1';
+      $('visit-date').value = todayISO();
+      bindEvents();
+      if (state.demo) {
+        await enterDemoApp();
+        return;
+      }
+      if (!HAS_SUPABASE_CONFIG) {
+        showConfigFallback();
+        return;
+      }
+      const { data } = await sb.auth.getSession();
+      if (data.session) await enterApp(data.session);
+    }
+
+    function bindEvents() {
+      $('login-form').addEventListener('submit', async event => {
+        event.preventDefault();
+        if (!sb) return showConfigFallback();
+        const { data, error } = await sb.auth.signInWithPassword({
+          email: $('email').value.trim(),
+          password: $('password').value,
+        });
+        if (error) return showToast(error.message, true);
+        await enterApp(data.session);
+      });
+      $('sign-out').addEventListener('click', async () => {
+        if (!sb) return location.reload();
+        await sb.auth.signOut();
+        location.reload();
+      });
+      $('refresh').addEventListener('click', loadVisits);
+      $('empty-refresh').addEventListener('click', loadVisits);
+      ['visit-date', 'status-filter', 'search'].forEach(id => $(id).addEventListener('input', renderQueue));
+      document.querySelectorAll('.journey-step').forEach(step => {
+        step.addEventListener('click', () => jumpTo(step.dataset.jump));
+      });
+      window.addEventListener('offline', () => showBanner(
+        'You are offline',
+        'The current screen will stay available, but queue refresh and prescription issue need network access.',
+        { error: true }
+      ));
+      window.addEventListener('online', () => {
+        showBanner('Back online', 'You can refresh the queue and continue issuing prescriptions.', { action: loadVisits });
+      });
+      $('add-medicine').addEventListener('click', () => {
+        state.medicines.push(blankMedicine());
+        renderMedicines();
+      });
+      $('prescription-form').addEventListener('submit', async event => {
+        event.preventDefault();
+        await saveDraft();
+      });
+      $('issue').addEventListener('click', issuePrescription);
+      $('mark-consult').addEventListener('click', () => updateVisitStatus('in_consultation'));
+      $('mark-complete').addEventListener('click', () => updateVisitStatus('completed'));
+    }
+
+    async function enterApp(session) {
+      state.session = session;
+      $('login-screen').classList.add('hidden');
+      $('app').classList.remove('hidden');
+      hideBanner();
+      await loadProfile();
+      await loadVisits();
+    }
+
+    function showConfigFallback() {
+      $('login-screen').classList.add('hidden');
+      $('app').classList.remove('hidden');
+      $('doctor-subtitle').textContent = 'Configuration required';
+      showBanner(
+        'Dashboard configuration missing',
+        'Set SUPABASE_ANON_KEY in doctor-dashboard/index.html, or open ?demo=1 to preview the workflow with sample data.',
+        { error: true }
+      );
+      state.visits = [];
+      renderQueue();
+      renderStats();
+      updateJourney('queue');
+    }
+
+    async function enterDemoApp() {
+      state.session = { user: { id: 'demo-doctor' } };
+      state.profile = {
+        id: 'demo-profile',
+        doctor_name: 'Dr. A. Sharma',
+        clinic_name: 'VaitalCare Clinic',
+        registration_number: 'MCI-DEMO-12345',
+        specialty: 'General Medicine',
+      };
+      state.visits = demoVisits();
+      $('login-screen').classList.add('hidden');
+      $('app').classList.remove('hidden');
+      $('doctor-subtitle').textContent = state.profile.doctor_name;
+      $('clinic-footer').textContent = state.profile.clinic_name || '';
+      renderQueue();
+      renderStats();
+      updateJourney('queue');
+      showToast('Demo mode: sample data only.');
+    }
+
+    async function loadProfile() {
+      const { data, error } = await sb
+        .from('doctor_profiles')
+        .select('*')
+        .eq('user_id', state.session.user.id)
+        .single();
+      if (error) {
+        showBanner(
+          'Doctor profile not found',
+          'Create a doctor_profiles row for this Supabase Auth user, then refresh the dashboard.',
+          { error: true, action: () => location.reload() }
+        );
+        throw error;
+      }
+      state.profile = data;
+      $('doctor-subtitle').textContent = data.doctor_name;
+      $('clinic-footer').textContent = data.clinic_name || '';
+    }
+
+    async function loadVisits() {
+      if (state.demo) {
+        renderQueue();
+        renderStats();
+        return;
+      }
+      if (!sb) {
+        showConfigFallback();
+        return;
+      }
+      state.loadingVisits = true;
+      setButtonBusy($('refresh'), true, 'Refreshing...');
+      renderSkeleton();
+      const { data, error } = await sb
+        .from('patient_visits')
+        .select('*, patient:patients(id, patient_code, name, phone, dob, sex, follow_up_required, follow_up_date, notes)')
+        .order('checked_in_at', { ascending: false })
+        .limit(200);
+      state.loadingVisits = false;
+      setButtonBusy($('refresh'), false);
+      if (error) {
+        state.lastQueueError = error.message;
+        renderQueue();
+        showBanner('Queue refresh failed', error.message, { error: true, action: loadVisits });
+        return showToast(error.message, true);
+      }
+      state.lastQueueError = null;
+      if (navigator.onLine) hideBanner();
+      state.visits = data || [];
+      renderQueue();
+      renderStats();
+    }
+
+    function renderStats() {
+      const today = $('visit-date').value || todayISO();
+      const todays = state.visits.filter(v => v.visit_date === today);
+      $('stat-waiting').textContent = String(todays.filter(v => v.visit_status === 'waiting').length);
+      $('stat-consult').textContent = String(todays.filter(v => v.visit_status === 'in_consultation').length);
+      $('stat-completed').textContent = String(todays.filter(v => v.visit_status === 'completed').length);
+      $('stat-total').textContent = String(todays.length);
+    }
+
+    function filteredVisits() {
+      const date = $('visit-date').value;
+      const status = $('status-filter').value;
+      const search = $('search').value.trim().toLowerCase();
+      return state.visits.filter(v => {
+        const patient = v.patient || {};
+        const haystack = [
+          patient.name, patient.phone, patient.patient_code || v.patient_code,
+          v.clinic_name, v.doctor_name, v.chief_complaint
+        ].join(' ').toLowerCase();
+        return (!date || v.visit_date === date)
+          && (!status || v.visit_status === status)
+          && (!search || haystack.includes(search));
+      });
+    }
+
+    function renderQueue() {
+      if (state.loadingVisits) return;
+      const visits = filteredVisits();
+      $('queue-count').textContent = String(visits.length);
+      renderStats();
+      $('queue-list').innerHTML = visits.map(v => {
+        const patient = v.patient || {};
+        const active = state.selected && state.selected.id === v.id ? ' active' : '';
+        const checkedIn = v.checked_in_at ? new Date(v.checked_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        return `<button class="queue-card${active}" type="button" data-id="${v.id}">
+          <div class="patient-line">
+            <span class="avatar" aria-hidden="true">${escapeHtml(initials(patient.name))}</span>
+            <span>
+              <strong>${escapeHtml(patient.name || 'Unnamed patient')}</strong>
+              <span>${escapeHtml(patient.phone || '')}</span>
+            </span>
+          </div>
+          <span>${escapeHtml(v.patient_code || patient.patient_code || '')} · ${escapeHtml(v.visit_date)}</span>
+          <div class="queue-meta">
+            <span class="status ${escapeHtml(v.visit_status)}">${escapeHtml(v.visit_status.replace('_', ' '))}</span>
+            <span>${escapeHtml(checkedIn)}</span>
+          </div>
+        </button>`;
+      }).join('') || `<div class="empty" style="min-height: 190px;">
+        <div>
+          <strong>${state.lastQueueError ? 'Could not load queue' : 'No visits match these filters'}</strong>
+          <p>${state.lastQueueError ? escapeHtml(state.lastQueueError) : 'Try another date, status, or search term.'}</p>
+          <button class="btn primary" type="button" data-retry-queue>Retry</button>
+        </div>
+      </div>`;
+      document.querySelectorAll('.queue-card').forEach(btn => {
+        btn.addEventListener('click', () => selectVisit(btn.dataset.id));
+      });
+      document.querySelector('[data-retry-queue]')?.addEventListener('click', loadVisits);
+    }
+
+    async function selectVisit(id) {
+      withTransition(() => {
+        state.selected = state.visits.find(v => v.id === id);
+        state.currentDraft = null;
+        state.medicines = [blankMedicine()];
+        renderQueue();
+        renderDetails();
+        updateJourney('intake');
+      });
+      await loadPrescriptionHistory();
+    }
+
+    function renderDetails() {
+      const visit = state.selected;
+      const patient = visit.patient || {};
+      $('empty-state').classList.add('hidden');
+      $('detail-grid').classList.remove('hidden');
+      $('mark-consult').classList.toggle('hidden', visit.visit_status !== 'waiting');
+      $('mark-complete').classList.toggle('hidden', !['waiting', 'in_consultation'].includes(visit.visit_status));
+      $('main-title').textContent = patient.name || 'Unnamed patient';
+      $('main-subtitle').textContent = `${visit.clinic_name} · ${visit.doctor_name} · ${visit.visit_date}`;
+      $('intake-status').textContent = visit.visit_status.replace('_', ' ');
+      $('intake-status').className = `status ${escapeHtml(visit.visit_status)}`;
+      const facts = [
+        ['Patient Code', visit.patient_code || patient.patient_code],
+        ['Phone', patient.phone],
+        ['DOB', patient.dob],
+        ['Sex', patient.sex],
+        ['Visit Status', visit.visit_status.replace('_', ' ')],
+        ['Checked In', visit.checked_in_at ? new Date(visit.checked_in_at).toLocaleString() : ''],
+      ];
+      $('patient-facts').innerHTML = facts.map(([k, v]) => `<div class="fact"><small>${k}</small><span>${escapeHtml(v || '-')}</span></div>`).join('');
+      $('chief-complaint').textContent = visit.chief_complaint || '-';
+      $('clinical-context').textContent = [
+        ['Symptoms/duration', visit.symptoms_duration],
+        ['Allergies', visit.known_allergies],
+        ['Current medicines', visit.current_medicines],
+        ['Existing conditions', visit.existing_conditions],
+        ['Vitals/staff notes', visit.vitals_notes],
+      ].map(([k, v]) => `${k}: ${v || '-'}`).join('\n');
+      resetPrescriptionForm();
+    }
+
+    function resetPrescriptionForm() {
+      $('diagnosis').value = '';
+      $('remarks').value = '';
+      $('advice').value = '';
+      $('rx-follow-up').value = '';
+      state.medicines = [blankMedicine()];
+      $('draft-state').textContent = 'Draft';
+      $('draft-state').className = 'status in_consultation';
+      renderMedicines();
+    }
+
+    function blankMedicine() {
+      return { medicine_name: '', generic_name: '', dosage: '', frequency: '', timing: '', duration: '', instructions: '' };
+    }
+
+    function renderMedicines() {
+      $('medicine-list').innerHTML = state.medicines.map((med, index) => `
+        <div class="medicine-row" data-index="${index}">
+          <div class="field"><label>Medicine</label><input data-key="medicine_name" value="${escapeHtml(med.medicine_name)}" placeholder="Medicine name" /></div>
+          <div class="field"><label>Generic Name</label><input data-key="generic_name" value="${escapeHtml(med.generic_name)}" placeholder="Optional generic name" /></div>
+          <div class="field"><label>Dosage</label><input data-key="dosage" value="${escapeHtml(med.dosage)}" placeholder="500 mg" /></div>
+          <div class="field"><label>Frequency</label><input data-key="frequency" value="${escapeHtml(med.frequency)}" placeholder="1-0-1" /></div>
+          <div class="field"><label>Timing</label><input data-key="timing" value="${escapeHtml(med.timing)}" placeholder="After food" /></div>
+          <div class="field"><label>Duration</label><input data-key="duration" value="${escapeHtml(med.duration)}" placeholder="5 days" /></div>
+          <div class="field wide"><label>Instructions</label><input data-key="instructions" value="${escapeHtml(med.instructions)}" placeholder="Additional instructions" /></div>
+          <div class="wide"><button class="btn danger" type="button" data-remove="${index}">Remove</button></div>
+        </div>`).join('');
+      document.querySelectorAll('.medicine-row input').forEach(input => {
+        input.addEventListener('input', event => {
+          const row = event.target.closest('.medicine-row');
+          state.medicines[Number(row.dataset.index)][event.target.dataset.key] = event.target.value;
+        });
+      });
+      document.querySelectorAll('[data-remove]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          state.medicines.splice(Number(btn.dataset.remove), 1);
+          if (state.medicines.length === 0) state.medicines.push(blankMedicine());
+          renderMedicines();
+        });
+      });
+    }
+
+    function collectPrescription() {
+      const medicines = state.medicines
+        .map((m, index) => ({ ...m, sort_order: index + 1 }))
+        .filter(m => m.medicine_name || m.dosage || m.frequency || m.timing || m.duration);
+      return {
+        diagnosis: $('diagnosis').value.trim(),
+        clinical_remarks: $('remarks').value.trim(),
+        advice: $('advice').value.trim(),
+        follow_up_date: $('rx-follow-up').value || null,
+        medicines,
+      };
+    }
+
+    function validateIssue(payload) {
+      if (!payload.diagnosis && !payload.clinical_remarks) return 'Add diagnosis or remarks before issuing.';
+      if (payload.medicines.length === 0) return 'Add at least one medicine.';
+      const invalid = payload.medicines.find(m => !m.medicine_name || !m.dosage || !m.frequency || !m.timing || !m.duration);
+      if (invalid) return 'Each medicine needs name, dosage, frequency, timing, and duration.';
+      return null;
+    }
+
+    async function saveDraft() {
+      if (!state.selected) return;
+      const payload = collectPrescription();
+      if (state.demo) {
+        const prescription = state.currentDraft || {
+          id: `demo-rx-${Date.now()}`,
+          patient_id: state.selected.patient_id,
+          visit_id: state.selected.id,
+          doctor_profile_id: state.profile.id,
+          status: 'draft',
+          created_at: new Date().toISOString(),
+          delivery_status: 'not_sent',
+        };
+        Object.assign(prescription, {
+          diagnosis: payload.diagnosis,
+          clinical_remarks: payload.clinical_remarks,
+          advice: payload.advice,
+          follow_up_date: payload.follow_up_date,
+          medicines: payload.medicines,
+        });
+        state.currentDraft = prescription;
+        state.demoHistory = [prescription, ...state.demoHistory.filter(rx => rx.id !== prescription.id)];
+        $('draft-state').textContent = 'Saved';
+        showToast('Draft saved in demo mode.');
+        await loadPrescriptionHistory();
+        return prescription;
+      }
+      const row = {
+        patient_id: state.selected.patient_id,
+        visit_id: state.selected.id,
+        doctor_profile_id: state.profile.id,
+        status: 'draft',
+        diagnosis: payload.diagnosis,
+        clinical_remarks: payload.clinical_remarks,
+        advice: payload.advice,
+        follow_up_date: payload.follow_up_date,
+        delivery_status: 'not_sent',
+      };
+      let prescription;
+      if (state.currentDraft) {
+        const { data, error } = await sb.from('prescriptions').update(row).eq('id', state.currentDraft.id).select('*').single();
+        if (error) return showToast(error.message, true);
+        prescription = data;
+        await sb.from('prescription_medicines').delete().eq('prescription_id', prescription.id);
+      } else {
+        const { data, error } = await sb.from('prescriptions').insert(row).select('*').single();
+        if (error) return showToast(error.message, true);
+        prescription = data;
+      }
+      if (payload.medicines.length) {
+        const meds = payload.medicines.map(m => ({ ...m, prescription_id: prescription.id }));
+        const { error } = await sb.from('prescription_medicines').insert(meds);
+        if (error) return showToast(error.message, true);
+      }
+      state.currentDraft = prescription;
+      $('draft-state').textContent = 'Saved';
+      await sb.from('prescription_audit_logs').insert({
+        prescription_id: prescription.id,
+        visit_id: state.selected.id,
+        action: 'draft_saved',
+        details: { medicine_count: payload.medicines.length },
+      });
+      showToast('Draft saved.');
+      await loadPrescriptionHistory();
+      return prescription;
+    }
+
+    async function issuePrescription() {
+      const issueBtn = $('issue');
+      const payload = collectPrescription();
+      const validation = validateIssue(payload);
+      if (validation) return showToast(validation, true);
+      setButtonBusy(issueBtn, true, 'Issuing...');
+      try {
+        const prescription = await saveDraft();
+        if (!prescription) return;
+        if (state.demo) {
+          Object.assign(prescription, {
+            status: 'issued',
+            issued_at: new Date().toISOString(),
+            delivery_status: 'queued',
+            pdf_url: '',
+          });
+          state.demoHistory = [prescription, ...state.demoHistory.filter(rx => rx.id !== prescription.id)];
+          await updateVisitStatus('completed', false);
+          state.currentDraft = null;
+          $('draft-state').textContent = 'Issued';
+          updateJourney('issue');
+          showToast('Demo prescription issued.');
+          await loadPrescriptionHistory();
+          return;
+        }
+        const pdfBlob = await generatePdf(prescription, payload);
+        const path = `${state.session.user.id}/${prescription.id}.pdf`;
+        const upload = await sb.storage.from('prescriptions').upload(path, pdfBlob, {
+          contentType: 'application/pdf',
+          upsert: true,
+        });
+        if (upload.error) return showToast(upload.error.message, true);
+        const signed = await sb.storage.from('prescriptions').createSignedUrl(path, 60 * 60 * 24 * 7);
+        if (signed.error) return showToast(signed.error.message, true);
+        const { error } = await sb.from('prescriptions').update({
+          status: 'issued',
+          issued_at: new Date().toISOString(),
+          pdf_url: signed.data.signedUrl,
+          pdf_storage_path: path,
+          delivery_status: 'queued',
+        }).eq('id', prescription.id);
+        if (error) return showToast(error.message, true);
+        await updateVisitStatus('completed', false);
+        await sb.from('prescription_audit_logs').insert({
+          prescription_id: prescription.id,
+          visit_id: state.selected.id,
+          action: 'issued',
+          details: { pdf_storage_path: path },
+        });
+        if (!state.demo) await triggerPrescriptionDelivery(prescription.id, signed.data.signedUrl);
+        state.currentDraft = null;
+        $('draft-state').textContent = 'Issued';
+        showToast('Prescription issued and queued for WhatsApp.');
+        await loadVisits();
+        await loadPrescriptionHistory();
+      } catch (error) {
+        showToast(error.message || 'Prescription issue failed.', true);
+      } finally {
+        setButtonBusy(issueBtn, false);
+      }
+    }
+
+    function loadScript(src) {
+      return new Promise((resolve, reject) => {
+        const existing = document.querySelector(`script[src="${src}"]`);
+        if (existing) {
+          existing.addEventListener('load', resolve, { once: true });
+          existing.addEventListener('error', reject, { once: true });
+          return;
+        }
+        const script = document.createElement('script');
+        script.src = src;
+        script.async = true;
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    }
+
+    async function ensurePdfLibrary() {
+      if (window.jspdf?.jsPDF) return;
+      state.pdfLibraryPromise = state.pdfLibraryPromise || loadScript('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js');
+      await state.pdfLibraryPromise;
+    }
+
+    async function generatePdf(prescription, payload) {
+      await ensurePdfLibrary();
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+      const visit = state.selected;
+      const patient = visit.patient || {};
+      const line = (text, x, y) => doc.text(String(text || '-'), x, y);
+      let y = 48;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(18);
+      line(state.profile.clinic_name, 42, y);
+      doc.setFontSize(11); doc.setFont('helvetica', 'normal');
+      y += 22; line(`${state.profile.doctor_name} · Reg: ${state.profile.registration_number}`, 42, y);
+      y += 18; line(`Date/time: ${new Date().toLocaleString()} · Place: ${visit.clinic_name}`, 42, y);
+      y += 26; doc.line(42, y, 552, y);
+      y += 24; doc.setFont('helvetica', 'bold'); line('Patient', 42, y);
+      doc.setFont('helvetica', 'normal');
+      y += 18; line(`${patient.name || '-'} · ${patient.sex || '-'} · DOB: ${patient.dob || '-'} · ${patient.phone || '-'}`, 42, y);
+      y += 18; line(`Patient code: ${visit.patient_code || patient.patient_code || '-'} · Visit: ${visit.visit_date}`, 42, y);
+      y += 28; doc.setFont('helvetica', 'bold'); line('Diagnosis / Remarks', 42, y);
+      doc.setFont('helvetica', 'normal');
+      y += 18; doc.splitTextToSize(payload.diagnosis || payload.clinical_remarks || '-', 500).forEach(t => { line(t, 42, y); y += 15; });
+      if (payload.clinical_remarks && payload.diagnosis) {
+        doc.splitTextToSize(payload.clinical_remarks, 500).forEach(t => { line(t, 42, y); y += 15; });
+      }
+      y += 10; doc.setFont('helvetica', 'bold'); line('Medicines', 42, y);
+      doc.setFont('helvetica', 'normal');
+      payload.medicines.forEach((m, index) => {
+        y += 18;
+        const medLine = `${index + 1}. ${m.medicine_name}${m.generic_name ? ` (${m.generic_name})` : ''} - ${m.dosage}, ${m.frequency}, ${m.timing}, ${m.duration}`;
+        doc.splitTextToSize(medLine, 500).forEach(t => { line(t, 42, y); y += 15; });
+        if (m.instructions) doc.splitTextToSize(`   ${m.instructions}`, 500).forEach(t => { line(t, 42, y); y += 15; });
+        if (y > 720) { doc.addPage(); y = 48; }
+      });
+      y += 12; doc.setFont('helvetica', 'bold'); line('Advice / Follow-up', 42, y);
+      doc.setFont('helvetica', 'normal');
+      y += 18; doc.splitTextToSize(payload.advice || '-', 500).forEach(t => { line(t, 42, y); y += 15; });
+      if (payload.follow_up_date) { y += 6; line(`Follow-up date: ${payload.follow_up_date}`, 42, y); }
+      y = Math.max(y + 48, 690);
+      doc.line(390, y, 552, y);
+      y += 16; line(state.profile.signature_label || state.profile.doctor_name, 390, y);
+      y += 14; line(state.profile.stamp_label || `Reg: ${state.profile.registration_number}`, 390, y);
+      return doc.output('blob');
+    }
+
+    async function triggerPrescriptionDelivery(prescriptionId, pdfUrl) {
+      if (!PRESCRIPTION_WEBHOOK_URL || PRESCRIPTION_WEBHOOK_URL.includes('your-n8n-domain')) return;
+      try {
+        await fetch(PRESCRIPTION_WEBHOOK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prescription_id: prescriptionId,
+            patient_id: state.selected.patient_id,
+            visit_id: state.selected.id,
+            patient_name: state.selected.patient?.name || '',
+            phone: state.selected.patient?.phone || '',
+            doctor_name: state.profile.doctor_name,
+            clinic_name: state.profile.clinic_name,
+            pdf_url: pdfUrl,
+          }),
+        });
+      } catch (error) {
+        showToast('Prescription saved, but delivery webhook was unreachable.', true);
+      }
+    }
+
+    async function updateVisitStatus(status, notify = true) {
+      if (!state.selected) return;
+      const patch = { visit_status: status };
+      if (status === 'in_consultation') patch.consultation_started_at = new Date().toISOString();
+      if (status === 'completed') patch.completed_at = new Date().toISOString();
+      if (state.demo) {
+        state.selected = { ...state.selected, ...patch };
+        state.visits = state.visits.map(v => v.id === state.selected.id ? state.selected : v);
+        withTransition(() => {
+          renderDetails();
+          renderQueue();
+        });
+        updateJourney(status === 'completed' ? 'issue' : 'consult');
+        if (notify) showToast(`Visit marked ${status.replace('_', ' ')}.`);
+        return;
+      }
+      const { data, error } = await sb.from('patient_visits').update(patch).eq('id', state.selected.id).select('*, patient:patients(id, patient_code, name, phone, dob, sex, follow_up_required, follow_up_date, notes)').single();
+      if (error) return showToast(error.message, true);
+      state.selected = data;
+      state.visits = state.visits.map(v => v.id === data.id ? data : v);
+      withTransition(() => {
+        renderDetails();
+        renderQueue();
+      });
+      updateJourney(status === 'completed' ? 'issue' : 'consult');
+      if (notify) showToast(`Visit marked ${status.replace('_', ' ')}.`);
+    }
+
+    async function loadPrescriptionHistory() {
+      if (!state.selected) return;
+      if (state.demo) {
+        const data = state.demoHistory.filter(rx => rx.patient_id === state.selected.patient_id);
+        renderPrescriptionHistory(data);
+        return;
+      }
+      const { data, error } = await sb
+        .from('prescriptions')
+        .select('*, medicines:prescription_medicines(*)')
+        .eq('patient_id', state.selected.patient_id)
+        .order('created_at', { ascending: false });
+      if (error) return showToast(error.message, true);
+      renderPrescriptionHistory(data || []);
+    }
+
+    function renderPrescriptionHistory(data) {
+      $('history').innerHTML = data.map(rx => `
+        <div class="history-item">
+          <strong>${escapeHtml(rx.status)} · ${new Date(rx.created_at).toLocaleString()}</strong>
+          <p>${escapeHtml(rx.diagnosis || rx.clinical_remarks || 'No diagnosis/remarks')}</p>
+          <span class="status ${escapeHtml(rx.delivery_status)}">${escapeHtml(rx.delivery_status)}</span>
+          ${rx.pdf_url ? `<p><a href="${escapeHtml(rx.pdf_url)}" target="_blank" rel="noopener">Open PDF</a></p>` : ''}
+        </div>`).join('') || '<p style="color: var(--muted);">No prescriptions yet.</p>';
+    }
+
+    function demoVisits() {
+      const now = new Date().toISOString();
+      const today = todayISO();
+      return [
+        {
+          id: 'demo-visit-1',
+          patient_id: 'demo-patient-1',
+          patient_code: 'PAT-1042',
+          clinic_name: 'VaitalCare Clinic',
+          doctor_name: 'Dr. A. Sharma',
+          visit_date: today,
+          visit_status: 'waiting',
+          chief_complaint: 'Fever, sore throat, and body ache',
+          symptoms_duration: 'Started two days ago, worse at night',
+          known_allergies: 'No known drug allergies',
+          current_medicines: 'Paracetamol 500 mg once yesterday',
+          existing_conditions: 'Mild seasonal allergies',
+          vitals_notes: 'Temp 99.8F, pulse 84, SpO2 98%',
+          checked_in_at: now,
+          patient: {
+            id: 'demo-patient-1',
+            patient_code: 'PAT-1042',
+            name: 'Riya Mehta',
+            phone: '+919876543210',
+            dob: '1994-08-12',
+            sex: 'Female',
+          },
+        },
+        {
+          id: 'demo-visit-2',
+          patient_id: 'demo-patient-2',
+          patient_code: 'PAT-1043',
+          clinic_name: 'VaitalCare Clinic',
+          doctor_name: 'Dr. A. Sharma',
+          visit_date: today,
+          visit_status: 'in_consultation',
+          chief_complaint: 'Persistent stomach discomfort',
+          symptoms_duration: 'Four days, after meals',
+          known_allergies: 'Penicillin',
+          current_medicines: 'None',
+          existing_conditions: 'Acidity history',
+          vitals_notes: 'BP 122/78, pulse 76',
+          checked_in_at: new Date(Date.now() - 24 * 60 * 1000).toISOString(),
+          patient: {
+            id: 'demo-patient-2',
+            patient_code: 'PAT-1043',
+            name: 'Kabir Rao',
+            phone: '+919111222333',
+            dob: '1988-02-20',
+            sex: 'Male',
+          },
+        },
+        {
+          id: 'demo-visit-3',
+          patient_id: 'demo-patient-3',
+          patient_code: 'PAT-1044',
+          clinic_name: 'VaitalCare Clinic',
+          doctor_name: 'Dr. A. Sharma',
+          visit_date: today,
+          visit_status: 'completed',
+          chief_complaint: 'Routine follow-up',
+          symptoms_duration: 'Review after medication course',
+          known_allergies: 'None',
+          current_medicines: 'Amlodipine 5 mg',
+          existing_conditions: 'Hypertension',
+          vitals_notes: 'BP 130/82, pulse 72',
+          checked_in_at: new Date(Date.now() - 66 * 60 * 1000).toISOString(),
+          patient: {
+            id: 'demo-patient-3',
+            patient_code: 'PAT-1044',
+            name: 'Ananya Sen',
+            phone: '+918888777666',
+            dob: '1979-11-03',
+            sex: 'Female',
+          },
+        },
+      ];
+    }
+
+    init().catch(error => showToast(error.message, true));
+  </script>
+</body>
+</html>

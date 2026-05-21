@@ -53,6 +53,11 @@ npm run preflight
 This creates or aligns:
 
 - `patients`
+- `doctor_profiles`
+- `patient_visits`
+- `prescriptions`
+- `prescription_medicines`
+- `prescription_audit_logs`
 - `message_logs`
 - `message_ledger`
 - `system_logs`
@@ -89,8 +94,13 @@ Update:
 
 - `patient-form/index.html`
 - `hospital-form/index.html`
+- `doctor-dashboard/index.html`
 
 Replace `YOUR_N8N_WEBHOOK_URL` with your public n8n URL. Deploy the static forms through Vercel, Netlify, or another HTTPS static host.
+
+For the doctor dashboard, also replace `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `PRESCRIPTION_WEBHOOK_URL`. Create one Supabase Auth user per doctor, then insert a matching `doctor_profiles` row with `user_id`, `doctor_name`, `clinic_name`, and `registration_number`.
+
+WF11 matches incoming visit rows to `doctor_profiles` by lowercased clinic and doctor name. If no profile exists yet, the visit still appears once a matching profile is created because the RLS policy also allows clinic/doctor-name matching.
 
 ## 6. Test
 
@@ -99,7 +109,7 @@ npm run setup
 npm test
 ```
 
-The tests validate workflow imports, webhook behavior, Supabase writes, Twilio-shaped inbound replies, and delivery status callbacks.
+The tests validate workflow imports, webhook behavior, Supabase writes, Twilio-shaped inbound replies, delivery status callbacks, and the new queue/prescription tables when configured.
 
 ## Troubleshooting
 

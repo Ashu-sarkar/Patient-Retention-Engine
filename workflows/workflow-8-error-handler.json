@@ -77,7 +77,7 @@
       ],
       "credentials": {
         "postgres": {
-          "id": "U3Ok26tbDrmjkBQr",
+          "id": "REPLACE_SUPABASE_POSTGRES",
           "name": "Supabase DB"
         }
       }
@@ -202,7 +202,7 @@
       ],
       "credentials": {
         "postgres": {
-          "id": "U3Ok26tbDrmjkBQr",
+          "id": "REPLACE_SUPABASE_POSTGRES",
           "name": "Supabase DB"
         }
       }

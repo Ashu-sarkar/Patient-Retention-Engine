@@ -94,7 +94,7 @@
       ],
       "credentials": {
         "postgres": {
-          "id": "sWPSEheWzNhrv7z5",
+          "id": "REPLACE_SUPABASE_POSTGRES",
           "name": "Supabase (Postgres)"
         }
       }
@@ -137,7 +137,7 @@
       "continueOnFail": true,
       "credentials": {
         "postgres": {
-          "id": "sWPSEheWzNhrv7z5",
+          "id": "REPLACE_SUPABASE_POSTGRES",
           "name": "Supabase (Postgres)"
         }
       }
@@ -197,7 +197,7 @@
       "continueOnFail": true,
       "credentials": {
         "postgres": {
-          "id": "sWPSEheWzNhrv7z5",
+          "id": "REPLACE_SUPABASE_POSTGRES",
           "name": "Supabase (Postgres)"
         }
       }

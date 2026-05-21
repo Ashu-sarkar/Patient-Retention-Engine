@@ -374,11 +374,409 @@ CREATE TRIGGER trg_hospital_boarding_updated_at
   BEFORE UPDATE ON public.hospital_boarding
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
+-- ── doctor dashboard / prescriptions ───────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.doctor_profiles (
+  id                    UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id               UUID        UNIQUE REFERENCES auth.users (id) ON DELETE CASCADE,
+  doctor_name           TEXT        NOT NULL,
+  clinic_name           TEXT        NOT NULL,
+  registration_number   TEXT        NOT NULL,
+  specialty             TEXT,
+  signature_label       TEXT,
+  stamp_label           TEXT,
+  is_clinic_admin       BOOLEAN     NOT NULL DEFAULT FALSE,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS user_id UUID;
+ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS doctor_name TEXT;
+ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS clinic_name TEXT;
+ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS registration_number TEXT;
+ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS specialty TEXT;
+ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS signature_label TEXT;
+ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS stamp_label TEXT;
+ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS is_clinic_admin BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_doctor_profiles_user_id
+  ON public.doctor_profiles (user_id)
+  WHERE user_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_doctor_profiles_clinic_doctor
+  ON public.doctor_profiles (lower(trim(clinic_name)), lower(trim(doctor_name)));
+
+DROP TRIGGER IF EXISTS trg_doctor_profiles_updated_at ON public.doctor_profiles;
+CREATE TRIGGER trg_doctor_profiles_updated_at
+  BEFORE UPDATE ON public.doctor_profiles
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+CREATE TABLE IF NOT EXISTS public.patient_visits (
+  id                    UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id            UUID        NOT NULL REFERENCES public.patients (id) ON DELETE CASCADE,
+  doctor_profile_id     UUID        REFERENCES public.doctor_profiles (id) ON DELETE SET NULL,
+  patient_code          TEXT,
+  clinic_name           TEXT        NOT NULL,
+  doctor_name           TEXT        NOT NULL,
+  visit_date            DATE        NOT NULL DEFAULT CURRENT_DATE,
+  visit_status          TEXT        NOT NULL DEFAULT 'waiting',
+  chief_complaint       TEXT,
+  symptoms_duration     TEXT,
+  known_allergies       TEXT,
+  current_medicines     TEXT,
+  existing_conditions   TEXT,
+  vitals_notes          TEXT,
+  staff_notes           TEXT,
+  checked_in_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  consultation_started_at TIMESTAMPTZ,
+  completed_at          TIMESTAMPTZ,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT patient_visits_status_check
+    CHECK (visit_status IN ('waiting','in_consultation','completed','cancelled','no_show'))
+);
+
+ALTER TABLE public.patient_visits ADD COLUMN IF NOT EXISTS patient_id UUID;
+ALTER TABLE public.patient_visits ADD COLUMN IF NOT EXISTS doctor_profile_id UUID;
+ALTER TABLE public.patient_visits ADD COLUMN IF NOT EXISTS patient_code TEXT;
+ALTER TABLE public.patient_visits ADD COLUMN IF NOT EXISTS clinic_name TEXT;
+ALTER TABLE public.patient_visits ADD COLUMN IF NOT EXISTS doctor_name TEXT;
+ALTER TABLE public.patient_visits ADD COLUMN IF NOT EXISTS visit_date DATE NOT NULL DEFAULT CURRENT_DATE;
+ALTER TABLE public.patient_visits ADD COLUMN IF NOT EXISTS visit_status TEXT NOT NULL DEFAULT 'waiting';
+ALTER TABLE public.patient_visits ADD COLUMN IF NOT EXISTS chief_complaint TEXT;
+ALTER TABLE public.patient_visits ADD COLUMN IF NOT EXISTS symptoms_duration TEXT;
+ALTER TABLE public.patient_visits ADD COLUMN IF NOT EXISTS known_allergies TEXT;
+ALTER TABLE public.patient_visits ADD COLUMN IF NOT EXISTS current_medicines TEXT;
+ALTER TABLE public.patient_visits ADD COLUMN IF NOT EXISTS existing_conditions TEXT;
+ALTER TABLE public.patient_visits ADD COLUMN IF NOT EXISTS vitals_notes TEXT;
+ALTER TABLE public.patient_visits ADD COLUMN IF NOT EXISTS staff_notes TEXT;
+ALTER TABLE public.patient_visits ADD COLUMN IF NOT EXISTS checked_in_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE public.patient_visits ADD COLUMN IF NOT EXISTS consultation_started_at TIMESTAMPTZ;
+ALTER TABLE public.patient_visits ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
+ALTER TABLE public.patient_visits ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE public.patient_visits ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+CREATE INDEX IF NOT EXISTS idx_patient_visits_patient_id
+  ON public.patient_visits (patient_id);
+CREATE INDEX IF NOT EXISTS idx_patient_visits_doctor_profile
+  ON public.patient_visits (doctor_profile_id);
+CREATE INDEX IF NOT EXISTS idx_patient_visits_queue
+  ON public.patient_visits (visit_date DESC, visit_status, lower(trim(clinic_name)), lower(trim(doctor_name)));
+
+DROP TRIGGER IF EXISTS trg_patient_visits_updated_at ON public.patient_visits;
+CREATE TRIGGER trg_patient_visits_updated_at
+  BEFORE UPDATE ON public.patient_visits
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+CREATE TABLE IF NOT EXISTS public.prescriptions (
+  id                    UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id            UUID        NOT NULL REFERENCES public.patients (id) ON DELETE CASCADE,
+  visit_id              UUID        REFERENCES public.patient_visits (id) ON DELETE SET NULL,
+  doctor_profile_id     UUID        REFERENCES public.doctor_profiles (id) ON DELETE SET NULL,
+  status                TEXT        NOT NULL DEFAULT 'draft',
+  diagnosis             TEXT,
+  clinical_remarks      TEXT,
+  advice                TEXT,
+  follow_up_date        DATE,
+  issued_at             TIMESTAMPTZ,
+  pdf_url               TEXT,
+  pdf_storage_path      TEXT,
+  delivery_status       TEXT        NOT NULL DEFAULT 'not_sent',
+  created_by            UUID        DEFAULT auth.uid(),
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT prescriptions_status_check
+    CHECK (status IN ('draft','issued','cancelled')),
+  CONSTRAINT prescriptions_delivery_status_check
+    CHECK (delivery_status IN ('not_sent','queued','sent','failed'))
+);
+
+ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS patient_id UUID;
+ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS visit_id UUID;
+ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS doctor_profile_id UUID;
+ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'draft';
+ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS diagnosis TEXT;
+ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS clinical_remarks TEXT;
+ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS advice TEXT;
+ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS follow_up_date DATE;
+ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS issued_at TIMESTAMPTZ;
+ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS pdf_url TEXT;
+ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS pdf_storage_path TEXT;
+ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS delivery_status TEXT NOT NULL DEFAULT 'not_sent';
+ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS created_by UUID DEFAULT auth.uid();
+ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+CREATE INDEX IF NOT EXISTS idx_prescriptions_patient_id
+  ON public.prescriptions (patient_id);
+CREATE INDEX IF NOT EXISTS idx_prescriptions_visit_id
+  ON public.prescriptions (visit_id);
+CREATE INDEX IF NOT EXISTS idx_prescriptions_doctor_status
+  ON public.prescriptions (doctor_profile_id, status, created_at DESC);
+
+DROP TRIGGER IF EXISTS trg_prescriptions_updated_at ON public.prescriptions;
+CREATE TRIGGER trg_prescriptions_updated_at
+  BEFORE UPDATE ON public.prescriptions
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+CREATE OR REPLACE FUNCTION public.prevent_issued_prescription_mutation()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  IF OLD.status = 'issued' AND (
+    NEW.patient_id IS DISTINCT FROM OLD.patient_id OR
+    NEW.visit_id IS DISTINCT FROM OLD.visit_id OR
+    NEW.doctor_profile_id IS DISTINCT FROM OLD.doctor_profile_id OR
+    NEW.status IS DISTINCT FROM OLD.status OR
+    NEW.diagnosis IS DISTINCT FROM OLD.diagnosis OR
+    NEW.clinical_remarks IS DISTINCT FROM OLD.clinical_remarks OR
+    NEW.advice IS DISTINCT FROM OLD.advice OR
+    NEW.follow_up_date IS DISTINCT FROM OLD.follow_up_date OR
+    NEW.issued_at IS DISTINCT FROM OLD.issued_at
+  ) THEN
+    RAISE EXCEPTION 'Issued prescriptions are immutable except delivery/PDF metadata';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_prescriptions_prevent_issued_mutation ON public.prescriptions;
+CREATE TRIGGER trg_prescriptions_prevent_issued_mutation
+  BEFORE UPDATE ON public.prescriptions
+  FOR EACH ROW EXECUTE FUNCTION public.prevent_issued_prescription_mutation();
+
+CREATE TABLE IF NOT EXISTS public.prescription_medicines (
+  id                    UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  prescription_id       UUID        NOT NULL REFERENCES public.prescriptions (id) ON DELETE CASCADE,
+  medicine_name         TEXT        NOT NULL,
+  generic_name          TEXT,
+  dosage                TEXT        NOT NULL,
+  frequency             TEXT        NOT NULL,
+  timing                TEXT        NOT NULL,
+  duration              TEXT        NOT NULL,
+  instructions          TEXT,
+  sort_order            INTEGER     NOT NULL DEFAULT 1,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.prescription_medicines ADD COLUMN IF NOT EXISTS prescription_id UUID;
+ALTER TABLE public.prescription_medicines ADD COLUMN IF NOT EXISTS medicine_name TEXT;
+ALTER TABLE public.prescription_medicines ADD COLUMN IF NOT EXISTS generic_name TEXT;
+ALTER TABLE public.prescription_medicines ADD COLUMN IF NOT EXISTS dosage TEXT;
+ALTER TABLE public.prescription_medicines ADD COLUMN IF NOT EXISTS frequency TEXT;
+ALTER TABLE public.prescription_medicines ADD COLUMN IF NOT EXISTS timing TEXT;
+ALTER TABLE public.prescription_medicines ADD COLUMN IF NOT EXISTS duration TEXT;
+ALTER TABLE public.prescription_medicines ADD COLUMN IF NOT EXISTS instructions TEXT;
+ALTER TABLE public.prescription_medicines ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE public.prescription_medicines ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+CREATE INDEX IF NOT EXISTS idx_prescription_medicines_prescription_id
+  ON public.prescription_medicines (prescription_id, sort_order);
+
+CREATE OR REPLACE FUNCTION public.prevent_issued_prescription_medicine_mutation()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  parent_status TEXT;
+  parent_id UUID;
+BEGIN
+  IF TG_OP = 'INSERT' OR TG_OP = 'UPDATE' THEN
+    parent_id := NEW.prescription_id;
+  ELSE
+    parent_id := OLD.prescription_id;
+  END IF;
+
+  SELECT status INTO parent_status
+  FROM public.prescriptions
+  WHERE id = parent_id;
+
+  IF parent_status = 'issued' THEN
+    RAISE EXCEPTION 'Medicines on issued prescriptions are immutable';
+  END IF;
+
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_prescription_medicines_prevent_issued_update ON public.prescription_medicines;
+CREATE TRIGGER trg_prescription_medicines_prevent_issued_update
+  BEFORE UPDATE OR DELETE ON public.prescription_medicines
+  FOR EACH ROW EXECUTE FUNCTION public.prevent_issued_prescription_medicine_mutation();
+
+DROP TRIGGER IF EXISTS trg_prescription_medicines_prevent_issued_insert ON public.prescription_medicines;
+CREATE TRIGGER trg_prescription_medicines_prevent_issued_insert
+  BEFORE INSERT ON public.prescription_medicines
+  FOR EACH ROW EXECUTE FUNCTION public.prevent_issued_prescription_medicine_mutation();
+
+CREATE TABLE IF NOT EXISTS public.prescription_audit_logs (
+  id                    UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  prescription_id       UUID        REFERENCES public.prescriptions (id) ON DELETE CASCADE,
+  visit_id              UUID        REFERENCES public.patient_visits (id) ON DELETE SET NULL,
+  actor_user_id         UUID        DEFAULT auth.uid(),
+  action                TEXT        NOT NULL,
+  details               JSONB,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_prescription_audit_prescription_id
+  ON public.prescription_audit_logs (prescription_id, created_at DESC);
+
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('prescriptions', 'prescriptions', false)
+ON CONFLICT (id) DO NOTHING;
+
 -- ── RLS ─────────────────────────────────────────────────────────────────────
 ALTER TABLE public.patients           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.message_logs       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.system_logs        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.hospital_boarding  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.message_ledger     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.doctor_profiles    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.patient_visits      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.prescriptions       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.prescription_medicines ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.prescription_audit_logs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "doctors read own profile" ON public.doctor_profiles;
+CREATE POLICY "doctors read own profile"
+  ON public.doctor_profiles FOR SELECT
+  TO authenticated
+  USING (user_id = auth.uid());
+
+DROP POLICY IF EXISTS "doctors update own profile" ON public.doctor_profiles;
+CREATE POLICY "doctors update own profile"
+  ON public.doctor_profiles FOR UPDATE
+  TO authenticated
+  USING (user_id = auth.uid())
+  WITH CHECK (user_id = auth.uid());
+
+DROP POLICY IF EXISTS "doctors read assigned visits" ON public.patient_visits;
+CREATE POLICY "doctors read assigned visits"
+  ON public.patient_visits FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.doctor_profiles dp
+      WHERE dp.user_id = auth.uid()
+        AND (
+          dp.id = patient_visits.doctor_profile_id
+          OR (dp.is_clinic_admin AND lower(trim(dp.clinic_name)) = lower(trim(patient_visits.clinic_name)))
+          OR (
+            lower(trim(dp.clinic_name)) = lower(trim(patient_visits.clinic_name))
+            AND lower(trim(dp.doctor_name)) = lower(trim(patient_visits.doctor_name))
+          )
+        )
+    )
+  );
+
+DROP POLICY IF EXISTS "doctors update assigned visits" ON public.patient_visits;
+CREATE POLICY "doctors update assigned visits"
+  ON public.patient_visits FOR UPDATE
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.doctor_profiles dp
+      WHERE dp.user_id = auth.uid()
+        AND (
+          dp.id = patient_visits.doctor_profile_id
+          OR (dp.is_clinic_admin AND lower(trim(dp.clinic_name)) = lower(trim(patient_visits.clinic_name)))
+          OR (
+            lower(trim(dp.clinic_name)) = lower(trim(patient_visits.clinic_name))
+            AND lower(trim(dp.doctor_name)) = lower(trim(patient_visits.doctor_name))
+          )
+        )
+    )
+  );
+
+DROP POLICY IF EXISTS "doctors read queue patients" ON public.patients;
+CREATE POLICY "doctors read queue patients"
+  ON public.patients FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1
+      FROM public.patient_visits pv
+      JOIN public.doctor_profiles dp ON dp.user_id = auth.uid()
+      WHERE pv.patient_id = patients.id
+        AND (
+          dp.id = pv.doctor_profile_id
+          OR (dp.is_clinic_admin AND lower(trim(dp.clinic_name)) = lower(trim(pv.clinic_name)))
+          OR (
+            lower(trim(dp.clinic_name)) = lower(trim(pv.clinic_name))
+            AND lower(trim(dp.doctor_name)) = lower(trim(pv.doctor_name))
+          )
+        )
+    )
+  );
+
+DROP POLICY IF EXISTS "doctors manage own prescriptions" ON public.prescriptions;
+CREATE POLICY "doctors manage own prescriptions"
+  ON public.prescriptions FOR ALL
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.doctor_profiles dp
+      WHERE dp.user_id = auth.uid()
+        AND dp.id = prescriptions.doctor_profile_id
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.doctor_profiles dp
+      WHERE dp.user_id = auth.uid()
+        AND dp.id = prescriptions.doctor_profile_id
+    )
+  );
+
+DROP POLICY IF EXISTS "doctors manage prescription medicines" ON public.prescription_medicines;
+CREATE POLICY "doctors manage prescription medicines"
+  ON public.prescription_medicines FOR ALL
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1
+      FROM public.prescriptions pr
+      JOIN public.doctor_profiles dp ON dp.id = pr.doctor_profile_id
+      WHERE pr.id = prescription_medicines.prescription_id
+        AND dp.user_id = auth.uid()
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1
+      FROM public.prescriptions pr
+      JOIN public.doctor_profiles dp ON dp.id = pr.doctor_profile_id
+      WHERE pr.id = prescription_medicines.prescription_id
+        AND dp.user_id = auth.uid()
+    )
+  );
+
+DROP POLICY IF EXISTS "doctors read prescription audit logs" ON public.prescription_audit_logs;
+CREATE POLICY "doctors read prescription audit logs"
+  ON public.prescription_audit_logs FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1
+      FROM public.prescriptions pr
+      JOIN public.doctor_profiles dp ON dp.id = pr.doctor_profile_id
+      WHERE pr.id = prescription_audit_logs.prescription_id
+        AND dp.user_id = auth.uid()
+    )
+  );
+
+DROP POLICY IF EXISTS "doctors insert prescription audit logs" ON public.prescription_audit_logs;
+CREATE POLICY "doctors insert prescription audit logs"
+  ON public.prescription_audit_logs FOR INSERT
+  TO authenticated
+  WITH CHECK (actor_user_id = auth.uid());
+
+DROP POLICY IF EXISTS "doctors manage prescription pdfs" ON storage.objects;
+CREATE POLICY "doctors manage prescription pdfs"
+  ON storage.objects FOR ALL
+  TO authenticated
+  USING (bucket_id = 'prescriptions' AND (storage.foldername(name))[1] = auth.uid()::text)
+  WITH CHECK (bucket_id = 'prescriptions' AND (storage.foldername(name))[1] = auth.uid()::text);
 
 NOTIFY pgrst, 'reload schema';

@@ -265,7 +265,7 @@
     .req { color: var(--red-500); font-size: 14px; line-height: 1; }
 
     /* ── INPUTS ────────────────────────────────────────────── */
-    .inp, .sel {
+    .inp, .sel, .txt {
       height: 52px;
       border: 1.5px solid var(--gray-200);
       border-radius: var(--r-md);
@@ -277,12 +277,21 @@
       transition: border-color 0.15s, box-shadow 0.15s;
       -webkit-appearance: none; appearance: none;
     }
+    .txt {
+      min-height: 92px;
+      height: auto;
+      padding: 12px 14px;
+      resize: vertical;
+      line-height: 1.45;
+      font-family: inherit;
+    }
     .inp::placeholder { color: var(--gray-400); }
-    .inp:focus, .sel:focus {
+    .txt::placeholder { color: var(--gray-400); }
+    .inp:focus, .sel:focus, .txt:focus {
       border-color: var(--accent-600);
       box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.12);
     }
-    .inp.err, .sel.err {
+    .inp.err, .sel.err, .txt.err {
       border-color: var(--red-500);
       box-shadow: 0 0 0 3px rgba(239,68,68,.08);
     }
@@ -556,6 +565,68 @@
           <strong>Reception staff:</strong> Please help the patient complete
           the visit information below.
         </p>
+      </div>
+
+      <!-- ══ SECTION 2 : CLINICAL CONTEXT ════════════════════════ -->
+      <div class="card">
+        <div class="card-header card-header-patient">
+          <span class="badge badge-patient">Context</span>
+          <div class="card-title">
+            <h2>Reason for Visit</h2>
+            <p>Shared with the doctor before consultation</p>
+          </div>
+        </div>
+        <div class="card-body">
+
+          <div class="field">
+            <label class="label" for="chief_complaint">
+              Main Complaint&nbsp;<span class="req">*</span>
+            </label>
+            <textarea id="chief_complaint" name="chief_complaint" class="txt"
+                      placeholder="Example: fever, cough, stomach pain"
+                      maxlength="300"></textarea>
+            <span class="errmsg" id="e-chief_complaint">
+              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="6" fill="currentColor"/><path d="M6 3.5v3" stroke="#fff" stroke-width="1.2" stroke-linecap="round"/><circle cx="6" cy="8.5" r=".55" fill="#fff"/></svg>
+              Enter the main reason for today&apos;s visit
+            </span>
+          </div>
+
+          <div class="field">
+            <label class="label" for="symptoms_duration">Symptoms / Duration</label>
+            <textarea id="symptoms_duration" name="symptoms_duration" class="txt"
+                      placeholder="When did it start? Any important symptoms?"
+                      maxlength="500"></textarea>
+          </div>
+
+          <div class="field">
+            <label class="label" for="known_allergies">Known Allergies</label>
+            <input id="known_allergies" name="known_allergies" type="text"
+                   class="inp" placeholder="Medicine/food allergies, or none"
+                   maxlength="200" />
+          </div>
+
+          <div class="field">
+            <label class="label" for="current_medicines">Current Medicines</label>
+            <textarea id="current_medicines" name="current_medicines" class="txt"
+                      placeholder="Medicines currently being taken"
+                      maxlength="500"></textarea>
+          </div>
+
+          <div class="field">
+            <label class="label" for="existing_conditions">Existing Conditions</label>
+            <textarea id="existing_conditions" name="existing_conditions" class="txt"
+                      placeholder="Diabetes, BP, asthma, thyroid, etc."
+                      maxlength="500"></textarea>
+          </div>
+
+          <div class="field">
+            <label class="label" for="vitals_notes">Vitals / Staff Notes</label>
+            <textarea id="vitals_notes" name="vitals_notes" class="txt"
+                      placeholder="BP, pulse, temperature, SpO2, weight, or staff notes"
+                      maxlength="500"></textarea>
+          </div>
+
+        </div>
       </div>
 
       <!-- ══ SECTION 2 : VISIT INFORMATION (STAFF) ════════════════ -->
@@ -837,7 +908,7 @@ function clearErr (id) {
 }
 function clearAllErr () {
   ['patient_name','phone_number','hospital_name','doctor_name',
-   'visit_date','follow_up_required','follow_up_date']
+   'chief_complaint','visit_date','follow_up_required','follow_up_date']
     .forEach(clearErr);
 }
 
@@ -851,12 +922,14 @@ function validate () {
   const phone   = $('phone_number').value.trim();
   const hosp    = $('hospital_name').value;
   const doc     = $('doctor_name').value;
+  const chief   = $('chief_complaint').value.trim();
   const vDate   = $('visit_date').value;
   const fuReq   = $('follow_up_required').value;
   const fuDate  = $('follow_up_date').value;
 
   if (!name || name.length < 2)              { showErr('patient_name');       ok = false; firstInvalid = firstInvalid || $('patient_name'); }
   if (!/^[0-9]{10}$/.test(phone))           { showErr('phone_number');       ok = false; firstInvalid = firstInvalid || $('phone_number'); }
+  if (!chief || chief.length < 2)            { showErr('chief_complaint');    ok = false; firstInvalid = firstInvalid || $('chief_complaint'); }
   if (!hosp)                                 { showErr('hospital_name');      ok = false; firstInvalid = firstInvalid || $('hospital_name'); }
   if (!doc)                                  { showErr('doctor_name');        ok = false; firstInvalid = firstInvalid || $('doctor_name'); }
   if (!vDate)                                { showErr('visit_date');         ok = false; firstInvalid = firstInvalid || $('visit_date'); }
@@ -875,7 +948,7 @@ function validate () {
    CLEAR ERRORS ON CHANGE
    ═══════════════════════════════════════════════════════════════════ */
 ['patient_name','phone_number','hospital_name','doctor_name',
- 'visit_date','follow_up_required','follow_up_date'].forEach(id => {
+ 'chief_complaint','visit_date','follow_up_required','follow_up_date'].forEach(id => {
   const el = $(id); if (!el) return;
   el.addEventListener('input',  () => clearErr(id));
   el.addEventListener('change', () => clearErr(id));
@@ -917,6 +990,12 @@ form.addEventListener('submit', async function (e) {
     hospital_name:      $('hospital_name').value,
     doctor_name:        $('doctor_name').value,
     visit_date:         $('visit_date').value,
+    chief_complaint:    $('chief_complaint').value.trim(),
+    symptoms_duration:  $('symptoms_duration').value.trim(),
+    known_allergies:    $('known_allergies').value.trim(),
+    current_medicines:  $('current_medicines').value.trim(),
+    existing_conditions: $('existing_conditions').value.trim(),
+    vitals_notes:       $('vitals_notes').value.trim(),
     follow_up_required: fuReq,
     follow_up_date:     fuReq === 'Yes' ? $('follow_up_date').value : '',
   };

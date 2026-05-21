@@ -1,6 +1,6 @@
 # Patient Registration Form — QR Code Intake
 
-A zero-dependency, mobile-first HTML form that clinic patients fill by scanning a QR code. Data is sent directly to an n8n webhook (WF11), which upserts the patient into Supabase and triggers the welcome WhatsApp message.
+A zero-dependency, mobile-first HTML form that clinic patients fill by scanning a QR code. Data is sent directly to an n8n webhook (WF11), which upserts the patient into Supabase, creates a `patient_visits` waiting-room row, and triggers the welcome WhatsApp message.
 
 ---
 
@@ -72,12 +72,13 @@ Open the deployed URL in your phone browser and submit a test entry:
 
 - Patient Name: `Test Patient`
 - Phone: `9876543210`
+- Main Complaint: `Fever and cough`
 - Hospital: *(select any)*
 - Doctor: *(select any)*
 - Visit Date: *(today)*
 - Follow-up: `No`
 
-Check n8n → WF11 executions and Supabase `public.patients` to confirm the record was created.
+Check n8n → WF11 executions and Supabase `public.patients` plus `public.patient_visits` to confirm the patient and visit queue record were created.
 
 ---
 
@@ -143,7 +144,8 @@ index.html  (POST JSON)
 WF11 — QR Form Intake
       │  validates + maps fields
       │  generates PAT-XXXX code
-      ├──► Supabase public.patients  (upsert)
+      ├──► Supabase public.patients  (identity upsert)
+      ├──► Supabase public.patient_visits  (new waiting queue row)
       │
       └──► WF7 — New Patient Welcome (async HTTP call)
                   │
@@ -173,6 +175,6 @@ https://your-form.vercel.app/?hospital=City+Hospital&title=City+Hospital+%E2%80%
 |---------|-----|
 | Form shows "Something went wrong" | Check WF11 is activated; check n8n URL in `WEBHOOK_URL`; check CORS — n8n webhook allows `*` by default |
 | Doctor dropdown stays disabled | The `hospital` URL param must exactly match a key in `HOSPITALS` (case-insensitive) |
-| `patient_code` not shown on success | WF11 returns `{ patient_code }` only for new inserts; on duplicate phone it updates the existing record silently |
+| `patient_code` or `visit_id` not shown on success | WF11 should return both after a successful patient upsert and visit insert |
 | Form loads but is blank on some Android phones | Ensure the hosting URL is HTTPS — HTTP blocks `fetch()` on Android Chrome |
 | Webhook returns 400 | A required field is missing; check browser Network tab → response body for the list of errors |
