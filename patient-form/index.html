@@ -567,55 +567,6 @@
         </p>
       </div>
 
-      <!-- ══ SECTION 2 : CLINICAL CONTEXT ════════════════════════ -->
-      <div class="card">
-        <div class="card-header card-header-patient">
-          <span class="badge badge-patient">Context</span>
-          <div class="card-title">
-            <h2>Clinical Notes</h2>
-            <p>Optional details for the doctor before consultation</p>
-          </div>
-        </div>
-        <div class="card-body">
-
-          <div class="field">
-            <label class="label" for="symptoms_duration">Symptoms / Duration</label>
-            <textarea id="symptoms_duration" name="symptoms_duration" class="txt"
-                      placeholder="When did it start? Any important symptoms?"
-                      maxlength="500"></textarea>
-          </div>
-
-          <div class="field">
-            <label class="label" for="known_allergies">Known Allergies</label>
-            <input id="known_allergies" name="known_allergies" type="text"
-                   class="inp" placeholder="Medicine/food allergies, or none"
-                   maxlength="200" />
-          </div>
-
-          <div class="field">
-            <label class="label" for="current_medicines">Current Medicines</label>
-            <textarea id="current_medicines" name="current_medicines" class="txt"
-                      placeholder="Medicines currently being taken"
-                      maxlength="500"></textarea>
-          </div>
-
-          <div class="field">
-            <label class="label" for="existing_conditions">Existing Conditions</label>
-            <textarea id="existing_conditions" name="existing_conditions" class="txt"
-                      placeholder="Diabetes, BP, asthma, thyroid, etc."
-                      maxlength="500"></textarea>
-          </div>
-
-          <div class="field">
-            <label class="label" for="vitals_notes">Vitals / Staff Notes</label>
-            <textarea id="vitals_notes" name="vitals_notes" class="txt"
-                      placeholder="BP, pulse, temperature, SpO2, weight, or staff notes"
-                      maxlength="500"></textarea>
-          </div>
-
-        </div>
-      </div>
-
       <!-- ══ SECTION 2 : VISIT INFORMATION (STAFF) ════════════════ -->
       <div class="card">
         <div class="card-header card-header-staff">
@@ -975,11 +926,6 @@ form.addEventListener('submit', async function (e) {
     hospital_name:      $('hospital_name').value,
     doctor_name:        $('doctor_name').value,
     visit_date:         $('visit_date').value,
-    symptoms_duration:  $('symptoms_duration').value.trim(),
-    known_allergies:    $('known_allergies').value.trim(),
-    current_medicines:  $('current_medicines').value.trim(),
-    existing_conditions: $('existing_conditions').value.trim(),
-    vitals_notes:       $('vitals_notes').value.trim(),
     follow_up_required: fuReq,
     follow_up_date:     fuReq === 'Yes' ? $('follow_up_date').value : '',
   };
