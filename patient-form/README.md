@@ -72,7 +72,6 @@ Open the deployed URL in your phone browser and submit a test entry:
 
 - Patient Name: `Test Patient`
 - Phone: `9876543210`
-- Main Complaint: `Fever and cough`
 - Hospital: *(select any)*
 - Doctor: *(select any)*
 - Visit Date: *(today)*

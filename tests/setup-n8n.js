@@ -202,6 +202,22 @@ async function upsertWorkflow(wfJson, credMap) {
 /** Replace REPLACE_* placeholder credential IDs with real IDs */
 function patchCredentials(wfJson, credMap) {
   const clone = JSON.parse(JSON.stringify(wfJson));
+  const replaceRuntimePlaceholders = (value) => {
+    if (typeof value === 'string') {
+      return value
+        .replaceAll('__TWILIO_ACCOUNT_SID__', env.TWILIO_ACCOUNT_SID || '')
+        .replaceAll('__TWILIO_STATUS_CALLBACK_URL__', env.TWILIO_STATUS_CALLBACK_URL || '');
+    }
+    if (Array.isArray(value)) return value.map(replaceRuntimePlaceholders);
+    if (value && typeof value === 'object') {
+      for (const [key, child] of Object.entries(value)) {
+        value[key] = replaceRuntimePlaceholders(child);
+      }
+    }
+    return value;
+  };
+
+  replaceRuntimePlaceholders(clone);
   for (const node of clone.nodes || []) {
     for (const [ctype, cval] of Object.entries(node.credentials || {})) {
       const cname = cval.name || '';
