@@ -157,11 +157,11 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.WEBHOOK_URL }}/webhook/new-patient-intake",
+        "url": "https://vaitalcare-production.up.railway.app/webhook/new-patient-intake",
         "sendBody": true,
         "contentType": "json",
-        "body": {
-          "values": [
+        "bodyParameters": {
+          "parameters": [
             {
               "name": "patient_code",
               "value": "={{ $('Assign Patient Code').first().json.patient_code }}"
