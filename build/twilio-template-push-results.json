@@ -1,0 +1,197 @@
+{
+  "pushed_at": "2026-05-22T23:40:58.060Z",
+  "dry_run": false,
+  "submit_approval": false,
+  "results": [
+    {
+      "id": "patient_onboarding",
+      "env": "TWILIO_CONTENT_PATIENT_ONBOARDING",
+      "status": "exists",
+      "sid": "HXb8192571b56c7e1570f6b1e0b8b86279",
+      "payload": {
+        "friendly_name": "patient_onboarding",
+        "language": "en",
+        "variables": {
+          "1": "Ashutosh Sarkar",
+          "2": "City Hospital",
+          "3": "Dr. A. Sharma",
+          "4": "2026-05-25"
+        },
+        "types": {
+          "whatsapp/card": {
+            "header_text": "Patient Onboarding",
+            "body": "Hi {{1}}, welcome to {{2}}. We have registered your visit with {{3}}. Your follow-up date is {{4}}. Reply YES if this looks correct or RESCHEDULE if you need help.",
+            "footer": "vAItalcare support",
+            "actions": [
+              {
+                "type": "QUICK_REPLY",
+                "title": "Yes",
+                "id": "yes"
+              },
+              {
+                "type": "QUICK_REPLY",
+                "title": "Reschedule",
+                "id": "reschedule"
+              },
+              {
+                "type": "QUICK_REPLY",
+                "title": "Help",
+                "id": "help"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "hospital_onboarding",
+      "env": "TWILIO_CONTENT_HOSPITAL_ONBOARDING",
+      "status": "exists",
+      "sid": "HXad188747f9e9e777ce878ec671eac66e",
+      "payload": {
+        "friendly_name": "hospital_onboarding",
+        "language": "en",
+        "variables": {
+          "1": "City Hospital",
+          "2": "General Hospital",
+          "3": "Dr. A. Sharma",
+          "4": "Bangalore"
+        },
+        "types": {
+          "whatsapp/card": {
+            "header_text": "Hospital Onboarding",
+            "body": "Hi {{1}}, your onboarding for {{2}} is complete. We have registered {{3}} as the primary contact and {{4}} as the facility location. Reply CONFIRM if this is correct or EDIT if you need changes.",
+            "footer": "vAItalcare support",
+            "actions": [
+              {
+                "type": "QUICK_REPLY",
+                "title": "Confirm",
+                "id": "confirm"
+              },
+              {
+                "type": "QUICK_REPLY",
+                "title": "Edit",
+                "id": "edit"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "patient_reminder",
+      "env": "TWILIO_CONTENT_PATIENT_REMINDER",
+      "friendly_name": "patient_reminder",
+      "status": "created",
+      "sid": "HXac3457a246bd00cb61c0783c00e175d6",
+      "payload": {
+        "friendly_name": "patient_reminder",
+        "language": "en",
+        "variables": {
+          "1": "Ashutosh Sarkar",
+          "2": "City Hospital",
+          "3": "Dr. A. Sharma",
+          "4": "Your follow-up is scheduled for tomorrow at 10:30 AM."
+        },
+        "types": {
+          "whatsapp/card": {
+            "header_text": "Patient Reminder",
+            "body": "Hi {{1}}, this is a care reminder from {{2}} for your appointment with {{3}}. {{4}} Reply YES to confirm, RESCHEDULE to change, or HELP if you need support.",
+            "footer": "vAItalcare support",
+            "actions": [
+              {
+                "type": "QUICK_REPLY",
+                "title": "Yes",
+                "id": "yes"
+              },
+              {
+                "type": "QUICK_REPLY",
+                "title": "Reschedule",
+                "id": "reschedule"
+              },
+              {
+                "type": "QUICK_REPLY",
+                "title": "Help",
+                "id": "help"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "medicine_reminder",
+      "env": "TWILIO_CONTENT_MEDICINE_REMINDER",
+      "friendly_name": "medicine_reminder",
+      "status": "created",
+      "sid": "HXb421bef31265c8e8c551a6c77a28f174",
+      "payload": {
+        "friendly_name": "medicine_reminder",
+        "language": "en",
+        "variables": {
+          "1": "Ashutosh Sarkar",
+          "2": "Paracetamol 500 mg",
+          "3": "1 tablet",
+          "4": "after breakfast",
+          "5": "Take with water after food."
+        },
+        "types": {
+          "whatsapp/card": {
+            "header_text": "Medicine Reminder",
+            "body": "Hi {{1}}, it is time for {{2}}. Dose: {{3}}. Timing: {{4}}. {{5}} Reply TAKEN once done or HELP if you have a concern.",
+            "footer": "vAItalcare support",
+            "actions": [
+              {
+                "type": "QUICK_REPLY",
+                "title": "Taken",
+                "id": "taken"
+              },
+              {
+                "type": "QUICK_REPLY",
+                "title": "Help",
+                "id": "help"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "prescription_delivery",
+      "env": "TWILIO_CONTENT_PRESCRIPTION_DELIVERY",
+      "friendly_name": "prescription_delivery",
+      "status": "created",
+      "sid": "HXa7e5a02d15ce2457344a352e11dba665",
+      "payload": {
+        "friendly_name": "prescription_delivery",
+        "language": "en",
+        "variables": {
+          "1": "Ashutosh Sarkar",
+          "2": "Dr. A. Sharma",
+          "3": "City Hospital",
+          "4": "Paracetamol 500 mg - 1 tablet, twice daily, after food, 5 days",
+          "5": "https://example.com/prescriptions/sample.pdf"
+        },
+        "types": {
+          "whatsapp/card": {
+            "header_text": "Prescription Delivery",
+            "body": "Hi {{1}}, your prescription from {{2}} at {{3}} is ready. Medicines: {{4}}. Open prescription: {{5}}",
+            "footer": "vAItalcare support",
+            "actions": [
+              {
+                "type": "QUICK_REPLY",
+                "title": "Received",
+                "id": "received"
+              },
+              {
+                "type": "QUICK_REPLY",
+                "title": "Help",
+                "id": "help"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

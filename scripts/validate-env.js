@@ -70,6 +70,8 @@ const simplifiedContentSidKeys = [
   'TWILIO_CONTENT_PATIENT_ONBOARDING',
   'TWILIO_CONTENT_HOSPITAL_ONBOARDING',
   'TWILIO_CONTENT_PATIENT_REMINDER',
+  'TWILIO_CONTENT_MEDICINE_REMINDER',
+  'TWILIO_CONTENT_PRESCRIPTION_DELIVERY',
 ];
 
 const hasSimplifiedTemplateSet = simplifiedContentSidKeys.some(key => !isMissing(env[key]));

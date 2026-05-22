@@ -3,139 +3,122 @@
   "description": "Twilio WhatsApp Content template metadata for the Patient Retention Engine. Runtime variables are mapped into Twilio ContentVariables.",
   "templates": [
     {
-      "id": "welcome",
+      "id": "patient_onboarding",
       "workflow": "workflow-7-new-patient",
       "trigger": "New patient record created",
       "category": "UTILITY",
-      "message": "Hi {{name}}! 👋 Welcome to {{clinic_name}}. We've noted your visit with {{doctor_name}} and will keep you updated on your follow-up appointment. If you have any questions, feel free to reply to this message.",
+      "twilio_friendly_name": "patient_onboarding",
+      "message": "Hi {{patient_name}}, welcome to {{clinic_name}}. We have registered your visit with {{doctor_name}}. Your follow-up date is {{follow_up_date}}. Reply YES if this looks correct or RESCHEDULE if you need help.",
       "placeholders": [
-        "name",
+        "patient_name",
         "clinic_name",
-        "doctor_name"
+        "doctor_name",
+        "follow_up_date"
       ],
       "component_parameters": [
-        "name",
+        "patient_name",
         "clinic_name",
-        "doctor_name"
+        "doctor_name",
+        "follow_up_date"
       ],
-      "notes": "Sent once when a patient is added. Establishes the messaging channel.",
-      "twilio_content_env": "TWILIO_CONTENT_WELCOME",
-      "twilio_content_sid": null
+      "notes": "Patient-facing first message after QR intake. Matches existing Twilio patient_onboarding card: {{1}} patient, {{2}} clinic, {{3}} doctor, {{4}} follow-up date.",
+      "twilio_content_env": "TWILIO_CONTENT_PATIENT_ONBOARDING",
+      "twilio_content_sid": "HXb8192571b56c7e1570f6b1e0b8b86279"
     },
     {
-      "id": "follow_up_reminder",
-      "workflow": "workflow-1-followup-reminder",
-      "trigger": "follow_up_date = tomorrow",
+      "id": "hospital_onboarding",
+      "workflow": "workflow-12-hospital-boarding",
+      "trigger": "Hospital / clinic boarding form submitted",
       "category": "UTILITY",
-      "message": "Hi {{name}}, just a friendly reminder that your follow-up appointment with {{doctor_name}} at {{clinic_name}} is scheduled for *tomorrow*. We look forward to seeing you! 🏥\n\nReply *YES* to confirm or *RESCHEDULE* if you need to change the date.",
+      "twilio_friendly_name": "hospital_onboarding",
+      "message": "Hi {{hospital_name}}, your onboarding for {{facility_type}} is complete. We have registered {{doctor_name}} as the primary contact and {{city}} as the facility location. Reply CONFIRM if this is correct or EDIT if you need changes.",
       "placeholders": [
-        "name",
+        "hospital_name",
+        "facility_type",
         "doctor_name",
-        "clinic_name"
+        "city"
       ],
       "component_parameters": [
-        "name",
+        "hospital_name",
+        "facility_type",
         "doctor_name",
-        "clinic_name"
+        "city"
       ],
-      "notes": "Sent the day before the follow-up. Include a clear call-to-action for confirmation.",
-      "twilio_content_env": "TWILIO_CONTENT_FOLLOW_UP_REMINDER",
-      "twilio_content_sid": null
+      "notes": "Admin/ops card for newly boarded hospitals. Matches existing Twilio hospital_onboarding card: {{1}} hospital, {{2}} facility type, {{3}} doctor/contact, {{4}} city.",
+      "twilio_content_env": "TWILIO_CONTENT_HOSPITAL_ONBOARDING",
+      "twilio_content_sid": "HXad188747f9e9e777ce878ec671eac66e"
     },
     {
-      "id": "same_day_reminder",
-      "workflow": "workflow-2-sameday-reminder",
-      "trigger": "follow_up_date = today",
+      "id": "patient_reminder",
+      "workflow": "workflow-1-followup-reminder, workflow-2-sameday-reminder, workflow-3-missed-appointment, workflow-4-health-check, workflow-5-reactivation",
+      "trigger": "Appointment reminder, missed follow-up, health check, or reactivation event",
       "category": "UTILITY",
-      "message": "Good morning {{name}}! 🌅 This is a reminder that your appointment with {{doctor_name}} is *today*. Please arrive on time and bring any documents or test reports from your previous visit.\n\nSee you soon at {{clinic_name}}!",
+      "twilio_friendly_name": "patient_reminder",
+      "message": "Hi {{patient_name}}, this is a care reminder from {{clinic_name}} for your appointment with {{doctor_name}}. {{reminder_detail}} Reply YES to confirm, RESCHEDULE to change, or HELP if you need support.",
       "placeholders": [
-        "name",
-        "doctor_name",
-        "clinic_name"
-      ],
-      "component_parameters": [
-        "name",
-        "doctor_name",
-        "clinic_name"
-      ],
-      "notes": "Sent on the morning of the appointment. Keep it warm and practical.",
-      "twilio_content_env": "TWILIO_CONTENT_SAME_DAY_REMINDER",
-      "twilio_content_sid": null
-    },
-    {
-      "id": "missed_appointment_recovery",
-      "workflow": "workflow-3-missed-appointment",
-      "trigger": "follow_up_date + 1 day, status != completed",
-      "category": "UTILITY",
-      "message": "Hi {{name}}, we noticed you missed your follow-up appointment with {{doctor_name}} yesterday. We completely understand that things come up! 😊\n\nYour health is important to us. Would you like to reschedule? Reply *RESCHEDULE* and our team will get back to you shortly.",
-      "placeholders": [
-        "name",
-        "doctor_name"
-      ],
-      "component_parameters": [
-        "name",
-        "doctor_name"
-      ],
-      "notes": "Day +1 recovery message. Empathetic tone — avoid making the patient feel blamed.",
-      "twilio_content_env": "TWILIO_CONTENT_MISSED_RECOVERY",
-      "twilio_content_sid": null
-    },
-    {
-      "id": "missed_appointment_nudge",
-      "workflow": "workflow-3-missed-appointment",
-      "trigger": "follow_up_date + 3 days, status != completed",
-      "category": "UTILITY",
-      "message": "Hi {{name}}, {{doctor_name}} wanted us to check in on you. It's been a few days since your scheduled follow-up at {{clinic_name}}.\n\nSkipping follow-up care can sometimes delay recovery. If you'd like to book a new appointment, just reply *BOOK* and we'll arrange it for you. 💙",
-      "placeholders": [
-        "name",
-        "doctor_name",
-        "clinic_name"
-      ],
-      "component_parameters": [
-        "name",
-        "doctor_name",
-        "clinic_name"
-      ],
-      "notes": "Day +3 nudge. References the doctor to add authority. Explains the clinical reason.",
-      "twilio_content_env": "TWILIO_CONTENT_MISSED_NUDGE",
-      "twilio_content_sid": null
-    },
-    {
-      "id": "health_check",
-      "workflow": "workflow-4-health-check",
-      "trigger": "visit_date + 2-3 days, health_check_sent = false",
-      "category": "UTILITY",
-      "message": "Hi {{name}}! 😊 Hope you're feeling better after your visit with {{doctor_name}}.\n\nHow are you doing today? Reply with:\n*GOOD* — feeling well\n*OKAY* — some discomfort\n*HELP* — need to speak with the doctor\n\nWe're here if you need anything!",
-      "placeholders": [
-        "name",
-        "doctor_name"
-      ],
-      "component_parameters": [
-        "name",
-        "doctor_name"
-      ],
-      "notes": "Sent 2–3 days post-visit. Captures response signals. HELP keyword can trigger staff alert in future phase.",
-      "twilio_content_env": "TWILIO_CONTENT_HEALTH_CHECK",
-      "twilio_content_sid": null
-    },
-    {
-      "id": "reactivation",
-      "workflow": "workflow-5-reactivation",
-      "trigger": "last_message_sent > 30 days ago, reactivation_sent = false",
-      "category": "MARKETING",
-      "message": "Hi {{name}}! 👋 It's been a while since we last saw you at {{clinic_name}}, and we just wanted to check in.\n\nRegular health check-ups with {{doctor_name}} are the best way to stay ahead of any concerns. If you'd like to book an appointment, reply *BOOK* and our team will reach out.\n\nTake care! 💙",
-      "placeholders": [
-        "name",
+        "patient_name",
         "clinic_name",
-        "doctor_name"
+        "doctor_name",
+        "reminder_detail"
       ],
       "component_parameters": [
-        "name",
+        "patient_name",
         "clinic_name",
-        "doctor_name"
+        "doctor_name",
+        "reminder_detail"
       ],
-      "notes": "Sent once after 30 days of inactivity. Category is MARKETING — requires opt-in for Twilio Content approval.",
-      "twilio_content_env": "TWILIO_CONTENT_REACTIVATION",
+      "notes": "Reusable patient reminder card. The workflow should fill reminder_detail with tomorrow/today/missed/health-check context.",
+      "twilio_content_env": "TWILIO_CONTENT_PATIENT_REMINDER",
+      "twilio_content_sid": null
+    },
+    {
+      "id": "medicine_reminder",
+      "workflow": "future-medicine-reminder-workflow",
+      "trigger": "Scheduled medicine reminder",
+      "category": "UTILITY",
+      "twilio_friendly_name": "medicine_reminder",
+      "message": "Hi {{patient_name}}, it is time for {{medicine_name}}. Dose: {{dosage}}. Timing: {{timing}}. {{instruction}} Reply TAKEN once done or HELP if you have a concern.",
+      "placeholders": [
+        "patient_name",
+        "medicine_name",
+        "dosage",
+        "timing",
+        "instruction"
+      ],
+      "component_parameters": [
+        "patient_name",
+        "medicine_name",
+        "dosage",
+        "timing",
+        "instruction"
+      ],
+      "notes": "Patient-facing medication adherence reminder. Requires a scheduling workflow before runtime use.",
+      "twilio_content_env": "TWILIO_CONTENT_MEDICINE_REMINDER",
+      "twilio_content_sid": null
+    },
+    {
+      "id": "prescription_delivery",
+      "workflow": "workflow-13-prescription-delivery",
+      "trigger": "Doctor issues prescription PDF after consultation",
+      "category": "UTILITY",
+      "twilio_friendly_name": "prescription_delivery",
+      "message": "Hi {{patient_name}}, your prescription from {{doctor_name}} at {{clinic_name}} is ready. Medicines: {{medicine_summary}}. Open prescription: {{pdf_url}}",
+      "placeholders": [
+        "patient_name",
+        "doctor_name",
+        "clinic_name",
+        "medicine_summary",
+        "pdf_url"
+      ],
+      "component_parameters": [
+        "patient_name",
+        "doctor_name",
+        "clinic_name",
+        "medicine_summary",
+        "pdf_url"
+      ],
+      "notes": "Post-consultation prescription card. WF13 maps {{1}} patient, {{2}} doctor, {{3}} clinic, {{4}} medicine summary, {{5}} PDF URL.",
+      "twilio_content_env": "TWILIO_CONTENT_PRESCRIPTION_DELIVERY",
       "twilio_content_sid": null
     },
     {

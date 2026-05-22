@@ -1,0 +1,271 @@
+{
+  "generated_at": "2026-05-22T23:40:50.607Z",
+  "cards": [
+    {
+      "id": "patient_onboarding",
+      "friendly_name": "patient_onboarding",
+      "category": "UTILITY",
+      "workflow": "workflow-7-new-patient",
+      "twilio_content_env": "TWILIO_CONTENT_PATIENT_ONBOARDING",
+      "variables": {
+        "1": "Ashutosh Sarkar",
+        "2": "City Hospital",
+        "3": "Dr. A. Sharma",
+        "4": "2026-05-25"
+      },
+      "variable_map": {
+        "1": "patient_name",
+        "2": "clinic_name",
+        "3": "doctor_name",
+        "4": "follow_up_date"
+      },
+      "body": "Hi {{1}}, welcome to {{2}}. We have registered your visit with {{3}}. Your follow-up date is {{4}}. Reply YES if this looks correct or RESCHEDULE if you need help.",
+      "content_api_payload": {
+        "friendly_name": "patient_onboarding",
+        "language": "en",
+        "variables": {
+          "1": "Ashutosh Sarkar",
+          "2": "City Hospital",
+          "3": "Dr. A. Sharma",
+          "4": "2026-05-25"
+        },
+        "types": {
+          "whatsapp/card": {
+            "header_text": "Patient Onboarding",
+            "body": "Hi {{1}}, welcome to {{2}}. We have registered your visit with {{3}}. Your follow-up date is {{4}}. Reply YES if this looks correct or RESCHEDULE if you need help.",
+            "footer": "vAItalcare support",
+            "actions": [
+              {
+                "type": "QUICK_REPLY",
+                "title": "Yes",
+                "id": "yes"
+              },
+              {
+                "type": "QUICK_REPLY",
+                "title": "Reschedule",
+                "id": "reschedule"
+              },
+              {
+                "type": "QUICK_REPLY",
+                "title": "Help",
+                "id": "help"
+              }
+            ]
+          }
+        }
+      },
+      "notes": "Patient-facing first message after QR intake. Matches existing Twilio patient_onboarding card: {{1}} patient, {{2}} clinic, {{3}} doctor, {{4}} follow-up date."
+    },
+    {
+      "id": "hospital_onboarding",
+      "friendly_name": "hospital_onboarding",
+      "category": "UTILITY",
+      "workflow": "workflow-12-hospital-boarding",
+      "twilio_content_env": "TWILIO_CONTENT_HOSPITAL_ONBOARDING",
+      "variables": {
+        "1": "City Hospital",
+        "2": "General Hospital",
+        "3": "Dr. A. Sharma",
+        "4": "Bangalore"
+      },
+      "variable_map": {
+        "1": "hospital_name",
+        "2": "facility_type",
+        "3": "doctor_name",
+        "4": "city"
+      },
+      "body": "Hi {{1}}, your onboarding for {{2}} is complete. We have registered {{3}} as the primary contact and {{4}} as the facility location. Reply CONFIRM if this is correct or EDIT if you need changes.",
+      "content_api_payload": {
+        "friendly_name": "hospital_onboarding",
+        "language": "en",
+        "variables": {
+          "1": "City Hospital",
+          "2": "General Hospital",
+          "3": "Dr. A. Sharma",
+          "4": "Bangalore"
+        },
+        "types": {
+          "whatsapp/card": {
+            "header_text": "Hospital Onboarding",
+            "body": "Hi {{1}}, your onboarding for {{2}} is complete. We have registered {{3}} as the primary contact and {{4}} as the facility location. Reply CONFIRM if this is correct or EDIT if you need changes.",
+            "footer": "vAItalcare support",
+            "actions": [
+              {
+                "type": "QUICK_REPLY",
+                "title": "Confirm",
+                "id": "confirm"
+              },
+              {
+                "type": "QUICK_REPLY",
+                "title": "Edit",
+                "id": "edit"
+              }
+            ]
+          }
+        }
+      },
+      "notes": "Admin/ops card for newly boarded hospitals. Matches existing Twilio hospital_onboarding card: {{1}} hospital, {{2}} facility type, {{3}} doctor/contact, {{4}} city."
+    },
+    {
+      "id": "patient_reminder",
+      "friendly_name": "patient_reminder",
+      "category": "UTILITY",
+      "workflow": "workflow-1-followup-reminder, workflow-2-sameday-reminder, workflow-3-missed-appointment, workflow-4-health-check, workflow-5-reactivation",
+      "twilio_content_env": "TWILIO_CONTENT_PATIENT_REMINDER",
+      "variables": {
+        "1": "Ashutosh Sarkar",
+        "2": "City Hospital",
+        "3": "Dr. A. Sharma",
+        "4": "Your follow-up is scheduled for tomorrow at 10:30 AM."
+      },
+      "variable_map": {
+        "1": "patient_name",
+        "2": "clinic_name",
+        "3": "doctor_name",
+        "4": "reminder_detail"
+      },
+      "body": "Hi {{1}}, this is a care reminder from {{2}} for your appointment with {{3}}. {{4}} Reply YES to confirm, RESCHEDULE to change, or HELP if you need support.",
+      "content_api_payload": {
+        "friendly_name": "patient_reminder",
+        "language": "en",
+        "variables": {
+          "1": "Ashutosh Sarkar",
+          "2": "City Hospital",
+          "3": "Dr. A. Sharma",
+          "4": "Your follow-up is scheduled for tomorrow at 10:30 AM."
+        },
+        "types": {
+          "whatsapp/card": {
+            "header_text": "Patient Reminder",
+            "body": "Hi {{1}}, this is a care reminder from {{2}} for your appointment with {{3}}. {{4}} Reply YES to confirm, RESCHEDULE to change, or HELP if you need support.",
+            "footer": "vAItalcare support",
+            "actions": [
+              {
+                "type": "QUICK_REPLY",
+                "title": "Yes",
+                "id": "yes"
+              },
+              {
+                "type": "QUICK_REPLY",
+                "title": "Reschedule",
+                "id": "reschedule"
+              },
+              {
+                "type": "QUICK_REPLY",
+                "title": "Help",
+                "id": "help"
+              }
+            ]
+          }
+        }
+      },
+      "notes": "Reusable patient reminder card. The workflow should fill reminder_detail with tomorrow/today/missed/health-check context."
+    },
+    {
+      "id": "medicine_reminder",
+      "friendly_name": "medicine_reminder",
+      "category": "UTILITY",
+      "workflow": "future-medicine-reminder-workflow",
+      "twilio_content_env": "TWILIO_CONTENT_MEDICINE_REMINDER",
+      "variables": {
+        "1": "Ashutosh Sarkar",
+        "2": "Paracetamol 500 mg",
+        "3": "1 tablet",
+        "4": "after breakfast",
+        "5": "Take with water after food."
+      },
+      "variable_map": {
+        "1": "patient_name",
+        "2": "medicine_name",
+        "3": "dosage",
+        "4": "timing",
+        "5": "instruction"
+      },
+      "body": "Hi {{1}}, it is time for {{2}}. Dose: {{3}}. Timing: {{4}}. {{5}} Reply TAKEN once done or HELP if you have a concern.",
+      "content_api_payload": {
+        "friendly_name": "medicine_reminder",
+        "language": "en",
+        "variables": {
+          "1": "Ashutosh Sarkar",
+          "2": "Paracetamol 500 mg",
+          "3": "1 tablet",
+          "4": "after breakfast",
+          "5": "Take with water after food."
+        },
+        "types": {
+          "whatsapp/card": {
+            "header_text": "Medicine Reminder",
+            "body": "Hi {{1}}, it is time for {{2}}. Dose: {{3}}. Timing: {{4}}. {{5}} Reply TAKEN once done or HELP if you have a concern.",
+            "footer": "vAItalcare support",
+            "actions": [
+              {
+                "type": "QUICK_REPLY",
+                "title": "Taken",
+                "id": "taken"
+              },
+              {
+                "type": "QUICK_REPLY",
+                "title": "Help",
+                "id": "help"
+              }
+            ]
+          }
+        }
+      },
+      "notes": "Patient-facing medication adherence reminder. Requires a scheduling workflow before runtime use."
+    },
+    {
+      "id": "prescription_delivery",
+      "friendly_name": "prescription_delivery",
+      "category": "UTILITY",
+      "workflow": "workflow-13-prescription-delivery",
+      "twilio_content_env": "TWILIO_CONTENT_PRESCRIPTION_DELIVERY",
+      "variables": {
+        "1": "Ashutosh Sarkar",
+        "2": "Dr. A. Sharma",
+        "3": "City Hospital",
+        "4": "Paracetamol 500 mg - 1 tablet, twice daily, after food, 5 days",
+        "5": "https://example.com/prescriptions/sample.pdf"
+      },
+      "variable_map": {
+        "1": "patient_name",
+        "2": "doctor_name",
+        "3": "clinic_name",
+        "4": "medicine_summary",
+        "5": "pdf_url"
+      },
+      "body": "Hi {{1}}, your prescription from {{2}} at {{3}} is ready. Medicines: {{4}}. Open prescription: {{5}}",
+      "content_api_payload": {
+        "friendly_name": "prescription_delivery",
+        "language": "en",
+        "variables": {
+          "1": "Ashutosh Sarkar",
+          "2": "Dr. A. Sharma",
+          "3": "City Hospital",
+          "4": "Paracetamol 500 mg - 1 tablet, twice daily, after food, 5 days",
+          "5": "https://example.com/prescriptions/sample.pdf"
+        },
+        "types": {
+          "whatsapp/card": {
+            "header_text": "Prescription Delivery",
+            "body": "Hi {{1}}, your prescription from {{2}} at {{3}} is ready. Medicines: {{4}}. Open prescription: {{5}}",
+            "footer": "vAItalcare support",
+            "actions": [
+              {
+                "type": "QUICK_REPLY",
+                "title": "Received",
+                "id": "received"
+              },
+              {
+                "type": "QUICK_REPLY",
+                "title": "Help",
+                "id": "help"
+              }
+            ]
+          }
+        }
+      },
+      "notes": "Post-consultation prescription card. WF13 maps {{1}} patient, {{2}} doctor, {{3}} clinic, {{4}} medicine summary, {{5}} PDF URL."
+    }
+  ]
+}

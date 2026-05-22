@@ -1,0 +1,40 @@
+{
+  "submitted_at": "2026-05-22T23:41:25.570Z",
+  "results": [
+    {
+      "id": "patient_onboarding",
+      "sid": "HXb8192571b56c7e1570f6b1e0b8b86279",
+      "status": "not_submitted",
+      "http_status": 400,
+      "message": "The template associated with this SID has already been submitted for approval. Please recreate a new template to make any changes."
+    },
+    {
+      "id": "hospital_onboarding",
+      "sid": "HXad188747f9e9e777ce878ec671eac66e",
+      "status": "not_submitted",
+      "http_status": 400,
+      "message": "The template associated with this SID has already been submitted for approval. Please recreate a new template to make any changes."
+    },
+    {
+      "id": "patient_reminder",
+      "sid": "HXac3457a246bd00cb61c0783c00e175d6",
+      "status": "received",
+      "http_status": 201,
+      "message": ""
+    },
+    {
+      "id": "medicine_reminder",
+      "sid": "HXb421bef31265c8e8c551a6c77a28f174",
+      "status": "received",
+      "http_status": 201,
+      "message": ""
+    },
+    {
+      "id": "prescription_delivery",
+      "sid": "HXa7e5a02d15ce2457344a352e11dba665",
+      "status": "received",
+      "http_status": 201,
+      "message": ""
+    }
+  ]
+}

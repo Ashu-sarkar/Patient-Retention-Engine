@@ -8,6 +8,8 @@
   },
   "scripts": {
     "validate-env": "node scripts/validate-env.js",
+    "generate:whatsapp-cards": "node scripts/generate-whatsapp-cards.js",
+    "push:twilio-templates": "node scripts/push-twilio-templates.js",
     "preflight": "node scripts/preflight-supabase.js",
     "setup": "node tests/setup-n8n.js",
     "test": "node tests/run-tests.js",

@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## WF13 — Prescription Delivery\n\n**Trigger:** POST webhook from `doctor-dashboard/index.html` after a prescription is issued.\n**Path:** `/webhook/prescription-delivery`\n\n**Flow:**\n1. Receive prescription_id, patient_id, visit_id, patient_name, phone, doctor_name, clinic_name, pdf_url\n2. Validate phone and PDF URL\n3. Send a WhatsApp message with the prescription PDF link through Twilio\n4. Update `public.prescriptions.delivery_status`\n5. Write `public.message_logs` and `public.system_logs` entries\n\nUse an approved Twilio Content template if the clinic sends prescriptions outside the active WhatsApp service window.",
+        "content": "## WF13 — Prescription Delivery\n\n**Trigger:** POST webhook from `doctor-dashboard/index.html` after a prescription is issued.\n**Path:** `/webhook/prescription-delivery`\n\n**Flow:**\n1. Receive prescription_id, patient_id, visit_id, patient_name, phone, doctor_name, clinic_name, medicines, pdf_url\n2. Validate phone and PDF URL\n3. Send a Twilio WhatsApp Content card using TWILIO_CONTENT_PRESCRIPTION_DELIVERY\n4. Update `public.prescriptions.delivery_status`\n5. Write `public.message_logs` and `public.system_logs` entries\n\nUse an approved Twilio Content template if the clinic sends prescriptions outside the active WhatsApp service window.",
         "height": 360,
         "width": 440
       },
@@ -35,7 +35,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst clean = value => String(value || '').trim();\nconst prescriptionId = clean(body.prescription_id);\nconst patientId = clean(body.patient_id);\nconst visitId = clean(body.visit_id);\nconst patientName = clean(body.patient_name) || 'there';\nconst phone = clean(body.phone);\nconst doctorName = clean(body.doctor_name) || $env.DEFAULT_DOCTOR_NAME || 'your doctor';\nconst clinicName = clean(body.clinic_name) || $env.DEFAULT_CLINIC_NAME || 'our clinic';\nconst pdfUrl = clean(body.pdf_url);\nconst errors = [];\nif (!prescriptionId) errors.push('prescription_id is required');\nif (!patientId) errors.push('patient_id is required');\nif (!phone || !/^\\+[1-9]\\d{6,14}$/.test(phone)) errors.push('phone must be E.164 format');\nif (!pdfUrl || !/^https:\\/\\//i.test(pdfUrl)) errors.push('pdf_url must be an HTTPS URL');\nif (errors.length) return [{ json: { _valid: false, _errors: errors } }];\nconst bodyText = `Hi ${patientName}, your prescription from ${doctorName} at ${clinicName} is ready. You can open it here: ${pdfUrl}`;\nreturn [{ json: { _valid: true, prescription_id: prescriptionId, patient_id: patientId, visit_id: visitId || null, patient_name: patientName, phone, doctor_name: doctorName, clinic_name: clinicName, pdf_url: pdfUrl, _to_phone: 'whatsapp:' + phone, _message_type: 'prescription_pdf', _scheduled_date: new Date().toLocaleDateString('en-CA', { timeZone: $env.TIMEZONE || 'Asia/Kolkata' }), _message_body: bodyText } }];"
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst clean = value => String(value || '').trim();\nconst prescriptionId = clean(body.prescription_id);\nconst patientId = clean(body.patient_id);\nconst visitId = clean(body.visit_id);\nconst patientName = clean(body.patient_name) || 'there';\nconst phone = clean(body.phone);\nconst doctorName = clean(body.doctor_name) || $env.DEFAULT_DOCTOR_NAME || 'your doctor';\nconst clinicName = clean(body.clinic_name) || $env.DEFAULT_CLINIC_NAME || 'our clinic';\nconst pdfUrl = clean(body.pdf_url);\nconst medicines = Array.isArray(body.medicines) ? body.medicines : [];\nconst medicineSummary = medicines\n  .map((m, index) => {\n    const name = clean(m.medicine_name || m.name);\n    const dosage = clean(m.dosage);\n    const frequency = clean(m.frequency);\n    const timing = clean(m.timing);\n    const duration = clean(m.duration);\n    const parts = [dosage, frequency, timing, duration].filter(Boolean).join(', ');\n    return name ? `${index + 1}. ${name}${parts ? ' - ' + parts : ''}` : '';\n  })\n  .filter(Boolean)\n  .join('; ')\n  .slice(0, 900) || 'As listed in the attached prescription';\nconst errors = [];\nif (!prescriptionId) errors.push('prescription_id is required');\nif (!patientId) errors.push('patient_id is required');\nif (!phone || !/^\\+[1-9]\\d{6,14}$/.test(phone)) errors.push('phone must be E.164 format');\nif (!pdfUrl || !/^https:\\/\\//i.test(pdfUrl)) errors.push('pdf_url must be an HTTPS URL');\nconst contentSid = clean($env.TWILIO_CONTENT_PRESCRIPTION_DELIVERY);\nif (!contentSid) errors.push('TWILIO_CONTENT_PRESCRIPTION_DELIVERY is required for prescription cards');\nif (errors.length) return [{ json: { _valid: false, _errors: errors } }];\nconst contentVariables = JSON.stringify({\n  '1': patientName,\n  '2': doctorName,\n  '3': clinicName,\n  '4': medicineSummary,\n  '5': pdfUrl,\n});\nconst bodyText = `Hi ${patientName}, your prescription from ${doctorName} at ${clinicName} is ready. Medicines: ${medicineSummary}. Open it here: ${pdfUrl}`;\nreturn [{ json: { _valid: true, prescription_id: prescriptionId, patient_id: patientId, visit_id: visitId || null, patient_name: patientName, phone, doctor_name: doctorName, clinic_name: clinicName, pdf_url: pdfUrl, medicine_summary: medicineSummary, _to_phone: 'whatsapp:' + phone, _message_type: 'prescription_pdf', _scheduled_date: new Date().toLocaleDateString('en-CA', { timeZone: $env.TIMEZONE || 'Asia/Kolkata' }), _content_sid: contentSid, _content_variables: contentVariables, _message_body: bodyText } }];"
       },
       "id": "13131313-1313-1313-1313-000000000003",
       "name": "Validate Delivery Payload",
@@ -97,12 +97,16 @@
               "value": "={{ $json._to_phone }}"
             },
             {
-              "name": "Body",
-              "value": "={{ $json._message_body }}"
+              "name": "ContentSid",
+              "value": "={{ $json._content_sid }}"
+            },
+            {
+              "name": "ContentVariables",
+              "value": "={{ $json._content_variables }}"
             },
             {
               "name": "StatusCallback",
-              "value": "={{ $env.TWILIO_STATUS_CALLBACK_URL || '' }}"
+              "value": "={{ $env.TWILIO_STATUS_CALLBACK_URL || \"\" }}"
             }
           ]
         },

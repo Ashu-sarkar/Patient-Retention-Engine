@@ -1469,6 +1469,7 @@
             phone: state.selected.patient?.phone || '',
             doctor_name: state.profile.doctor_name,
             clinic_name: state.profile.clinic_name,
+            medicines: collectPrescription().medicines,
             pdf_url: pdfUrl,
           }),
         });
