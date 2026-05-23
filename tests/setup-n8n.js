@@ -68,6 +68,7 @@ const OWNER_LASTNAME  = env.N8N_OWNER_LASTNAME  || 'User';
 
 // ── HTTP helpers ──────────────────────────────────────────────────────────────
 let sessionCookie = '';
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function request(method, endpoint, body, extraHeaders = {}) {
   const url  = `${BASE}${endpoint}`;
@@ -95,7 +96,7 @@ async function waitForN8n(maxSeconds = 90) {
       const r = await fetch(`${BASE}/healthz`);
       if (r.ok || r.status === 401) { console.log(`  ✅ n8n is up`); return; }
     } catch { /* not yet */ }
-    await new Promise(r => setTimeout(r, 3000));
+    await sleep(3000);
     process.stdout.write('.');
   }
   throw new Error(`n8n did not become healthy within ${maxSeconds}s`);
@@ -127,18 +128,36 @@ async function ensureOwner() {
 
 // ── Login + capture session cookie ───────────────────────────────────────────
 async function login() {
-  const { ok, json, headers } = await request('POST', '/rest/login', {
-    emailOrLdapLoginId: OWNER_EMAIL,
-    password:           OWNER_PASSWORD,
-  });
-  if (!ok) throw new Error(`Login failed: ${JSON.stringify(json).slice(0, 200)}`);
+  let lastResponse = null;
+  for (let attempt = 1; attempt <= 30; attempt++) {
+    const response = await request('POST', '/rest/login', {
+      emailOrLdapLoginId: OWNER_EMAIL,
+      password:           OWNER_PASSWORD,
+    });
+    lastResponse = response;
+    const raw = response.json?._raw || '';
+    const routeNotReady = response.status === 404 || /Cannot POST \/rest\/login/i.test(raw);
+    if (routeNotReady) {
+      if (attempt === 1) process.stdout.write('  Waiting for n8n login route');
+      process.stdout.write('.');
+      await sleep(2000);
+      continue;
+    }
+    if (!response.ok) {
+      throw new Error(`Login failed: ${JSON.stringify(response.json).slice(0, 200)}`);
+    }
 
-  // Capture the n8n-auth cookie from Set-Cookie header
-  const setCookie = headers.get('set-cookie') || '';
-  const match = setCookie.match(/n8n-auth=([^;]+)/);
-  if (!match) throw new Error('Login succeeded but no n8n-auth cookie found in response');
-  sessionCookie = `n8n-auth=${match[1]}`;
-  console.log(`  ✅ Logged in as ${json?.data?.email}`);
+    // Capture the n8n-auth cookie from Set-Cookie header
+    const setCookie = response.headers.get('set-cookie') || '';
+    const match = setCookie.match(/n8n-auth=([^;]+)/);
+    if (!match) throw new Error('Login succeeded but no n8n-auth cookie found in response');
+    sessionCookie = `n8n-auth=${match[1]}`;
+    if (attempt > 1) process.stdout.write('\n');
+    console.log(`  ✅ Logged in as ${response.json?.data?.email}`);
+    return;
+  }
+
+  throw new Error(`Login route did not become available: ${JSON.stringify(lastResponse?.json || {}).slice(0, 200)}`);
 }
 
 // ── Credential helpers ────────────────────────────────────────────────────────

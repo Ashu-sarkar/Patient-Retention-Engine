@@ -12,7 +12,9 @@ LOCAL_N8N_URL="http://127.0.0.1:${N8N_PORT}"
 # setup-n8n.js depends on here as well. The setup script logs in through the
 # container-local HTTP URL; secure cookies prevent that login from returning a
 # usable session cookie.
-export N8N_SECURE_COOKIE="${N8N_SECURE_COOKIE:-false}"
+# setup-n8n.js authenticates through the container-local HTTP URL. Force this
+# off so n8n returns a usable session cookie for the setup request path.
+export N8N_SECURE_COOKIE=false
 export N8N_BLOCK_ENV_ACCESS_IN_NODE="${N8N_BLOCK_ENV_ACCESS_IN_NODE:-false}"
 export GENERIC_TIMEZONE="${GENERIC_TIMEZONE:-${TIMEZONE:-Asia/Kolkata}}"
 
