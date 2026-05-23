@@ -49,6 +49,14 @@ done
 
 echo "[start.sh] Running production workflow setup..."
 SETUP_LOG="/tmp/patient-retention-setup.log"
+echo "[start.sh] Restoring bundled workflow exports through n8n CLI..."
+if n8n import:workflow --separate --input=/workflows 2>&1 | tee "${SETUP_LOG}.import"; then
+  echo "[start.sh] Workflow CLI import completed."
+else
+  echo "[start.sh] WARNING: workflow CLI import failed; REST setup will still attempt import." >&2
+  tail -80 "${SETUP_LOG}.import" >&2 || true
+fi
+
 if N8N_BASE_URL="${LOCAL_N8N_URL}" node /tests/setup-n8n.js 2>&1 | tee "${SETUP_LOG}"; then
   echo "[start.sh] Workflow setup completed."
 else

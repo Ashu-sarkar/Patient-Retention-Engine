@@ -358,7 +358,10 @@ async function main() {
 
   // 6. Activate
   console.log('\n── 6. Activate workflows ───────────────────────────────────');
-  const allWfs = await listWorkflows();
+  const managedWorkflowNames = new Set(
+    wfFiles.map(file => JSON.parse(fs.readFileSync(path.join(WF_DIR, file), 'utf8')).name)
+  );
+  const allWfs = (await listWorkflows()).filter(wf => managedWorkflowNames.has(wf.name));
 
   for (const wf of allWfs) {
     const { active, status, skipped, reactivated } = await activateWorkflow(wf.id);
