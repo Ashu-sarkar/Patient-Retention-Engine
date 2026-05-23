@@ -371,8 +371,13 @@ async function main() {
     hospital_name    : HF.primaryHospital,
     facility_type    : FACILITY_TYPE,
     address          : '12 Referral Street, Chennai, Tamil Nadu 600001',
+    city             : 'Chennai',
+    contact_phone    : '+919876543210',
+    admin_contact_name: 'Operations Manager',
     doctor_name      : HF.doctor,
     doctor_expertise : 'Lab diagnostics and pathology reporting',
+    doctor_registration_number: 'TNMC-12345',
+    consultation_hours: 'Mon-Sat, 10 AM - 2 PM',
   };
 
   await test('2.1  Valid hospital boarding → 200 + success response', async () => {
@@ -389,7 +394,12 @@ async function main() {
     const row = await getHospitalBoarding(HF.primaryHospital);
     assert(row, `Hospital row "${HF.primaryHospital}" not found in Supabase`);
     assert(row.facility_type === FACILITY_TYPE, `facility_type mismatch: "${row.facility_type}"`);
+    assert(row.city === HOSPITAL_BASE.city, `city mismatch: "${row.city}"`);
+    assert(row.contact_phone === HOSPITAL_BASE.contact_phone, `contact_phone mismatch: "${row.contact_phone}"`);
+    assert(row.admin_contact_name === HOSPITAL_BASE.admin_contact_name, `admin_contact_name mismatch: "${row.admin_contact_name}"`);
     assert(row.doctor_name === HF.doctor, `doctor_name mismatch: "${row.doctor_name}"`);
+    assert(row.doctor_registration_number === HOSPITAL_BASE.doctor_registration_number, `doctor_registration_number mismatch: "${row.doctor_registration_number}"`);
+    assert(row.consultation_hours === HOSPITAL_BASE.consultation_hours, `consultation_hours mismatch: "${row.consultation_hours}"`);
   });
 
   await test('2.3  WF12 system_log INFO entry recorded', async () => {
@@ -433,12 +443,6 @@ async function main() {
     hospital_name    : 'Test Hospital',
     doctor_name      : 'Dr Alpha',
     visit_date       : date(-1),             // yesterday
-    chief_complaint  : 'Fever and cough for two days',
-    symptoms_duration: 'Two days, mild body ache',
-    known_allergies  : 'None reported',
-    current_medicines: 'Paracetamol once yesterday',
-    existing_conditions: 'No known chronic condition',
-    vitals_notes     : 'Temp 99F, pulse 82',
     follow_up_required: 'Yes',
     follow_up_date   : date(3),             // 3 days from now
   };
@@ -467,7 +471,7 @@ async function main() {
     const visit = await getLatestVisitByPatient(pat.id);
     assert(visit, 'patient_visits row not found for registered patient');
     assert(visit.visit_status === 'waiting', `Expected waiting, got ${visit.visit_status}`);
-    assert(visit.chief_complaint === BASE.chief_complaint, `chief_complaint mismatch: ${visit.chief_complaint}`);
+    assert(!visit.chief_complaint, `chief_complaint should be added from doctor dashboard, got ${visit.chief_complaint}`);
     assert(visit.doctor_name === BASE.doctor_name, `doctor_name mismatch: ${visit.doctor_name}`);
   });
 
@@ -837,9 +841,6 @@ async function main() {
       hospital_name     : 'E2E Hospital',
       doctor_name       : 'Dr E2E',
       visit_date        : date(-1),
-      chief_complaint   : 'E2E headache and nausea',
-      symptoms_duration : 'Started this morning',
-      known_allergies   : 'None',
       follow_up_required: 'Yes',
       follow_up_date    : date(4),
     });
@@ -873,7 +874,7 @@ async function main() {
     const visit = await getLatestVisitByPatient(pat.id);
     assert(visit, 'No patient_visits row for E2E patient');
     assert(visit.visit_status === 'waiting', `Expected waiting, got ${visit.visit_status}`);
-    assert(visit.chief_complaint === 'E2E headache and nausea', `chief_complaint mismatch: ${visit.chief_complaint}`);
+    assert(!visit.chief_complaint, `chief_complaint should be doctor-dashboard owned, got ${visit.chief_complaint}`);
   });
 
   await test('7.4  Patient replies "confirm" → response_status = confirmed', async () => {
@@ -898,7 +899,6 @@ async function main() {
       hospital_name     : 'E2E Hospital 2',
       doctor_name       : 'Dr New',
       visit_date        : date(0),
-      chief_complaint   : 'Follow-up consultation',
       follow_up_required: 'No',
     });
     assert(status === 200, `Re-reg failed: ${status} ${JSON.stringify(json)}`);

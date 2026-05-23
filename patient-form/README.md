@@ -1,6 +1,6 @@
 # Patient Registration Form — QR Code Intake
 
-A zero-dependency, mobile-first HTML form that clinic patients fill by scanning a QR code. Data is sent directly to an n8n webhook (WF11), which upserts the patient into Supabase, creates a `patient_visits` waiting-room row, and triggers the welcome WhatsApp message.
+A zero-dependency, mobile-first HTML form that clinic patients fill by scanning a QR code. Data is sent directly to an n8n webhook (WF11), which upserts the patient into Supabase by WhatsApp phone number, creates a `patient_visits` waiting-room row, and triggers the welcome WhatsApp message. Clinical context is captured later in the doctor dashboard, not on the patient intake form.
 
 ---
 
@@ -141,14 +141,19 @@ index.html  (POST JSON)
       │
       ▼  https://n8n.your-domain.com/webhook/patient-form-intake
 WF11 — QR Form Intake
-      │  validates + maps fields
+      │  validates identity/routing fields
       │  generates PAT-XXXX code
-      ├──► Supabase public.patients  (identity upsert)
+      ├──► Supabase public.patients  (identity upsert by phone)
       ├──► Supabase public.patient_visits  (new waiting queue row)
       │
       └──► WF7 — New Patient Welcome (async HTTP call)
                   │
                   └──► Twilio WhatsApp: welcome message to patient
+
+Doctor dashboard
+      │
+      └──► Updates public.patient_visits with chief complaint, symptoms duration,
+           allergies, current medicines, existing conditions, and vitals notes.
 ```
 
 ---

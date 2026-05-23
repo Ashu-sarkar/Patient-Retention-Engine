@@ -348,8 +348,13 @@ CREATE TABLE IF NOT EXISTS public.hospital_boarding (
                      'Unspecified'
                    )),
   address            TEXT        NOT NULL,
+  city               TEXT,
+  contact_phone      TEXT,
+  admin_contact_name TEXT,
   doctor_name        TEXT        NOT NULL,
   doctor_expertise   TEXT        NOT NULL,
+  doctor_registration_number TEXT,
+  consultation_hours TEXT,
   created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -357,8 +362,13 @@ CREATE TABLE IF NOT EXISTS public.hospital_boarding (
 ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS hospital_name TEXT;
 ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS facility_type TEXT NOT NULL DEFAULT 'Unspecified';
 ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS address TEXT;
+ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS city TEXT;
+ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS contact_phone TEXT;
+ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS admin_contact_name TEXT;
 ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS doctor_name TEXT;
 ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS doctor_expertise TEXT;
+ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS doctor_registration_number TEXT;
+ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS consultation_hours TEXT;
 ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
@@ -366,6 +376,8 @@ CREATE INDEX IF NOT EXISTS idx_hospital_boarding_hospital_name
   ON public.hospital_boarding (lower(trim(hospital_name)));
 CREATE INDEX IF NOT EXISTS idx_hospital_boarding_facility_type
   ON public.hospital_boarding (facility_type);
+CREATE INDEX IF NOT EXISTS idx_hospital_boarding_city
+  ON public.hospital_boarding (lower(trim(city)));
 CREATE INDEX IF NOT EXISTS idx_hospital_boarding_doctor_name
   ON public.hospital_boarding (lower(trim(doctor_name)));
 

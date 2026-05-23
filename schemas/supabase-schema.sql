@@ -167,8 +167,13 @@ CREATE TABLE IF NOT EXISTS public.hospital_boarding (
                      'Unspecified'
                    )),
   address            TEXT        NOT NULL,
+  city               TEXT,
+  contact_phone      TEXT,
+  admin_contact_name TEXT,
   doctor_name        TEXT        NOT NULL,
   doctor_expertise   TEXT        NOT NULL,
+  doctor_registration_number TEXT,
+  consultation_hours TEXT,
   created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -177,6 +182,8 @@ CREATE INDEX IF NOT EXISTS idx_hospital_boarding_hospital_name
   ON public.hospital_boarding (lower(trim(hospital_name)));
 CREATE INDEX IF NOT EXISTS idx_hospital_boarding_facility_type
   ON public.hospital_boarding (facility_type);
+CREATE INDEX IF NOT EXISTS idx_hospital_boarding_city
+  ON public.hospital_boarding (lower(trim(city)));
 CREATE INDEX IF NOT EXISTS idx_hospital_boarding_doctor_name
   ON public.hospital_boarding (lower(trim(doctor_name)));
 

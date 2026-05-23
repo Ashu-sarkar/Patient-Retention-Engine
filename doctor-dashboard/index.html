@@ -476,6 +476,16 @@
       box-shadow: 0 8px 22px rgba(47, 101, 213, 0.06);
     }
     .clinical-note.context p { color: #1e3a8a; }
+    .clinical-fields {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfd;
+    }
+    .clinical-fields .wide { grid-column: 1 / -1; }
     .medicine-row {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -587,7 +597,8 @@
     }
     @media (max-width: 620px) {
       .main, .sidebar { padding: 14px; }
-      .facts, .medicine-row, .summary-strip { grid-template-columns: 1fr; }
+      .facts, .medicine-row, .clinical-fields, .summary-strip { grid-template-columns: 1fr; }
+      .clinical-fields .wide { grid-column: auto; }
       .topbar { align-items: flex-start; flex-direction: column; }
     }
   </style>
@@ -765,6 +776,13 @@
             </div>
           </div>
           <div id="history"></div>
+          <div class="panel-title" style="margin-top: 18px;">
+            <div>
+              <div class="section-kicker">Patient Timeline</div>
+              <h3>Previous Visits</h3>
+            </div>
+          </div>
+          <div id="visit-history"></div>
         </section>
 
         <section class="panel" id="consult-panel">
@@ -776,6 +794,38 @@
             <span class="status in_consultation" id="draft-state">Draft</span>
           </div>
           <form id="prescription-form" class="filters">
+            <div class="field wide" id="clinical-context-section">
+              <label>Visit Context</label>
+              <div class="clinical-fields">
+                <div class="field wide">
+                  <label for="chief-input">Chief Complaint</label>
+                  <textarea id="chief-input" placeholder="Patient's main concern"></textarea>
+                </div>
+                <div class="field">
+                  <label for="duration-input">Symptoms Duration</label>
+                  <input id="duration-input" type="text" placeholder="e.g. 2 days" />
+                </div>
+                <div class="field">
+                  <label for="allergies-input">Known Allergies</label>
+                  <input id="allergies-input" type="text" placeholder="e.g. Penicillin, none" />
+                </div>
+                <div class="field">
+                  <label for="current-meds-input">Current Medicines</label>
+                  <input id="current-meds-input" type="text" placeholder="Medicines already being taken" />
+                </div>
+                <div class="field">
+                  <label for="conditions-input">Existing Conditions</label>
+                  <input id="conditions-input" type="text" placeholder="e.g. Diabetes, hypertension" />
+                </div>
+                <div class="field wide">
+                  <label for="vitals-input">Vitals / Staff Notes</label>
+                  <textarea id="vitals-input" placeholder="BP, temperature, pulse, SpO2, or staff notes"></textarea>
+                </div>
+                <div class="wide">
+                  <button id="save-context" class="btn" type="button">Save Visit Context</button>
+                </div>
+              </div>
+            </div>
             <div class="field" id="consult-section">
               <label for="diagnosis">Diagnosis</label>
               <textarea id="diagnosis" placeholder="Clinical diagnosis"></textarea>
@@ -815,6 +865,16 @@
     const SUPABASE_URL = 'https://crsdccqseuhnimoxxeky.supabase.co';
     const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
     const PRESCRIPTION_WEBHOOK_URL = 'https://vaitalcare-production.up.railway.app/webhook/prescription-delivery';
+    const MEDICINE_TIMING_OPTIONS = [
+      'Empty Stomach',
+      'Before Breakfast',
+      'After Breakfast',
+      'Before Lunch',
+      'After Lunch',
+      'Evening',
+      'Before Dinner',
+      'After Dinner',
+    ];
 
     const HAS_SUPABASE_CONFIG = Boolean(
       window.supabase?.createClient &&
@@ -992,6 +1052,9 @@
         await saveDraft();
       });
       $('issue').addEventListener('click', issuePrescription);
+      $('save-context').addEventListener('click', async () => {
+        if (await saveClinicalContext()) showToast('Visit context saved.');
+      });
       $('mark-consult').addEventListener('click', () => updateVisitStatus('in_consultation'));
       $('mark-complete').addEventListener('click', () => updateVisitStatus('completed'));
     }
@@ -1003,6 +1066,22 @@
       hideBanner();
       await loadProfile();
       await loadVisits();
+      subscribeToQueueChanges();
+    }
+
+    function subscribeToQueueChanges() {
+      if (!sb || state.realtimeChannel) return;
+      let refreshTimer = null;
+      const scheduleRefresh = () => {
+        clearTimeout(refreshTimer);
+        refreshTimer = setTimeout(() => loadVisits(), 500);
+      };
+      state.realtimeChannel = sb.channel('doctor-dashboard-queue')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'patient_visits' }, scheduleRefresh)
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'patients' }, scheduleRefresh)
+        .subscribe(status => {
+          if (status === 'SUBSCRIBED') showToast('Queue live updates enabled.');
+        });
     }
 
     function showConfigFallback() {
@@ -1163,6 +1242,7 @@
         updateJourney('intake');
       });
       await loadPrescriptionHistory();
+      await loadVisitHistory();
     }
 
     function renderDetails() {
@@ -1197,6 +1277,13 @@
     }
 
     function resetPrescriptionForm() {
+      const visit = state.selected || {};
+      $('chief-input').value = visit.chief_complaint || '';
+      $('duration-input').value = visit.symptoms_duration || '';
+      $('allergies-input').value = visit.known_allergies || '';
+      $('current-meds-input').value = visit.current_medicines || '';
+      $('conditions-input').value = visit.existing_conditions || '';
+      $('vitals-input').value = visit.vitals_notes || '';
       $('diagnosis').value = '';
       $('remarks').value = '';
       $('advice').value = '';
@@ -1211,6 +1298,13 @@
       return { medicine_name: '', generic_name: '', dosage: '', frequency: '', timing: '', duration: '', instructions: '' };
     }
 
+    function renderTimingOptions(selected = '') {
+      return [''].concat(MEDICINE_TIMING_OPTIONS).map(value => {
+        const label = value || 'Select timing';
+        return `<option value="${escapeHtml(value)}"${value === selected ? ' selected' : ''}>${escapeHtml(label)}</option>`;
+      }).join('');
+    }
+
     function renderMedicines() {
       $('medicine-list').innerHTML = state.medicines.map((med, index) => `
         <div class="medicine-row" data-index="${index}">
@@ -1218,13 +1312,14 @@
           <div class="field"><label>Generic Name</label><input data-key="generic_name" value="${escapeHtml(med.generic_name)}" placeholder="Optional generic name" /></div>
           <div class="field"><label>Dosage</label><input data-key="dosage" value="${escapeHtml(med.dosage)}" placeholder="500 mg" /></div>
           <div class="field"><label>Frequency</label><input data-key="frequency" value="${escapeHtml(med.frequency)}" placeholder="1-0-1" /></div>
-          <div class="field"><label>Timing</label><input data-key="timing" value="${escapeHtml(med.timing)}" placeholder="After food" /></div>
+          <div class="field"><label>Timing</label><select data-key="timing">${renderTimingOptions(med.timing)}</select></div>
           <div class="field"><label>Duration</label><input data-key="duration" value="${escapeHtml(med.duration)}" placeholder="5 days" /></div>
           <div class="field wide"><label>Instructions</label><input data-key="instructions" value="${escapeHtml(med.instructions)}" placeholder="Additional instructions" /></div>
           <div class="wide"><button class="btn danger" type="button" data-remove="${index}">Remove</button></div>
         </div>`).join('');
-      document.querySelectorAll('.medicine-row input').forEach(input => {
-        input.addEventListener('input', event => {
+      document.querySelectorAll('.medicine-row input, .medicine-row select').forEach(input => {
+        const eventName = input.tagName === 'SELECT' ? 'change' : 'input';
+        input.addEventListener(eventName, event => {
           const row = event.target.closest('.medicine-row');
           state.medicines[Number(row.dataset.index)][event.target.dataset.key] = event.target.value;
         });
@@ -1236,6 +1331,46 @@
           renderMedicines();
         });
       });
+    }
+
+    function collectClinicalContext() {
+      return {
+        chief_complaint: $('chief-input').value.trim() || null,
+        symptoms_duration: $('duration-input').value.trim() || null,
+        known_allergies: $('allergies-input').value.trim() || null,
+        current_medicines: $('current-meds-input').value.trim() || null,
+        existing_conditions: $('conditions-input').value.trim() || null,
+        vitals_notes: $('vitals-input').value.trim() || null,
+      };
+    }
+
+    async function saveClinicalContext(refresh = true) {
+      if (!state.selected) return true;
+      const patch = collectClinicalContext();
+      if (state.demo) {
+        state.selected = { ...state.selected, ...patch };
+        state.visits = state.visits.map(v => v.id === state.selected.id ? state.selected : v);
+        if (refresh) {
+          renderDetails();
+          renderQueue();
+        }
+        return true;
+      }
+      const { data, error } = await sb
+        .from('patient_visits')
+        .update(patch)
+        .eq('id', state.selected.id)
+        .select('*, patient:patients(id, patient_code, name, phone, dob, sex, follow_up_required, follow_up_date, notes)')
+        .single();
+      if (error) {
+        showToast(error.message, true);
+        return false;
+      }
+      state.selected = data;
+      state.visits = state.visits.map(v => v.id === data.id ? data : v);
+      if (refresh) renderDetails();
+      renderQueue();
+      return true;
     }
 
     function collectPrescription() {
@@ -1262,6 +1397,8 @@
     async function saveDraft() {
       if (!state.selected) return;
       const payload = collectPrescription();
+      const clinicalSaved = await saveClinicalContext(false);
+      if (!clinicalSaved) return;
       if (state.demo) {
         const prescription = state.currentDraft || {
           id: `demo-rx-${Date.now()}`,
@@ -1375,7 +1512,7 @@
           action: 'issued',
           details: { pdf_storage_path: path },
         });
-        if (!state.demo) await triggerPrescriptionDelivery(prescription.id, signed.data.signedUrl);
+        if (!state.demo) await triggerPrescriptionDelivery(prescription.id, signed.data.signedUrl, payload.medicines);
         state.currentDraft = null;
         $('draft-state').textContent = 'Issued';
         showToast('Prescription issued and queued for WhatsApp.');
@@ -1455,7 +1592,7 @@
       return doc.output('blob');
     }
 
-    async function triggerPrescriptionDelivery(prescriptionId, pdfUrl) {
+    async function triggerPrescriptionDelivery(prescriptionId, pdfUrl, medicines = []) {
       if (!PRESCRIPTION_WEBHOOK_URL || PRESCRIPTION_WEBHOOK_URL.includes('your-n8n-domain')) return;
       try {
         await fetch(PRESCRIPTION_WEBHOOK_URL, {
@@ -1469,7 +1606,7 @@
             phone: state.selected.patient?.phone || '',
             doctor_name: state.profile.doctor_name,
             clinic_name: state.profile.clinic_name,
-            medicines: collectPrescription().medicines,
+            medicines,
             pdf_url: pdfUrl,
           }),
         });
@@ -1480,7 +1617,7 @@
 
     async function updateVisitStatus(status, notify = true) {
       if (!state.selected) return;
-      const patch = { visit_status: status };
+      const patch = { ...collectClinicalContext(), visit_status: status };
       if (status === 'in_consultation') patch.consultation_started_at = new Date().toISOString();
       if (status === 'completed') patch.completed_at = new Date().toISOString();
       if (state.demo) {
@@ -1522,6 +1659,21 @@
       renderPrescriptionHistory(data || []);
     }
 
+    async function loadVisitHistory() {
+      if (!state.selected) return;
+      if (state.demo) {
+        renderVisitHistory(state.visits.filter(v => v.patient_id === state.selected.patient_id));
+        return;
+      }
+      const { data, error } = await sb
+        .from('patient_visits')
+        .select('id, patient_id, patient_code, clinic_name, doctor_name, visit_date, visit_status, chief_complaint, prescriptions(diagnosis, clinical_remarks, issued_at)')
+        .eq('patient_id', state.selected.patient_id)
+        .order('checked_in_at', { ascending: false });
+      if (error) return showToast(error.message, true);
+      renderVisitHistory(data || []);
+    }
+
     function renderPrescriptionHistory(data) {
       $('history').innerHTML = data.map(rx => `
         <div class="history-item">
@@ -1530,6 +1682,18 @@
           <span class="status ${escapeHtml(rx.delivery_status)}">${escapeHtml(rx.delivery_status)}</span>
           ${rx.pdf_url ? `<p><a href="${escapeHtml(rx.pdf_url)}" target="_blank" rel="noopener">Open PDF</a></p>` : ''}
         </div>`).join('') || '<p style="color: var(--muted);">No prescriptions yet.</p>';
+    }
+
+    function renderVisitHistory(data) {
+      $('visit-history').innerHTML = data.map(visit => {
+        const current = state.selected && visit.id === state.selected.id ? 'Current visit' : visit.visit_status;
+        const latestRx = Array.isArray(visit.prescriptions) ? visit.prescriptions[0] : null;
+        return `<div class="history-item">
+          <strong>${escapeHtml(visit.visit_date || '-')} · ${escapeHtml(current)}</strong>
+          <p>${escapeHtml(visit.chief_complaint || latestRx?.diagnosis || latestRx?.clinical_remarks || 'No clinical note yet')}</p>
+          <span>${escapeHtml(visit.clinic_name || '')} · ${escapeHtml(visit.doctor_name || '')}</span>
+        </div>`;
+      }).join('') || '<p style="color: var(--muted);">No previous visits yet.</p>';
     }
 
     function demoVisits() {

@@ -1,9 +1,9 @@
 {
-  "name": "WF12 \u2014 Hospital / Clinic Boarding",
+  "name": "WF12 — Hospital / Clinic Boarding",
   "nodes": [
     {
       "parameters": {
-        "content": "## WF12 \u2014 Hospital / Clinic Boarding\n\n**Trigger:** POST webhook from `hospital-form/index.html`.\n**Path:** `/webhook/hospital-boarding`\n\n**Flow:**\n1. Receive JSON: hospital_name, facility_type, address, doctor_name, doctor_expertise\n2. Server-side validation (mirrors frontend)\n3. INSERT into `public.hospital_boarding`\n4. Log to `public.system_logs`\n5. Respond 200 with `{ status, id, hospital_name, facility_type, doctor_name }` (limited fields for UI)\n\n**Activation:** Import workflow, set Postgres credential, activate.\n\n**Credentials:** Postgres nodes \u2192 Supabase DB (service role / DB user with INSERT on `hospital_boarding`)",
+        "content": "## WF12 — Hospital / Clinic Boarding\n\n**Trigger:** POST webhook from `hospital-form/index.html`.\n**Path:** `/webhook/hospital-boarding`\n\n**Flow:**\n1. Receive JSON: hospital_name, facility_type, address, city, contact_phone, admin_contact_name, doctor_name, doctor_expertise, doctor_registration_number, consultation_hours\n2. Server-side validation (mirrors frontend)\n3. INSERT into `public.hospital_boarding`\n4. Log to `public.system_logs`\n5. Respond 200 with `{ status, id, hospital_name, facility_type, doctor_name }` (limited fields for UI)\n\n**Activation:** Import workflow, set Postgres credential, activate.\n\n**Credentials:** Postgres nodes → Supabase DB (service role / DB user with INSERT on `hospital_boarding`)",
         "height": 400,
         "width": 420
       },
@@ -24,7 +24,7 @@
         "options": {}
       },
       "id": "12121212-1212-1212-1212-000000000002",
-      "name": "Webhook \u2014 Hospital Boarding",
+      "name": "Webhook — Hospital Boarding",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1.1,
       "position": [
@@ -35,7 +35,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Server-side validation \u2014 mirrors hospital-form/index.html\nconst body = $input.first().json.body || $input.first().json;\n\nconst FACILITY_TYPES = [\n  'General Hospital',\n  'Multi-specialty Clinic',\n  'Dental Clinic',\n  'Pathology Lab',\n  'Diagnostic Center',\n  'Physiotherapy Clinic',\n  'Eye Clinic',\n  'ENT Clinic',\n  'Other Medical Facility',\n];\n\nconst hospital_name = String(body.hospital_name || '').trim();\nconst facility_type = String(body.facility_type || '').trim();\nconst address = String(body.address || '').trim();\nconst doctor_name = String(body.doctor_name || '').trim();\nconst doctor_expertise = String(body.doctor_expertise || '').trim();\n\nconst errors = [];\n\nif (!hospital_name || hospital_name.length < 2)\n  errors.push('hospital_name: required, minimum 2 characters');\n\nif (!FACILITY_TYPES.includes(facility_type))\n  errors.push('facility_type: required, must be a supported facility type');\n\nif (!address || address.length < 5)\n  errors.push('address: required, minimum 5 characters');\n\nif (!doctor_name || doctor_name.length < 2)\n  errors.push('doctor_name: required, minimum 2 characters');\n\nif (!doctor_expertise || doctor_expertise.length < 2)\n  errors.push('doctor_expertise: required, minimum 2 characters');\n\nif (errors.length > 0) {\n  return [{ json: { _valid: false, _errors: errors } }];\n}\n\nreturn [{\n  json: {\n    _valid: true,\n    _errors: [],\n    hospital_name,\n    facility_type,\n    address,\n    doctor_name,\n    doctor_expertise,\n  }\n}];"
+        "jsCode": "// Server-side validation — mirrors hospital-form/index.html\nconst body = $input.first().json.body || $input.first().json;\n\nconst FACILITY_TYPES = [\n  'General Hospital',\n  'Multi-specialty Clinic',\n  'Dental Clinic',\n  'Pathology Lab',\n  'Diagnostic Center',\n  'Physiotherapy Clinic',\n  'Eye Clinic',\n  'ENT Clinic',\n  'Other Medical Facility',\n];\n\nconst clean = (value, max = 1000) => String(value || '').trim().slice(0, max);\nconst hospital_name = clean(body.hospital_name, 200);\nconst facility_type = clean(body.facility_type, 80);\nconst address = clean(body.address, 1000);\nconst city = clean(body.city, 120);\nconst contact_phone = clean(body.contact_phone, 20).replace(/\\s+/g, '');\nconst admin_contact_name = clean(body.admin_contact_name, 150);\nconst doctor_name = clean(body.doctor_name, 150);\nconst doctor_expertise = clean(body.doctor_expertise, 500);\nconst doctor_registration_number = clean(body.doctor_registration_number, 120);\nconst consultation_hours = clean(body.consultation_hours, 200);\n\nconst errors = [];\n\nif (!hospital_name || hospital_name.length < 2)\n  errors.push('hospital_name: required, minimum 2 characters');\n\nif (!FACILITY_TYPES.includes(facility_type))\n  errors.push('facility_type: required, must be a supported facility type');\n\nif (!address || address.length < 5)\n  errors.push('address: required, minimum 5 characters');\n\nif (!city || city.length < 2)\n  errors.push('city: required, minimum 2 characters');\n\nif (!/^\\+?[1-9]\\d{6,14}$/.test(contact_phone))\n  errors.push('contact_phone: required, must be a valid phone number');\n\nif (!admin_contact_name || admin_contact_name.length < 2)\n  errors.push('admin_contact_name: required, minimum 2 characters');\n\nif (!doctor_name || doctor_name.length < 2)\n  errors.push('doctor_name: required, minimum 2 characters');\n\nif (!doctor_expertise || doctor_expertise.length < 2)\n  errors.push('doctor_expertise: required, minimum 2 characters');\n\nif (!doctor_registration_number || doctor_registration_number.length < 2)\n  errors.push('doctor_registration_number: required, minimum 2 characters');\n\nif (!consultation_hours || consultation_hours.length < 2)\n  errors.push('consultation_hours: required, minimum 2 characters');\n\nif (errors.length > 0) {\n  return [{ json: { _valid: false, _errors: errors } }];\n}\n\nreturn [{\n  json: {\n    _valid: true,\n    _errors: [],\n    hospital_name,\n    facility_type,\n    address,\n    city,\n    contact_phone,\n    admin_contact_name,\n    doctor_name,\n    doctor_expertise,\n    doctor_registration_number,\n    consultation_hours,\n  }\n}];"
       },
       "id": "12121212-1212-1212-1212-000000000003",
       "name": "Validate Hospital Form",
@@ -81,7 +81,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=INSERT INTO public.hospital_boarding\n  (hospital_name, facility_type, address, doctor_name, doctor_expertise)\nVALUES (\n  '{{ $json.hospital_name.replace(/'/g, \"''\") }}',\n  '{{ $json.facility_type.replace(/'/g, \"''\") }}',\n  '{{ $json.address.replace(/'/g, \"''\") }}',\n  '{{ $json.doctor_name.replace(/'/g, \"''\") }}',\n  '{{ $json.doctor_expertise.replace(/'/g, \"''\") }}'\n)\nRETURNING id::text AS id, hospital_name, facility_type, doctor_name;",
+        "query": "=INSERT INTO public.hospital_boarding\n  (hospital_name, facility_type, address, city, contact_phone, admin_contact_name,\n   doctor_name, doctor_expertise, doctor_registration_number, consultation_hours)\nVALUES (\n  '{{ $json.hospital_name.replace(/'/g, \"''\") }}',\n  '{{ $json.facility_type.replace(/'/g, \"''\") }}',\n  '{{ $json.address.replace(/'/g, \"''\") }}',\n  '{{ $json.city.replace(/'/g, \"''\") }}',\n  '{{ $json.contact_phone.replace(/'/g, \"''\") }}',\n  '{{ $json.admin_contact_name.replace(/'/g, \"''\") }}',\n  '{{ $json.doctor_name.replace(/'/g, \"''\") }}',\n  '{{ $json.doctor_expertise.replace(/'/g, \"''\") }}',\n  '{{ $json.doctor_registration_number.replace(/'/g, \"''\") }}',\n  '{{ $json.consultation_hours.replace(/'/g, \"''\") }}'\n)\nRETURNING id::text AS id, hospital_name, facility_type, city, contact_phone, admin_contact_name, doctor_name;",
         "options": {}
       },
       "id": "12121212-1212-1212-1212-000000000005",
@@ -119,7 +119,7 @@
             "execution_id": "={{ $execution.id }}",
             "log_level": "INFO",
             "message": "Hospital / clinic boarding submitted",
-            "details": "={{ JSON.stringify({ id: $('Insert Hospital Row').first().json.id, hospital_name: $('Insert Hospital Row').first().json.hospital_name, facility_type: $('Insert Hospital Row').first().json.facility_type, doctor_name: $('Insert Hospital Row').first().json.doctor_name }) }}"
+            "details": "={{ JSON.stringify({ id: $('Insert Hospital Row').first().json.id, hospital_name: $('Insert Hospital Row').first().json.hospital_name, facility_type: $('Insert Hospital Row').first().json.facility_type, city: $('Insert Hospital Row').first().json.city, contact_phone: $('Insert Hospital Row').first().json.contact_phone, admin_contact_name: $('Insert Hospital Row').first().json.admin_contact_name, doctor_name: $('Insert Hospital Row').first().json.doctor_name }) }}"
           },
           "matchingColumns": [],
           "schema": []
@@ -145,7 +145,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ status: 'success', id: $('Insert Hospital Row').first().json.id, hospital_name: $('Insert Hospital Row').first().json.hospital_name, facility_type: $('Insert Hospital Row').first().json.facility_type, doctor_name: $('Insert Hospital Row').first().json.doctor_name, message: 'Listing saved successfully.' }) }}",
+        "responseBody": "={{ JSON.stringify({ status: 'success', id: $('Insert Hospital Row').first().json.id, hospital_name: $('Insert Hospital Row').first().json.hospital_name, facility_type: $('Insert Hospital Row').first().json.facility_type, city: $('Insert Hospital Row').first().json.city, doctor_name: $('Insert Hospital Row').first().json.doctor_name, message: 'Listing saved successfully.' }) }}",
         "options": {
           "responseCode": 200
         }
@@ -178,7 +178,7 @@
             "workflow_name": "workflow-12-hospital-boarding",
             "execution_id": "={{ $execution.id }}",
             "log_level": "WARN",
-            "message": "Hospital boarding rejected \u2014 validation failed",
+            "message": "Hospital boarding rejected — validation failed",
             "details": "={{ JSON.stringify({ errors: $('Validate Hospital Form').first().json._errors }) }}"
           },
           "matchingColumns": [],
@@ -221,7 +221,7 @@
     }
   ],
   "connections": {
-    "Webhook \u2014 Hospital Boarding": {
+    "Webhook — Hospital Boarding": {
       "main": [
         [
           {

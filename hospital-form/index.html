@@ -390,6 +390,27 @@
           </div>
 
           <div class="field">
+            <label class="label" for="city">City <span class="req">*</span></label>
+            <input id="city" name="city" type="text" class="inp"
+                   placeholder="e.g. Bangalore" autocomplete="address-level2" maxlength="120" />
+            <span class="errmsg" id="e-city">Enter the facility city</span>
+          </div>
+
+          <div class="field">
+            <label class="label" for="contact_phone">Contact phone <span class="req">*</span></label>
+            <input id="contact_phone" name="contact_phone" type="tel" class="inp"
+                   placeholder="Clinic/admin contact number" autocomplete="tel" maxlength="16" />
+            <span class="errmsg" id="e-contact_phone">Enter a valid phone number</span>
+          </div>
+
+          <div class="field">
+            <label class="label" for="admin_contact_name">Admin contact name <span class="req">*</span></label>
+            <input id="admin_contact_name" name="admin_contact_name" type="text" class="inp"
+                   placeholder="Person who confirms onboarding" autocomplete="name" maxlength="150" />
+            <span class="errmsg" id="e-admin_contact_name">Enter admin contact name</span>
+          </div>
+
+          <div class="field">
             <label class="label" for="doctor_name">Doctor name <span class="req">*</span></label>
             <input id="doctor_name" name="doctor_name" type="text" class="inp"
                    placeholder="Dr. Name" autocomplete="name" maxlength="150" />
@@ -401,6 +422,20 @@
             <textarea id="doctor_expertise" name="doctor_expertise" class="ta" maxlength="500"
                       placeholder="e.g. Cardiology, General medicine"></textarea>
             <span class="errmsg" id="e-doctor_expertise">Describe specialty (at least 2 characters)</span>
+          </div>
+
+          <div class="field">
+            <label class="label" for="doctor_registration_number">Doctor registration number <span class="req">*</span></label>
+            <input id="doctor_registration_number" name="doctor_registration_number" type="text" class="inp"
+                   placeholder="Medical council registration number" maxlength="120" />
+            <span class="errmsg" id="e-doctor_registration_number">Enter registration number</span>
+          </div>
+
+          <div class="field">
+            <label class="label" for="consultation_hours">Consultation hours <span class="req">*</span></label>
+            <input id="consultation_hours" name="consultation_hours" type="text" class="inp"
+                   placeholder="e.g. Mon-Sat, 10 AM - 2 PM" maxlength="200" />
+            <span class="errmsg" id="e-consultation_hours">Enter consultation hours</span>
           </div>
 
         </div>
@@ -482,7 +517,8 @@ function clearErr(id) {
   if (msg) msg.classList.remove('show');
 }
 function clearAllErr() {
-  ['hospital_name', 'facility_type', 'address', 'doctor_name', 'doctor_expertise'].forEach(clearErr);
+  ['hospital_name', 'facility_type', 'address', 'city', 'contact_phone', 'admin_contact_name',
+   'doctor_name', 'doctor_expertise', 'doctor_registration_number', 'consultation_hours'].forEach(clearErr);
 }
 
 function validate() {
@@ -493,8 +529,13 @@ function validate() {
   const hospital = $('hospital_name').value.trim();
   const facilityType = $('facility_type').value.trim();
   const address = $('address').value.trim();
+  const city = $('city').value.trim();
+  const contactPhone = $('contact_phone').value.trim();
+  const adminContact = $('admin_contact_name').value.trim();
   const doctor = $('doctor_name').value.trim();
   const expertise = $('doctor_expertise').value.trim();
+  const registration = $('doctor_registration_number').value.trim();
+  const hours = $('consultation_hours').value.trim();
 
   if (!hospital || hospital.length < 2) {
     showErr('hospital_name');
@@ -511,6 +552,21 @@ function validate() {
     ok = false;
     firstInvalid = firstInvalid || $('address');
   }
+  if (!city || city.length < 2) {
+    showErr('city');
+    ok = false;
+    firstInvalid = firstInvalid || $('city');
+  }
+  if (!/^(\+?[1-9]\d{6,14})$/.test(contactPhone.replace(/\s+/g, ''))) {
+    showErr('contact_phone');
+    ok = false;
+    firstInvalid = firstInvalid || $('contact_phone');
+  }
+  if (!adminContact || adminContact.length < 2) {
+    showErr('admin_contact_name');
+    ok = false;
+    firstInvalid = firstInvalid || $('admin_contact_name');
+  }
   if (!doctor || doctor.length < 2) {
     showErr('doctor_name');
     ok = false;
@@ -521,6 +577,16 @@ function validate() {
     ok = false;
     firstInvalid = firstInvalid || $('doctor_expertise');
   }
+  if (!registration || registration.length < 2) {
+    showErr('doctor_registration_number');
+    ok = false;
+    firstInvalid = firstInvalid || $('doctor_registration_number');
+  }
+  if (!hours || hours.length < 2) {
+    showErr('consultation_hours');
+    ok = false;
+    firstInvalid = firstInvalid || $('consultation_hours');
+  }
 
   if (!ok && firstInvalid) {
     firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -529,7 +595,8 @@ function validate() {
   return ok;
 }
 
-['hospital_name', 'facility_type', 'address', 'doctor_name', 'doctor_expertise'].forEach(id => {
+['hospital_name', 'facility_type', 'address', 'city', 'contact_phone', 'admin_contact_name',
+ 'doctor_name', 'doctor_expertise', 'doctor_registration_number', 'consultation_hours'].forEach(id => {
   const el = $(id);
   if (!el) return;
   const eventName = el.tagName === 'SELECT' ? 'change' : 'input';
@@ -558,8 +625,13 @@ form.addEventListener('submit', async function (e) {
     hospital_name: $('hospital_name').value.trim(),
     facility_type: $('facility_type').value.trim(),
     address: $('address').value.trim(),
+    city: $('city').value.trim(),
+    contact_phone: $('contact_phone').value.trim().replace(/\s+/g, ''),
+    admin_contact_name: $('admin_contact_name').value.trim(),
     doctor_name: $('doctor_name').value.trim(),
     doctor_expertise: $('doctor_expertise').value.trim(),
+    doctor_registration_number: $('doctor_registration_number').value.trim(),
+    consultation_hours: $('consultation_hours').value.trim(),
   };
   const body = new URLSearchParams(payload);
 

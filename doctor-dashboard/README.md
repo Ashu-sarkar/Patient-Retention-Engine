@@ -36,11 +36,14 @@ Deploy the `doctor-dashboard/` folder as a static site through Vercel, Netlify, 
 
 1. Patient scans the QR and submits `patient-form`.
 2. WF11 upserts `patients` and inserts a `patient_visits` row with `visit_status = waiting`.
-3. Doctor signs in, opens the queue, reviews intake details, and saves a draft prescription.
+3. Doctor signs in, opens the queue, adds optional visit context such as chief complaint, allergies, current medicines, conditions, vitals, and saves a draft prescription.
 4. Doctor issues the prescription. The dashboard generates a PDF, uploads it to the private `prescriptions` Supabase Storage bucket, stores a signed URL, marks the visit completed, and calls WF13 for WhatsApp delivery.
 
 ## UI and Performance Notes
 
 - Open `index.html?demo=1` locally to review the full dashboard with sample data without touching Supabase.
 - The prescription PDF library is lazy-loaded only when the doctor clicks issue, keeping the queue and consultation screen fast on first load.
+- The QR patient form only captures identity and routing fields. Clinical context is owned by the doctor dashboard and written back to `patient_visits`.
+- Patient matching uses the normalized WhatsApp phone number in `patients.phone`; `patient_visits.patient_id` links every visit back to that patient row.
+- Repeat visits create new `patient_visits` rows for the same patient, and the dashboard shows previous visits plus prescription history for that `patient_id`.
 - The UI uses skeleton queue loading, local filtering, responsive layout, and reduced-motion support for a smoother clinical workflow.

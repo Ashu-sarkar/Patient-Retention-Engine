@@ -53,10 +53,12 @@ QR form submission
 
 ```text
 Patient QR form
-  -> WF11 validates demographics + basic clinical context
-  -> public.patients upsert
+  -> WF11 validates identity + visit routing
+  -> public.patients upsert by normalized WhatsApp phone
   -> public.patient_visits insert, visit_status = waiting
   -> Doctor Dashboard reads assigned visits via Supabase Auth + RLS
+  -> Doctor Dashboard updates optional visit clinical context
+  -> Previous visits and prescriptions remain linked by patient_id
   -> Doctor saves prescription draft
   -> Doctor issues PDF to Supabase Storage
   -> WF13 sends PDF link on WhatsApp and logs delivery state
