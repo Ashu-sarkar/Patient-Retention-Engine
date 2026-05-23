@@ -86,7 +86,7 @@ Configure and deploy `doctor-dashboard/index.html`, then share the deployed `doc
 - Use a public HTTPS `WEBHOOK_URL`.
 - Register Twilio inbound WhatsApp replies to `/webhook/feedback-listener`.
 - Register Twilio status callbacks to `/webhook/twilio-status-callback`.
-- Import and activate WF13, then set `PRESCRIPTION_WEBHOOK_URL` in `doctor-dashboard/index.html` to `/webhook/prescription-delivery`.
+- Import and activate WF13, deploy `supabase/functions/prescription-delivery`, and set matching `INTERNAL_WEBHOOK_SECRET` values in n8n and Supabase function secrets.
 - Add prescription header fields to each `doctor_profiles` row when available: qualification, clinic address/city/phone/email/website, logo URL, doctor phone, and signature image URL. The dashboard falls back to matching hospital onboarding data and stores doctor/clinic snapshots on each issued prescription.
 - Use approved Twilio Content templates for proactive WhatsApp messages outside the 24-hour customer service window.
 - Keep `N8N_ENCRYPTION_KEY` stable forever after first launch.

@@ -86,7 +86,9 @@ These are the values still required from your side before production works:
 - `TWILIO_WHATSAPP_FROM`
 - `ADMIN_WHATSAPP_NUMBER`
 - Doctor dashboard `SUPABASE_ANON_KEY`
-- Doctor dashboard `PRESCRIPTION_WEBHOOK_URL`
+- Doctor dashboard `PRESCRIPTION_DELIVERY_FUNCTION`
+- Supabase Edge Function `prescription-delivery` deployed
+- Matching `INTERNAL_WEBHOOK_SECRET` set in n8n and Supabase function secrets
 - At least one Supabase Auth doctor user and matching `doctor_profiles` row
 
 ## Needed For Proactive WhatsApp Templates

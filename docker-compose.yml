@@ -16,6 +16,7 @@ services:
       # Stable encryption key — MUST be set before first launch and never changed.
       # Generate with: openssl rand -hex 32
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - INTERNAL_WEBHOOK_SECRET=${INTERNAL_WEBHOOK_SECRET}
       # Allow session cookies over plain HTTP (required for local dev without TLS)
       - N8N_SECURE_COOKIE=false
       # Required for workflow Code nodes using $env.*.
@@ -47,6 +48,7 @@ services:
       - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
       - TWILIO_WHATSAPP_FROM=${TWILIO_WHATSAPP_FROM}
       - TWILIO_STATUS_CALLBACK_URL=${TWILIO_STATUS_CALLBACK_URL}
+      - TWILIO_VALIDATE_WEBHOOK_SIGNATURE=${TWILIO_VALIDATE_WEBHOOK_SIGNATURE:-false}
       - TWILIO_CONTENT_WELCOME=${TWILIO_CONTENT_WELCOME}
       - TWILIO_CONTENT_FOLLOW_UP_REMINDER=${TWILIO_CONTENT_FOLLOW_UP_REMINDER}
       - TWILIO_CONTENT_SAME_DAY_REMINDER=${TWILIO_CONTENT_SAME_DAY_REMINDER}

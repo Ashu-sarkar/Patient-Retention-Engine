@@ -897,7 +897,7 @@
   <script>
     const SUPABASE_URL = 'https://crsdccqseuhnimoxxeky.supabase.co';
     const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
-    const PRESCRIPTION_WEBHOOK_URL = 'https://vaitalcare-production.up.railway.app/webhook/prescription-delivery';
+    const PRESCRIPTION_DELIVERY_FUNCTION = 'prescription-delivery';
     const MEDICINE_TIMING_OPTIONS = [
       'Empty Stomach',
       'Before Breakfast',
@@ -1685,7 +1685,7 @@
           action: 'issued',
           details: { pdf_storage_path: path },
         });
-        if (!state.demo) await triggerPrescriptionDelivery(prescription.id, signed.data.signedUrl, payload.medicines);
+        if (!state.demo) await triggerPrescriptionDelivery(prescription.id);
         state.currentDraft = null;
         $('draft-state').textContent = 'Issued';
         showToast('Prescription issued and queued for WhatsApp.');
@@ -1953,26 +1953,15 @@
       return doc.output('blob');
     }
 
-    async function triggerPrescriptionDelivery(prescriptionId, pdfUrl, medicines = []) {
-      if (!PRESCRIPTION_WEBHOOK_URL || PRESCRIPTION_WEBHOOK_URL.includes('your-n8n-domain')) return;
+    async function triggerPrescriptionDelivery(prescriptionId) {
+      if (!PRESCRIPTION_DELIVERY_FUNCTION) return;
       try {
-        await fetch(PRESCRIPTION_WEBHOOK_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prescription_id: prescriptionId,
-            patient_id: state.selected.patient_id,
-            visit_id: state.selected.id,
-            patient_name: state.selected.patient?.name || '',
-            phone: state.selected.patient?.phone || '',
-            doctor_name: state.profile.doctor_name,
-            clinic_name: state.profile.clinic_name,
-            medicines,
-            pdf_url: pdfUrl,
-          }),
+        const { error } = await sb.functions.invoke(PRESCRIPTION_DELIVERY_FUNCTION, {
+          body: { prescription_id: prescriptionId },
         });
+        if (error) throw error;
       } catch (error) {
-        showToast('Prescription saved, but delivery webhook was unreachable.', true);
+        showToast(error.message || 'Prescription saved, but secure delivery gateway was unreachable.', true);
       }
     }
 

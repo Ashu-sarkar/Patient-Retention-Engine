@@ -26,7 +26,7 @@ QR form submission
 ## Layers
 
 - **Input:** `patient-form/index.html` and `hospital-form/index.html` are static forms that POST to n8n webhooks.
-- **Doctor app:** `doctor-dashboard/index.html` is a Supabase Auth dashboard for queue review, prescription drafting, PDF issue, and delivery handoff. Doctors authenticate with WhatsApp OTP using the registered onboarding phone; Supabase RLS scopes data to the claimed doctor profile.
+- **Doctor app:** `doctor-dashboard/index.html` is a Supabase Auth dashboard for queue review, prescription drafting, PDF issue, and delivery handoff. Doctors authenticate with WhatsApp OTP using the registered onboarding phone; Supabase RLS scopes data to the claimed doctor profile. Prescription delivery goes through the `prescription-delivery` Supabase Edge Function, which verifies the doctor session and signs the n8n WF13 call with an internal HMAC secret.
 - **Orchestration:** n8n workflows implement validation, scheduling, messaging, reply handling, status callbacks, and error handling.
 - **Database:** Supabase PostgreSQL stores patients, visit queue rows, doctor profiles, prescriptions, medicines, message logs, idempotency ledger, hospital boarding, and system logs.
 - **Messaging:** Twilio Programmable Messaging sends and receives WhatsApp messages.

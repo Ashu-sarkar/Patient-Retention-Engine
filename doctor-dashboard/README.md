@@ -9,10 +9,10 @@ Open `doctor-dashboard/index.html` and replace:
 ```js
 const SUPABASE_URL = 'https://crsdccqseuhnimoxxeky.supabase.co';
 const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
-const PRESCRIPTION_WEBHOOK_URL = 'https://vaitalcare-production.up.railway.app/webhook/prescription-delivery';
+const PRESCRIPTION_DELIVERY_FUNCTION = 'prescription-delivery';
 ```
 
-`SUPABASE_ANON_KEY` must be copied from Supabase Project Settings -> API. WF13 must be imported and active before prescription WhatsApp delivery works.
+`SUPABASE_ANON_KEY` must be copied from Supabase Project Settings -> API. WF13 and the `prescription-delivery` Supabase Edge Function must be deployed before prescription WhatsApp delivery works.
 
 The login URL to share with doctors is the deployed static URL for this folder, for example:
 
@@ -28,6 +28,20 @@ For local preview, open `doctor-dashboard/index.html?demo=1`.
 2. Configure the Supabase Auth SMS provider to deliver OTPs through WhatsApp where supported by your provider setup.
 3. Ensure the hospital onboarding form captures each doctor's WhatsApp number in international format, for example `+919876543210`.
 4. Run `npm run preflight` so Supabase has the phone-matching RPC and RLS policies.
+
+## Secure Prescription Delivery
+
+The browser dashboard does not call n8n directly. After a prescription PDF is issued, it invokes the Supabase Edge Function `prescription-delivery` with only `prescription_id`. The function verifies the Supabase Auth session, relies on RLS to prove prescription ownership, loads the trusted patient/doctor/medicine/PDF data from Supabase, then calls WF13 with an HMAC-signed request.
+
+Set these Supabase function secrets before deployment:
+
+```bash
+supabase secrets set N8N_PRESCRIPTION_DELIVERY_URL=https://your-n8n.example.com/webhook/prescription-delivery
+supabase secrets set INTERNAL_WEBHOOK_SECRET="$(openssl rand -hex 32)"
+supabase secrets set DOCTOR_DASHBOARD_ORIGIN=https://your-dashboard.example.com
+```
+
+Use the same `INTERNAL_WEBHOOK_SECRET` in the n8n runtime environment so WF13 can verify `X-Internal-Signature`.
 
 At login, the dashboard sends an OTP to the entered WhatsApp number. After verification, Supabase issues the authenticated session. The dashboard then calls `get_or_create_doctor_profile_for_current_user()`:
 
@@ -64,7 +78,7 @@ Deploy the `doctor-dashboard/` folder as a static site through Vercel, Netlify, 
 1. Patient scans the QR and submits `patient-form`.
 2. WF11 upserts `patients` and inserts a `patient_visits` row with `visit_status = waiting`.
 3. Doctor signs in, opens the queue, adds optional visit context such as chief complaint, allergies, current medicines, conditions, vitals, and saves a draft prescription.
-4. Doctor issues the prescription. The dashboard generates a PDF, uploads it to the private `prescriptions` Supabase Storage bucket, stores a signed URL, marks the visit completed, and calls WF13 for WhatsApp delivery.
+4. Doctor issues the prescription. The dashboard generates a PDF, uploads it to the private `prescriptions` Supabase Storage bucket, stores a signed URL, marks the visit completed, and invokes the secure Supabase Edge Function for WhatsApp delivery.
 5. The prescription row stores `doctor_snapshot` and `clinic_snapshot`, so the PDF and patient prescription history keep the issuing doctor/clinic details even if the profile changes later.
 
 ## Prescription PDF Format

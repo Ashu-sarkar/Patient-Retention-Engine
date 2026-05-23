@@ -40,6 +40,7 @@ const required = [
   'N8N_OWNER_EMAIL',
   'N8N_OWNER_PASSWORD',
   'WEBHOOK_URL',
+  'INTERNAL_WEBHOOK_SECRET',
   'SUPABASE_URL',
   'SUPABASE_SERVICE_ROLE_KEY',
   'SUPABASE_DB_HOST',
@@ -50,6 +51,7 @@ const required = [
   'TWILIO_AUTH_TOKEN',
   'TWILIO_WHATSAPP_FROM',
   'TWILIO_STATUS_CALLBACK_URL',
+  'N8N_PRESCRIPTION_DELIVERY_URL',
 ];
 
 for (const key of required) {
@@ -105,16 +107,32 @@ if (env.TWILIO_WHATSAPP_FROM && !/^whatsapp:\+\d{7,15}$/.test(env.TWILIO_WHATSAP
   errors.push('TWILIO_WHATSAPP_FROM must be in the form whatsapp:+14155238886.');
 }
 
-for (const key of ['WEBHOOK_URL', 'TWILIO_STATUS_CALLBACK_URL']) {
+if (env.INTERNAL_WEBHOOK_SECRET && env.INTERNAL_WEBHOOK_SECRET.length < 32) {
+  errors.push('INTERNAL_WEBHOOK_SECRET must be at least 32 characters.');
+}
+
+if (env.N8N_ENCRYPTION_KEY && env.INTERNAL_WEBHOOK_SECRET && env.N8N_ENCRYPTION_KEY === env.INTERNAL_WEBHOOK_SECRET) {
+  errors.push('INTERNAL_WEBHOOK_SECRET must be different from N8N_ENCRYPTION_KEY.');
+}
+
+for (const key of ['WEBHOOK_URL', 'TWILIO_STATUS_CALLBACK_URL', 'N8N_PRESCRIPTION_DELIVERY_URL', 'DOCTOR_DASHBOARD_ORIGIN']) {
   if (!env[key]) continue;
   try {
     const url = new URL(env[key]);
     if (!['http:', 'https:'].includes(url.protocol)) errors.push(`${key} must be http(s).`);
-    if (key === 'WEBHOOK_URL' && url.protocol !== 'https:' && !/localhost|127\.0\.0\.1/.test(url.hostname)) {
-      warnings.push('Production WEBHOOK_URL should be HTTPS.');
+    if (['WEBHOOK_URL', 'TWILIO_STATUS_CALLBACK_URL', 'N8N_PRESCRIPTION_DELIVERY_URL', 'DOCTOR_DASHBOARD_ORIGIN'].includes(key) &&
+        url.protocol !== 'https:' && !/localhost|127\.0\.0\.1/.test(url.hostname)) {
+      warnings.push(`Production ${key} should be HTTPS.`);
     }
   } catch {
     errors.push(`${key} is not a valid URL.`);
+  }
+}
+
+if (String(env.TWILIO_VALIDATE_WEBHOOK_SIGNATURE || '').toLowerCase() === 'true') {
+  const webhookUrl = env.WEBHOOK_URL || '';
+  if (!webhookUrl.startsWith('https://')) {
+    errors.push('TWILIO_VALIDATE_WEBHOOK_SIGNATURE=true requires production WEBHOOK_URL to be HTTPS and exactly match Twilio webhook configuration.');
   }
 }
 
