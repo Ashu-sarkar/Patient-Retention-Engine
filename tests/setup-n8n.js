@@ -65,6 +65,16 @@ const OWNER_EMAIL     = env.N8N_OWNER_EMAIL    || '';
 const OWNER_PASSWORD  = env.N8N_OWNER_PASSWORD || '';
 const OWNER_FIRSTNAME = env.N8N_OWNER_FIRSTNAME || 'Admin';
 const OWNER_LASTNAME  = env.N8N_OWNER_LASTNAME  || 'User';
+const REQUIRED_ENV = [
+  'SUPABASE_DB_HOST',
+  'SUPABASE_DB_USER',
+  'SUPABASE_DB_PASSWORD',
+  'SUPABASE_DB_NAME',
+  'TWILIO_ACCOUNT_SID',
+  'TWILIO_AUTH_TOKEN',
+  'TWILIO_WHATSAPP_FROM',
+  'TWILIO_STATUS_CALLBACK_URL',
+];
 
 // ── HTTP helpers ──────────────────────────────────────────────────────────────
 let sessionCookie = '';
@@ -184,6 +194,32 @@ async function upsertCredential(name, type, data) {
   return json?.data?.id ?? json?.id;
 }
 
+async function verifySupabasePostgres(pgData) {
+  let Client;
+  try {
+    ({ Client } = require('pg'));
+  } catch {
+    console.log('  ⚠️  pg package is unavailable; skipping direct Supabase DB connectivity probe.');
+    return;
+  }
+  const client = new Client({
+    host: pgData.host,
+    port: pgData.port,
+    database: pgData.database,
+    user: pgData.user,
+    password: pgData.password,
+    ssl: { rejectUnauthorized: false },
+    connectionTimeoutMillis: 10000,
+  });
+  try {
+    await client.connect();
+    await client.query('SELECT 1');
+    console.log('  ✅ Supabase Postgres connectivity verified.');
+  } finally {
+    await client.end().catch(() => {});
+  }
+}
+
 // ── Workflow helpers ──────────────────────────────────────────────────────────
 async function listWorkflows() {
   const { json } = await request('GET', '/rest/workflows');
@@ -295,6 +331,10 @@ async function main() {
   if (!OWNER_EMAIL || !OWNER_PASSWORD) {
     throw new Error('Set N8N_OWNER_EMAIL and N8N_OWNER_PASSWORD in .env before running setup.');
   }
+  const missing = REQUIRED_ENV.filter(key => !env[key] || /^YOUR_|^PLACEHOLDER/i.test(env[key]) || String(env[key]).includes('YOUR_'));
+  if (missing.length) {
+    throw new Error(`Missing required setup environment variables: ${missing.join(', ')}`);
+  }
 
   // 1. Health check
   console.log('── 1. Connectivity ─────────────────────────────────────────');
@@ -322,6 +362,8 @@ async function main() {
     allowUnauthorizedCerts: true,
     sshTunnel:            false,
   };
+
+  await verifySupabasePostgres(pgData);
 
   const pgId  = await upsertCredential('Supabase DB',          'postgres',      pgData);
   const pgId2 = await upsertCredential('Supabase (Postgres)',  'postgres',      pgData);
