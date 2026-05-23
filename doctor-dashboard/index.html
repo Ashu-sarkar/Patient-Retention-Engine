@@ -895,8 +895,8 @@
   <div id="toast" class="toast hidden"></div>
 
   <script>
-    const SUPABASE_URL = 'https://crsdccqseuhnimoxxeky.supabase.co';
-    const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+    const DEFAULT_SUPABASE_URL = 'https://crsdccqseuhnimoxxeky.supabase.co';
+    const DEFAULT_SUPABASE_ANON_KEY = '';
     const PRESCRIPTION_DELIVERY_FUNCTION = 'prescription-delivery';
     const MEDICINE_TIMING_OPTIONS = [
       'Empty Stomach',
@@ -909,6 +909,29 @@
       'After Dinner',
     ];
 
+    function readRuntimeConfig() {
+      const params = new URLSearchParams(location.search);
+      const globalConfig = window.VAITALCARE_CONFIG || {};
+      const readStored = key => {
+        try { return localStorage.getItem(key) || ''; } catch (_) { return ''; }
+      };
+      return {
+        supabaseUrl:
+          params.get('supabaseUrl') ||
+          globalConfig.supabaseUrl ||
+          readStored('vaitalcare.supabaseUrl') ||
+          DEFAULT_SUPABASE_URL,
+        supabaseAnonKey:
+          params.get('supabaseAnonKey') ||
+          globalConfig.supabaseAnonKey ||
+          readStored('vaitalcare.supabaseAnonKey') ||
+          DEFAULT_SUPABASE_ANON_KEY,
+      };
+    }
+
+    const RUNTIME_CONFIG = readRuntimeConfig();
+    const SUPABASE_URL = RUNTIME_CONFIG.supabaseUrl;
+    const SUPABASE_ANON_KEY = RUNTIME_CONFIG.supabaseAnonKey;
     const HAS_SUPABASE_CONFIG = Boolean(
       window.supabase?.createClient &&
       SUPABASE_URL.startsWith('https://') &&
@@ -1180,7 +1203,7 @@
       $('doctor-subtitle').textContent = 'Configuration required';
       showBanner(
         'Dashboard configuration missing',
-        'Set SUPABASE_ANON_KEY in doctor-dashboard/index.html, or open ?demo=1 to preview the workflow with sample data.',
+        'Set Supabase runtime config with window.VAITALCARE_CONFIG, localStorage, or query parameters; open ?demo=1 to preview with sample data.',
         { error: true }
       );
       state.visits = [];

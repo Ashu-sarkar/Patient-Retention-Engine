@@ -77,6 +77,13 @@ const simplifiedContentSidKeys = [
 ];
 
 const hasSimplifiedTemplateSet = simplifiedContentSidKeys.some(key => !isMissing(env[key]));
+const hasPatientOnboardingTemplate =
+  !isMissing(env.TWILIO_CONTENT_PATIENT_ONBOARDING) ||
+  !isMissing(env.TWILIO_CONTENT_WELCOME);
+
+if (!hasPatientOnboardingTemplate) {
+  errors.push('TWILIO_CONTENT_PATIENT_ONBOARDING or TWILIO_CONTENT_WELCOME is required for patient onboarding WhatsApp templates.');
+}
 
 for (const key of contentSidKeys) {
   if (isMissing(env[key])) {

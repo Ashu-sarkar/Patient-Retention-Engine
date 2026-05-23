@@ -705,10 +705,43 @@ if (window.matchMedia) {
 }
 /* ═══════════════════════════════════════════════════════════════════
    CONFIGURATION
-   Update WEBHOOK_URL with your actual n8n public URL.
-   Update HOSPITALS with your real hospital → doctor mapping.
+   Defaults are production-safe, but local/staging runs can override via:
+   ?webhookBase=http://localhost:5678, ?webhookUrl=..., window.VAITALCARE_CONFIG,
+   or localStorage keys vaitalcare.webhookBase / vaitalcare.patientWebhookUrl.
    ═══════════════════════════════════════════════════════════════════ */
-const WEBHOOK_URL = 'https://vaitalcare-production.up.railway.app/webhook/patient-form-intake';
+const DEFAULT_WEBHOOK_BASE = 'https://vaitalcare-production.up.railway.app';
+const PATIENT_WEBHOOK_PATH = '/webhook/patient-form-intake';
+
+function readRuntimeConfig() {
+  const params = new URLSearchParams(location.search);
+  const globalConfig = window.VAITALCARE_CONFIG || {};
+  const readStored = key => {
+    try { return localStorage.getItem(key) || ''; } catch (_) { return ''; }
+  };
+  const cleanBase = value => String(value || '').trim().replace(/\/+$/, '');
+  const defaultWebhookBase = location.protocol === 'file:' || /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)
+    ? 'http://localhost:5678'
+    : DEFAULT_WEBHOOK_BASE;
+  const webhookUrl =
+    params.get('webhookUrl') ||
+    params.get('patientWebhookUrl') ||
+    globalConfig.patientWebhookUrl ||
+    globalConfig.webhookUrl ||
+    readStored('vaitalcare.patientWebhookUrl') ||
+    readStored('vaitalcare.webhookUrl');
+  const webhookBase = cleanBase(
+    params.get('webhookBase') ||
+    globalConfig.webhookBase ||
+    readStored('vaitalcare.webhookBase') ||
+    defaultWebhookBase
+  );
+  return {
+    webhookUrl: webhookUrl || `${webhookBase}${PATIENT_WEBHOOK_PATH}`,
+  };
+}
+
+const RUNTIME_CONFIG = readRuntimeConfig();
+const WEBHOOK_URL = RUNTIME_CONFIG.webhookUrl;
 
 const HOSPITALS = {
   'City Hospital':    ['Dr. Sharma', 'Dr. Mehta', 'Dr. Patel', 'Dr. Divya Rai Shukla'],
@@ -937,7 +970,10 @@ form.addEventListener('submit', async function (e) {
       body,
     });
 
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status}${text ? `: ${text.slice(0, 180)}` : ''}`);
+    }
 
     let data = {};
     try { data = await res.json(); } catch (_) { /* n8n may return empty body */ }
@@ -951,7 +987,7 @@ form.addEventListener('submit', async function (e) {
 
   } catch (err) {
     console.error('Submission error:', err);
-    showToast('Something went wrong. Please try again.', true);
+    showToast(err.message || 'Something went wrong. Please try again.', true);
     submitBtn.disabled = false;
     submitBtn.classList.remove('loading');
     submitBtn.innerHTML = `

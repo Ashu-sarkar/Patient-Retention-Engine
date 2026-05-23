@@ -206,6 +206,8 @@ function patchCredentials(wfJson, credMap) {
     if (typeof value === 'string') {
       return value
         .replaceAll('__TWILIO_ACCOUNT_SID__', env.TWILIO_ACCOUNT_SID || '')
+        .replaceAll('__TWILIO_WHATSAPP_FROM__', env.TWILIO_WHATSAPP_FROM || '')
+        .replaceAll('__WEBHOOK_URL__', (env.WEBHOOK_URL || BASE).replace(/\/$/, ''))
         .replaceAll('__TWILIO_STATUS_CALLBACK_URL__', env.TWILIO_STATUS_CALLBACK_URL || '');
     }
     if (Array.isArray(value)) return value.map(replaceRuntimePlaceholders);

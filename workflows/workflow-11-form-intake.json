@@ -157,7 +157,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://vaitalcare-production.up.railway.app/webhook/new-patient-intake",
+        "url": "__WEBHOOK_URL__/webhook/new-patient-intake",
         "sendBody": true,
         "contentType": "json",
         "bodyParameters": {

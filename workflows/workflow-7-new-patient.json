@@ -90,7 +90,7 @@
           "parameters": [
             {
               "name": "From",
-              "value": "whatsapp:+919663375552"
+              "value": "__TWILIO_WHATSAPP_FROM__"
             },
             {
               "name": "To",
@@ -106,7 +106,7 @@
             },
             {
               "name": "StatusCallback",
-              "value": "https://vaitalcare-production.up.railway.app/webhook/twilio-status-callback"
+              "value": "__TWILIO_STATUS_CALLBACK_URL__"
             }
           ]
         },

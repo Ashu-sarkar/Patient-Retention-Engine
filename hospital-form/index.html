@@ -527,7 +527,36 @@ if (window.matchMedia) {
   if (mq.addEventListener) mq.addEventListener('change', onChange);
   else if (mq.addListener) mq.addListener(onChange);
 }
-const WEBHOOK_URL = 'https://vaitalcare-production.up.railway.app/webhook/hospital-boarding';
+const DEFAULT_WEBHOOK_BASE = 'https://vaitalcare-production.up.railway.app';
+const HOSPITAL_WEBHOOK_PATH = '/webhook/hospital-boarding';
+
+function readRuntimeConfig() {
+  const params = new URLSearchParams(location.search);
+  const globalConfig = window.VAITALCARE_CONFIG || {};
+  const readStored = key => {
+    try { return localStorage.getItem(key) || ''; } catch (_) { return ''; }
+  };
+  const cleanBase = value => String(value || '').trim().replace(/\/+$/, '');
+  const webhookUrl =
+    params.get('webhookUrl') ||
+    params.get('hospitalWebhookUrl') ||
+    globalConfig.hospitalWebhookUrl ||
+    globalConfig.webhookUrl ||
+    readStored('vaitalcare.hospitalWebhookUrl') ||
+    readStored('vaitalcare.webhookUrl');
+  const webhookBase = cleanBase(
+    params.get('webhookBase') ||
+    globalConfig.webhookBase ||
+    readStored('vaitalcare.webhookBase') ||
+    DEFAULT_WEBHOOK_BASE
+  );
+  return {
+    webhookUrl: webhookUrl || `${webhookBase}${HOSPITAL_WEBHOOK_PATH}`,
+  };
+}
+
+const RUNTIME_CONFIG = readRuntimeConfig();
+const WEBHOOK_URL = RUNTIME_CONFIG.webhookUrl;
 
 const $ = id => document.getElementById(id);
 const form = $('boarding-form');
