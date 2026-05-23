@@ -170,9 +170,15 @@ CREATE TABLE IF NOT EXISTS public.hospital_boarding (
   city               TEXT,
   contact_phone      TEXT,
   admin_contact_name TEXT,
+  clinic_logo_url    TEXT,
+  clinic_email       TEXT,
+  clinic_website     TEXT,
   doctor_name        TEXT        NOT NULL,
+  doctor_qualification TEXT,
   doctor_expertise   TEXT        NOT NULL,
   doctor_registration_number TEXT,
+  doctor_phone       TEXT,
+  doctor_signature_url TEXT,
   consultation_hours TEXT,
   created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -202,6 +208,15 @@ CREATE TABLE IF NOT EXISTS public.doctor_profiles (
   clinic_name         TEXT        NOT NULL,
   registration_number TEXT        NOT NULL,
   specialty           TEXT,
+  qualification       TEXT,
+  clinic_address      TEXT,
+  clinic_city         TEXT,
+  clinic_phone        TEXT,
+  clinic_email        TEXT,
+  clinic_website      TEXT,
+  clinic_logo_url     TEXT,
+  doctor_phone        TEXT,
+  signature_image_url TEXT,
   signature_label     TEXT,
   stamp_label         TEXT,
   is_clinic_admin     BOOLEAN     NOT NULL DEFAULT FALSE,
@@ -263,6 +278,8 @@ CREATE TABLE IF NOT EXISTS public.prescriptions (
   advice                TEXT,
   follow_up_date        DATE,
   issued_at             TIMESTAMPTZ,
+  doctor_snapshot       JSONB,
+  clinic_snapshot       JSONB,
   pdf_url               TEXT,
   pdf_storage_path      TEXT,
   delivery_status       TEXT        NOT NULL DEFAULT 'not_sent'
@@ -294,7 +311,9 @@ BEGIN
     NEW.clinical_remarks IS DISTINCT FROM OLD.clinical_remarks OR
     NEW.advice IS DISTINCT FROM OLD.advice OR
     NEW.follow_up_date IS DISTINCT FROM OLD.follow_up_date OR
-    NEW.issued_at IS DISTINCT FROM OLD.issued_at
+    NEW.issued_at IS DISTINCT FROM OLD.issued_at OR
+    NEW.doctor_snapshot IS DISTINCT FROM OLD.doctor_snapshot OR
+    NEW.clinic_snapshot IS DISTINCT FROM OLD.clinic_snapshot
   ) THEN
     RAISE EXCEPTION 'Issued prescriptions are immutable except delivery/PDF metadata';
   END IF;

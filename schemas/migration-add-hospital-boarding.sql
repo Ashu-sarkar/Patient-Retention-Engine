@@ -22,8 +22,19 @@ CREATE TABLE IF NOT EXISTS public.hospital_boarding (
                      'Unspecified'
                    )),
   address            TEXT        NOT NULL,
+  city               TEXT,
+  contact_phone      TEXT,
+  admin_contact_name TEXT,
+  clinic_logo_url    TEXT,
+  clinic_email       TEXT,
+  clinic_website     TEXT,
   doctor_name        TEXT        NOT NULL,
+  doctor_qualification TEXT,
   doctor_expertise   TEXT        NOT NULL,
+  doctor_registration_number TEXT,
+  doctor_phone       TEXT,
+  doctor_signature_url TEXT,
+  consultation_hours TEXT,
   created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -37,6 +48,19 @@ WHERE facility_type IS NULL;
 
 ALTER TABLE public.hospital_boarding
   ALTER COLUMN facility_type SET NOT NULL;
+
+ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS address TEXT;
+ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS city TEXT;
+ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS contact_phone TEXT;
+ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS admin_contact_name TEXT;
+ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS clinic_logo_url TEXT;
+ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS clinic_email TEXT;
+ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS clinic_website TEXT;
+ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS doctor_qualification TEXT;
+ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS doctor_registration_number TEXT;
+ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS doctor_phone TEXT;
+ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS doctor_signature_url TEXT;
+ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS consultation_hours TEXT;
 
 DO $$
 BEGIN

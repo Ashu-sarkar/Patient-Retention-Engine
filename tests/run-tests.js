@@ -374,9 +374,15 @@ async function main() {
     city             : 'Chennai',
     contact_phone    : '+919876543210',
     admin_contact_name: 'Operations Manager',
+    clinic_logo_url  : 'https://example.com/logo.png',
+    clinic_email     : 'frontdesk@example.com',
+    clinic_website   : 'https://example.com',
     doctor_name      : HF.doctor,
+    doctor_qualification: 'MBBS, MD',
     doctor_expertise : 'Lab diagnostics and pathology reporting',
     doctor_registration_number: 'TNMC-12345',
+    doctor_phone     : '+919900001111',
+    doctor_signature_url: 'https://example.com/signature.png',
     consultation_hours: 'Mon-Sat, 10 AM - 2 PM',
   };
 
@@ -397,8 +403,14 @@ async function main() {
     assert(row.city === HOSPITAL_BASE.city, `city mismatch: "${row.city}"`);
     assert(row.contact_phone === HOSPITAL_BASE.contact_phone, `contact_phone mismatch: "${row.contact_phone}"`);
     assert(row.admin_contact_name === HOSPITAL_BASE.admin_contact_name, `admin_contact_name mismatch: "${row.admin_contact_name}"`);
+    assert(row.clinic_logo_url === HOSPITAL_BASE.clinic_logo_url, `clinic_logo_url mismatch: "${row.clinic_logo_url}"`);
+    assert(row.clinic_email === HOSPITAL_BASE.clinic_email, `clinic_email mismatch: "${row.clinic_email}"`);
+    assert(row.clinic_website === HOSPITAL_BASE.clinic_website, `clinic_website mismatch: "${row.clinic_website}"`);
     assert(row.doctor_name === HF.doctor, `doctor_name mismatch: "${row.doctor_name}"`);
+    assert(row.doctor_qualification === HOSPITAL_BASE.doctor_qualification, `doctor_qualification mismatch: "${row.doctor_qualification}"`);
     assert(row.doctor_registration_number === HOSPITAL_BASE.doctor_registration_number, `doctor_registration_number mismatch: "${row.doctor_registration_number}"`);
+    assert(row.doctor_phone === HOSPITAL_BASE.doctor_phone, `doctor_phone mismatch: "${row.doctor_phone}"`);
+    assert(row.doctor_signature_url === HOSPITAL_BASE.doctor_signature_url, `doctor_signature_url mismatch: "${row.doctor_signature_url}"`);
     assert(row.consultation_hours === HOSPITAL_BASE.consultation_hours, `consultation_hours mismatch: "${row.consultation_hours}"`);
   });
 

@@ -411,10 +411,38 @@
           </div>
 
           <div class="field">
+            <label class="label" for="clinic_logo_url">Clinic logo URL</label>
+            <input id="clinic_logo_url" name="clinic_logo_url" type="url" class="inp"
+                   placeholder="https://example.com/logo.png" autocomplete="url" maxlength="1000" />
+            <span class="errmsg" id="e-clinic_logo_url">Enter an HTTPS image URL</span>
+          </div>
+
+          <div class="field">
+            <label class="label" for="clinic_email">Clinic email</label>
+            <input id="clinic_email" name="clinic_email" type="email" class="inp"
+                   placeholder="frontdesk@example.com" autocomplete="email" maxlength="254" />
+            <span class="errmsg" id="e-clinic_email">Enter a valid email address</span>
+          </div>
+
+          <div class="field">
+            <label class="label" for="clinic_website">Clinic website</label>
+            <input id="clinic_website" name="clinic_website" type="url" class="inp"
+                   placeholder="https://example.com" autocomplete="url" maxlength="1000" />
+            <span class="errmsg" id="e-clinic_website">Enter an HTTPS website URL</span>
+          </div>
+
+          <div class="field">
             <label class="label" for="doctor_name">Doctor name <span class="req">*</span></label>
             <input id="doctor_name" name="doctor_name" type="text" class="inp"
                    placeholder="Dr. Name" autocomplete="name" maxlength="150" />
             <span class="errmsg" id="e-doctor_name">Enter at least 2 characters</span>
+          </div>
+
+          <div class="field">
+            <label class="label" for="doctor_qualification">Doctor qualification</label>
+            <input id="doctor_qualification" name="doctor_qualification" type="text" class="inp"
+                   placeholder="e.g. MBBS, MD" maxlength="200" />
+            <span class="errmsg" id="e-doctor_qualification">Enter at least 2 characters</span>
           </div>
 
           <div class="field">
@@ -429,6 +457,20 @@
             <input id="doctor_registration_number" name="doctor_registration_number" type="text" class="inp"
                    placeholder="Medical council registration number" maxlength="120" />
             <span class="errmsg" id="e-doctor_registration_number">Enter registration number</span>
+          </div>
+
+          <div class="field">
+            <label class="label" for="doctor_phone">Doctor phone</label>
+            <input id="doctor_phone" name="doctor_phone" type="tel" class="inp"
+                   placeholder="Optional doctor contact number" autocomplete="tel" maxlength="16" />
+            <span class="errmsg" id="e-doctor_phone">Enter a valid phone number</span>
+          </div>
+
+          <div class="field">
+            <label class="label" for="doctor_signature_url">Doctor signature image URL</label>
+            <input id="doctor_signature_url" name="doctor_signature_url" type="url" class="inp"
+                   placeholder="https://example.com/signature.png" maxlength="1000" />
+            <span class="errmsg" id="e-doctor_signature_url">Enter an HTTPS image URL</span>
           </div>
 
           <div class="field">
@@ -518,7 +560,9 @@ function clearErr(id) {
 }
 function clearAllErr() {
   ['hospital_name', 'facility_type', 'address', 'city', 'contact_phone', 'admin_contact_name',
-   'doctor_name', 'doctor_expertise', 'doctor_registration_number', 'consultation_hours'].forEach(clearErr);
+   'clinic_logo_url', 'clinic_email', 'clinic_website', 'doctor_name', 'doctor_qualification',
+   'doctor_expertise', 'doctor_registration_number', 'doctor_phone', 'doctor_signature_url',
+   'consultation_hours'].forEach(clearErr);
 }
 
 function validate() {
@@ -532,10 +576,17 @@ function validate() {
   const city = $('city').value.trim();
   const contactPhone = $('contact_phone').value.trim();
   const adminContact = $('admin_contact_name').value.trim();
+  const clinicLogoUrl = $('clinic_logo_url').value.trim();
+  const clinicEmail = $('clinic_email').value.trim();
+  const clinicWebsite = $('clinic_website').value.trim();
   const doctor = $('doctor_name').value.trim();
+  const qualification = $('doctor_qualification').value.trim();
   const expertise = $('doctor_expertise').value.trim();
   const registration = $('doctor_registration_number').value.trim();
+  const doctorPhone = $('doctor_phone').value.trim();
+  const doctorSignatureUrl = $('doctor_signature_url').value.trim();
   const hours = $('consultation_hours').value.trim();
+  const isHttpsUrl = value => /^https:\/\//i.test(value);
 
   if (!hospital || hospital.length < 2) {
     showErr('hospital_name');
@@ -567,10 +618,30 @@ function validate() {
     ok = false;
     firstInvalid = firstInvalid || $('admin_contact_name');
   }
+  if (clinicLogoUrl && !isHttpsUrl(clinicLogoUrl)) {
+    showErr('clinic_logo_url');
+    ok = false;
+    firstInvalid = firstInvalid || $('clinic_logo_url');
+  }
+  if (clinicEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clinicEmail)) {
+    showErr('clinic_email');
+    ok = false;
+    firstInvalid = firstInvalid || $('clinic_email');
+  }
+  if (clinicWebsite && !isHttpsUrl(clinicWebsite)) {
+    showErr('clinic_website');
+    ok = false;
+    firstInvalid = firstInvalid || $('clinic_website');
+  }
   if (!doctor || doctor.length < 2) {
     showErr('doctor_name');
     ok = false;
     firstInvalid = firstInvalid || $('doctor_name');
+  }
+  if (qualification && qualification.length < 2) {
+    showErr('doctor_qualification');
+    ok = false;
+    firstInvalid = firstInvalid || $('doctor_qualification');
   }
   if (!expertise || expertise.length < 2) {
     showErr('doctor_expertise');
@@ -581,6 +652,16 @@ function validate() {
     showErr('doctor_registration_number');
     ok = false;
     firstInvalid = firstInvalid || $('doctor_registration_number');
+  }
+  if (doctorPhone && !/^(\+?[1-9]\d{6,14})$/.test(doctorPhone.replace(/\s+/g, ''))) {
+    showErr('doctor_phone');
+    ok = false;
+    firstInvalid = firstInvalid || $('doctor_phone');
+  }
+  if (doctorSignatureUrl && !isHttpsUrl(doctorSignatureUrl)) {
+    showErr('doctor_signature_url');
+    ok = false;
+    firstInvalid = firstInvalid || $('doctor_signature_url');
   }
   if (!hours || hours.length < 2) {
     showErr('consultation_hours');
@@ -596,7 +677,9 @@ function validate() {
 }
 
 ['hospital_name', 'facility_type', 'address', 'city', 'contact_phone', 'admin_contact_name',
- 'doctor_name', 'doctor_expertise', 'doctor_registration_number', 'consultation_hours'].forEach(id => {
+ 'clinic_logo_url', 'clinic_email', 'clinic_website', 'doctor_name', 'doctor_qualification',
+ 'doctor_expertise', 'doctor_registration_number', 'doctor_phone', 'doctor_signature_url',
+ 'consultation_hours'].forEach(id => {
   const el = $(id);
   if (!el) return;
   const eventName = el.tagName === 'SELECT' ? 'change' : 'input';
@@ -628,9 +711,15 @@ form.addEventListener('submit', async function (e) {
     city: $('city').value.trim(),
     contact_phone: $('contact_phone').value.trim().replace(/\s+/g, ''),
     admin_contact_name: $('admin_contact_name').value.trim(),
+    clinic_logo_url: $('clinic_logo_url').value.trim(),
+    clinic_email: $('clinic_email').value.trim(),
+    clinic_website: $('clinic_website').value.trim(),
     doctor_name: $('doctor_name').value.trim(),
+    doctor_qualification: $('doctor_qualification').value.trim(),
     doctor_expertise: $('doctor_expertise').value.trim(),
     doctor_registration_number: $('doctor_registration_number').value.trim(),
+    doctor_phone: $('doctor_phone').value.trim().replace(/\s+/g, ''),
+    doctor_signature_url: $('doctor_signature_url').value.trim(),
     consultation_hours: $('consultation_hours').value.trim(),
   };
   const body = new URLSearchParams(payload);

@@ -351,9 +351,15 @@ CREATE TABLE IF NOT EXISTS public.hospital_boarding (
   city               TEXT,
   contact_phone      TEXT,
   admin_contact_name TEXT,
+  clinic_logo_url    TEXT,
+  clinic_email       TEXT,
+  clinic_website     TEXT,
   doctor_name        TEXT        NOT NULL,
+  doctor_qualification TEXT,
   doctor_expertise   TEXT        NOT NULL,
   doctor_registration_number TEXT,
+  doctor_phone       TEXT,
+  doctor_signature_url TEXT,
   consultation_hours TEXT,
   created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -365,9 +371,15 @@ ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS address TEXT;
 ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS city TEXT;
 ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS contact_phone TEXT;
 ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS admin_contact_name TEXT;
+ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS clinic_logo_url TEXT;
+ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS clinic_email TEXT;
+ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS clinic_website TEXT;
 ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS doctor_name TEXT;
+ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS doctor_qualification TEXT;
 ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS doctor_expertise TEXT;
 ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS doctor_registration_number TEXT;
+ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS doctor_phone TEXT;
+ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS doctor_signature_url TEXT;
 ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS consultation_hours TEXT;
 ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
@@ -394,6 +406,15 @@ CREATE TABLE IF NOT EXISTS public.doctor_profiles (
   clinic_name           TEXT        NOT NULL,
   registration_number   TEXT        NOT NULL,
   specialty             TEXT,
+  qualification         TEXT,
+  clinic_address        TEXT,
+  clinic_city           TEXT,
+  clinic_phone          TEXT,
+  clinic_email          TEXT,
+  clinic_website        TEXT,
+  clinic_logo_url       TEXT,
+  doctor_phone          TEXT,
+  signature_image_url   TEXT,
   signature_label       TEXT,
   stamp_label           TEXT,
   is_clinic_admin       BOOLEAN     NOT NULL DEFAULT FALSE,
@@ -406,6 +427,15 @@ ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS doctor_name TEXT;
 ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS clinic_name TEXT;
 ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS registration_number TEXT;
 ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS specialty TEXT;
+ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS qualification TEXT;
+ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS clinic_address TEXT;
+ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS clinic_city TEXT;
+ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS clinic_phone TEXT;
+ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS clinic_email TEXT;
+ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS clinic_website TEXT;
+ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS clinic_logo_url TEXT;
+ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS doctor_phone TEXT;
+ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS signature_image_url TEXT;
 ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS signature_label TEXT;
 ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS stamp_label TEXT;
 ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS is_clinic_admin BOOLEAN NOT NULL DEFAULT FALSE;
@@ -491,6 +521,8 @@ CREATE TABLE IF NOT EXISTS public.prescriptions (
   advice                TEXT,
   follow_up_date        DATE,
   issued_at             TIMESTAMPTZ,
+  doctor_snapshot       JSONB,
+  clinic_snapshot       JSONB,
   pdf_url               TEXT,
   pdf_storage_path      TEXT,
   delivery_status       TEXT        NOT NULL DEFAULT 'not_sent',
@@ -512,6 +544,8 @@ ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS clinical_remarks TEXT;
 ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS advice TEXT;
 ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS follow_up_date DATE;
 ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS issued_at TIMESTAMPTZ;
+ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS doctor_snapshot JSONB;
+ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS clinic_snapshot JSONB;
 ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS pdf_url TEXT;
 ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS pdf_storage_path TEXT;
 ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS delivery_status TEXT NOT NULL DEFAULT 'not_sent';
@@ -543,7 +577,9 @@ BEGIN
     NEW.clinical_remarks IS DISTINCT FROM OLD.clinical_remarks OR
     NEW.advice IS DISTINCT FROM OLD.advice OR
     NEW.follow_up_date IS DISTINCT FROM OLD.follow_up_date OR
-    NEW.issued_at IS DISTINCT FROM OLD.issued_at
+    NEW.issued_at IS DISTINCT FROM OLD.issued_at OR
+    NEW.doctor_snapshot IS DISTINCT FROM OLD.doctor_snapshot OR
+    NEW.clinic_snapshot IS DISTINCT FROM OLD.clinic_snapshot
   ) THEN
     RAISE EXCEPTION 'Issued prescriptions are immutable except delivery/PDF metadata';
   END IF;
@@ -662,6 +698,19 @@ CREATE POLICY "doctors update own profile"
   TO authenticated
   USING (user_id = auth.uid())
   WITH CHECK (user_id = auth.uid());
+
+DROP POLICY IF EXISTS "doctors read matching hospital boarding" ON public.hospital_boarding;
+CREATE POLICY "doctors read matching hospital boarding"
+  ON public.hospital_boarding FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.doctor_profiles dp
+      WHERE dp.user_id = auth.uid()
+        AND lower(trim(dp.clinic_name)) = lower(trim(hospital_boarding.hospital_name))
+        AND lower(trim(dp.doctor_name)) = lower(trim(hospital_boarding.doctor_name))
+    )
+  );
 
 DROP POLICY IF EXISTS "doctors read assigned visits" ON public.patient_visits;
 CREATE POLICY "doctors read assigned visits"

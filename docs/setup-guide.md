@@ -100,7 +100,11 @@ Replace `YOUR_N8N_WEBHOOK_URL` with your public n8n URL. Deploy the static forms
 
 For the doctor dashboard, also replace `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `PRESCRIPTION_WEBHOOK_URL`. Create one Supabase Auth user per doctor, then insert a matching `doctor_profiles` row with `user_id`, `doctor_name`, `clinic_name`, and `registration_number`.
 
+Prescription PDFs can also use these optional `doctor_profiles` fields: `qualification`, `clinic_address`, `clinic_city`, `clinic_phone`, `clinic_email`, `clinic_website`, `clinic_logo_url`, `doctor_phone`, `signature_image_url`, `signature_label`, and `stamp_label`. The hospital intake form captures matching optional fields in `hospital_boarding`; if the profile is missing them, the dashboard falls back to the latest matching hospital/doctor onboarding row.
+
 WF11 matches incoming visit rows to `doctor_profiles` by lowercased clinic and doctor name. If no profile exists yet, the visit still appears once a matching profile is created because the RLS policy also allows clinic/doctor-name matching.
+
+Each issued prescription stores immutable `doctor_snapshot` and `clinic_snapshot` JSON on the `prescriptions` row, plus `pdf_storage_path` in the private Supabase Storage bucket. The dashboard opens PDFs from storage by generating a fresh signed URL, so patient/profile history can still find the prescription after an older signed link expires.
 
 ## 6. Test
 

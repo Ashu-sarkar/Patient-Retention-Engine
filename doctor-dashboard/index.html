@@ -1107,6 +1107,17 @@
         clinic_name: 'VaitalCare Clinic',
         registration_number: 'MCI-DEMO-12345',
         specialty: 'General Medicine',
+        qualification: 'MBBS, MD',
+        clinic_address: '12 Health Avenue, Indiranagar',
+        clinic_city: 'Bangalore',
+        clinic_phone: '+918080808080',
+        clinic_email: 'care@vaitalcare.example',
+        clinic_website: 'https://vaitalcare.example',
+        clinic_logo_url: '',
+        doctor_phone: '+919999000111',
+        signature_image_url: '',
+        signature_label: 'Dr. A. Sharma',
+        stamp_label: 'Reg: MCI-DEMO-12345',
       };
       state.visits = demoVisits();
       $('login-screen').classList.add('hidden');
@@ -1133,9 +1144,38 @@
         );
         throw error;
       }
-      state.profile = data;
+      state.profile = await enrichProfileFromBoarding(data);
       $('doctor-subtitle').textContent = data.doctor_name;
-      $('clinic-footer').textContent = data.clinic_name || '';
+      $('clinic-footer').textContent = state.profile.clinic_name || '';
+    }
+
+    async function enrichProfileFromBoarding(profile) {
+      const needsBoarding = [
+        'clinic_address', 'clinic_city', 'clinic_phone', 'clinic_email', 'clinic_website',
+        'clinic_logo_url', 'qualification', 'doctor_phone', 'signature_image_url',
+      ].some(key => !profile[key]);
+      if (!needsBoarding) return profile;
+      const { data, error } = await sb
+        .from('hospital_boarding')
+        .select('address, city, contact_phone, clinic_logo_url, clinic_email, clinic_website, doctor_qualification, doctor_phone, doctor_signature_url, consultation_hours')
+        .ilike('hospital_name', profile.clinic_name)
+        .ilike('doctor_name', profile.doctor_name)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error || !data) return profile;
+      return {
+        ...profile,
+        clinic_address: profile.clinic_address || data.address || '',
+        clinic_city: profile.clinic_city || data.city || '',
+        clinic_phone: profile.clinic_phone || data.contact_phone || '',
+        clinic_email: profile.clinic_email || data.clinic_email || '',
+        clinic_website: profile.clinic_website || data.clinic_website || '',
+        clinic_logo_url: profile.clinic_logo_url || data.clinic_logo_url || '',
+        qualification: profile.qualification || data.doctor_qualification || '',
+        doctor_phone: profile.doctor_phone || data.doctor_phone || '',
+        signature_image_url: profile.signature_image_url || data.doctor_signature_url || '',
+      };
     }
 
     async function loadVisits() {
@@ -1386,6 +1426,33 @@
       };
     }
 
+    function buildPrescriptionSnapshots() {
+      const profile = state.profile || {};
+      const visit = state.selected || {};
+      return {
+        doctor_snapshot: {
+          id: profile.id || null,
+          name: profile.doctor_name || visit.doctor_name || '',
+          qualification: profile.qualification || '',
+          specialty: profile.specialty || '',
+          registration_number: profile.registration_number || '',
+          phone: profile.doctor_phone || '',
+          signature_label: profile.signature_label || profile.doctor_name || '',
+          signature_image_url: profile.signature_image_url || '',
+          stamp_label: profile.stamp_label || (profile.registration_number ? `Reg: ${profile.registration_number}` : ''),
+        },
+        clinic_snapshot: {
+          name: profile.clinic_name || visit.clinic_name || '',
+          address: profile.clinic_address || '',
+          city: profile.clinic_city || '',
+          phone: profile.clinic_phone || '',
+          email: profile.clinic_email || '',
+          website: profile.clinic_website || '',
+          logo_url: profile.clinic_logo_url || '',
+        },
+      };
+    }
+
     function validateIssue(payload) {
       if (!payload.diagnosis && !payload.clinical_remarks) return 'Add diagnosis or remarks before issuing.';
       if (payload.medicines.length === 0) return 'Add at least one medicine.';
@@ -1414,6 +1481,7 @@
           clinical_remarks: payload.clinical_remarks,
           advice: payload.advice,
           follow_up_date: payload.follow_up_date,
+          ...buildPrescriptionSnapshots(),
           medicines: payload.medicines,
         });
         state.currentDraft = prescription;
@@ -1432,6 +1500,7 @@
         clinical_remarks: payload.clinical_remarks,
         advice: payload.advice,
         follow_up_date: payload.follow_up_date,
+        ...buildPrescriptionSnapshots(),
         delivery_status: 'not_sent',
       };
       let prescription;
@@ -1548,47 +1617,235 @@
       await state.pdfLibraryPromise;
     }
 
+    async function imageUrlToDataUrl(url) {
+      if (!url) return null;
+      try {
+        const response = await fetch(url, { mode: 'cors' });
+        if (!response.ok) return null;
+        const blob = await response.blob();
+        if (!/^image\//i.test(blob.type)) return null;
+        return await new Promise(resolve => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(blob);
+        });
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function imageFormatFromDataUrl(dataUrl = '') {
+      if (/image\/jpe?g/i.test(dataUrl)) return 'JPEG';
+      if (/image\/webp/i.test(dataUrl)) return 'WEBP';
+      return 'PNG';
+    }
+
     async function generatePdf(prescription, payload) {
       await ensurePdfLibrary();
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF({ unit: 'pt', format: 'a4' });
       const visit = state.selected;
       const patient = visit.patient || {};
-      const line = (text, x, y) => doc.text(String(text || '-'), x, y);
-      let y = 48;
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(18);
-      line(state.profile.clinic_name, 42, y);
-      doc.setFontSize(11); doc.setFont('helvetica', 'normal');
-      y += 22; line(`${state.profile.doctor_name} · Reg: ${state.profile.registration_number}`, 42, y);
-      y += 18; line(`Date/time: ${new Date().toLocaleString()} · Place: ${visit.clinic_name}`, 42, y);
-      y += 26; doc.line(42, y, 552, y);
-      y += 24; doc.setFont('helvetica', 'bold'); line('Patient', 42, y);
-      doc.setFont('helvetica', 'normal');
-      y += 18; line(`${patient.name || '-'} · ${patient.sex || '-'} · DOB: ${patient.dob || '-'} · ${patient.phone || '-'}`, 42, y);
-      y += 18; line(`Patient code: ${visit.patient_code || patient.patient_code || '-'} · Visit: ${visit.visit_date}`, 42, y);
-      y += 28; doc.setFont('helvetica', 'bold'); line('Diagnosis / Remarks', 42, y);
-      doc.setFont('helvetica', 'normal');
-      y += 18; doc.splitTextToSize(payload.diagnosis || payload.clinical_remarks || '-', 500).forEach(t => { line(t, 42, y); y += 15; });
-      if (payload.clinical_remarks && payload.diagnosis) {
-        doc.splitTextToSize(payload.clinical_remarks, 500).forEach(t => { line(t, 42, y); y += 15; });
+      const snapshots = {
+        doctor_snapshot: prescription.doctor_snapshot,
+        clinic_snapshot: prescription.clinic_snapshot,
+        ...buildPrescriptionSnapshots(),
+      };
+      const doctor = snapshots.doctor_snapshot;
+      const clinic = snapshots.clinic_snapshot;
+      const page = { width: 595.28, height: 841.89, margin: 42 };
+      const rxNumber = `RX-${new Date().getFullYear()}-${String(prescription.id || '').slice(0, 8).toUpperCase()}`;
+      const issuedAt = new Date().toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+      const logoDataUrl = await imageUrlToDataUrl(clinic.logo_url);
+      const signatureDataUrl = await imageUrlToDataUrl(doctor.signature_image_url);
+      let y = page.margin;
+
+      function setText(style = 'normal', size = 10, color = [19, 32, 31]) {
+        doc.setFont('helvetica', style);
+        doc.setFontSize(size);
+        doc.setTextColor(...color);
       }
-      y += 10; doc.setFont('helvetica', 'bold'); line('Medicines', 42, y);
-      doc.setFont('helvetica', 'normal');
-      payload.medicines.forEach((m, index) => {
-        y += 18;
-        const medLine = `${index + 1}. ${m.medicine_name}${m.generic_name ? ` (${m.generic_name})` : ''} - ${m.dosage}, ${m.frequency}, ${m.timing}, ${m.duration}`;
-        doc.splitTextToSize(medLine, 500).forEach(t => { line(t, 42, y); y += 15; });
-        if (m.instructions) doc.splitTextToSize(`   ${m.instructions}`, 500).forEach(t => { line(t, 42, y); y += 15; });
-        if (y > 720) { doc.addPage(); y = 48; }
+      function text(value, x, lineY, options) {
+        doc.text(String(value || '-'), x, lineY, options);
+      }
+      function wrapped(value, x, startY, width, lineHeight = 13) {
+        const lines = doc.splitTextToSize(String(value || '-'), width);
+        lines.forEach(lineText => {
+          if (startY > 760) startY = addPage();
+          text(lineText, x, startY);
+          startY += lineHeight;
+        });
+        return startY;
+      }
+      function addPage() {
+        doc.addPage();
+        drawFooter();
+        setText('normal', 10);
+        return page.margin;
+      }
+      function sectionTitle(label, x, lineY) {
+        setText('bold', 11, [17, 124, 114]);
+        text(label, x, lineY);
+        doc.setDrawColor(190, 209, 204);
+        doc.line(x, lineY + 5, page.width - page.margin, lineY + 5);
+      }
+      function drawFooter() {
+        const footerY = page.height - 32;
+        doc.setDrawColor(219, 231, 228);
+        doc.line(page.margin, footerY - 14, page.width - page.margin, footerY - 14);
+        setText('normal', 8, [102, 121, 117]);
+        text('Generated electronically by VaitalCare. Verify medicines, allergies, and follow-up instructions before use.', page.margin, footerY);
+      }
+
+      doc.setFillColor(245, 250, 249);
+      doc.rect(0, 0, page.width, 116, 'F');
+      if (logoDataUrl) {
+        try {
+          doc.addImage(logoDataUrl, imageFormatFromDataUrl(logoDataUrl), page.margin, 34, 54, 54, undefined, 'FAST');
+        } catch (_) {
+          doc.setDrawColor(17, 124, 114);
+          doc.roundedRect(page.margin, 34, 54, 54, 6, 6);
+        }
+      } else {
+        doc.setFillColor(17, 124, 114);
+        doc.roundedRect(page.margin, 34, 54, 54, 6, 6, 'F');
+        setText('bold', 18, [255, 255, 255]);
+        text(initials(clinic.name), page.margin + 27, 67, { align: 'center' });
+      }
+
+      setText('bold', 18);
+      text(clinic.name || visit.clinic_name || 'Clinic', 108, 48);
+      setText('normal', 9, [102, 121, 117]);
+      const clinicLines = [
+        [clinic.address, clinic.city].filter(Boolean).join(', '),
+        [clinic.phone, clinic.email, clinic.website].filter(Boolean).join(' | '),
+      ].filter(Boolean);
+      y = 66;
+      clinicLines.forEach(lineText => {
+        text(lineText, 108, y);
+        y += 13;
       });
-      y += 12; doc.setFont('helvetica', 'bold'); line('Advice / Follow-up', 42, y);
-      doc.setFont('helvetica', 'normal');
-      y += 18; doc.splitTextToSize(payload.advice || '-', 500).forEach(t => { line(t, 42, y); y += 15; });
-      if (payload.follow_up_date) { y += 6; line(`Follow-up date: ${payload.follow_up_date}`, 42, y); }
-      y = Math.max(y + 48, 690);
+
+      setText('bold', 14, [17, 124, 114]);
+      text('PRESCRIPTION', page.width - page.margin, 48, { align: 'right' });
+      setText('normal', 9, [102, 121, 117]);
+      text(rxNumber, page.width - page.margin, 64, { align: 'right' });
+      text(issuedAt, page.width - page.margin, 78, { align: 'right' });
+
+      y = 138;
+      setText('bold', 11);
+      text(`${doctor.name || visit.doctor_name || 'Doctor'}${doctor.qualification ? ', ' + doctor.qualification : ''}`, page.margin, y);
+      setText('normal', 9, [102, 121, 117]);
+      y += 14;
+      text([doctor.specialty, doctor.registration_number ? `Reg: ${doctor.registration_number}` : '', doctor.phone].filter(Boolean).join(' | ') || 'Doctor details on file', page.margin, y);
+
+      y += 28;
+      sectionTitle('Patient Details', page.margin, y);
+      y += 22;
+      setText('normal', 9);
+      const colW = 255;
+      const patientRows = [
+        ['Name', patient.name || 'Unnamed patient', 'Patient Code', visit.patient_code || patient.patient_code || '-'],
+        ['Phone', patient.phone || '-', 'Visit Date', visit.visit_date || '-'],
+        ['DOB / Age', patient.dob || '-', 'Sex', patient.sex || '-'],
+        ['Allergies', visit.known_allergies || 'Not recorded', 'Current Medicines', visit.current_medicines || 'Not recorded'],
+      ];
+      patientRows.forEach(row => {
+        setText('bold', 8, [102, 121, 117]);
+        text(row[0], page.margin, y);
+        text(row[2], page.margin + colW, y);
+        setText('normal', 10);
+        text(row[1], page.margin, y + 13);
+        text(row[3], page.margin + colW, y + 13);
+        y += 31;
+      });
+
+      y += 8;
+      sectionTitle('Diagnosis and Notes', page.margin, y);
+      y += 22;
+      setText('bold', 9, [102, 121, 117]);
+      text('Diagnosis', page.margin, y);
+      setText('normal', 10);
+      y = wrapped(payload.diagnosis || 'Not specified', page.margin, y + 14, 510, 13) + 8;
+      if (payload.clinical_remarks) {
+        setText('bold', 9, [102, 121, 117]);
+        text('Clinical Remarks', page.margin, y);
+        setText('normal', 10);
+        y = wrapped(payload.clinical_remarks, page.margin, y + 14, 510, 13) + 8;
+      }
+
+      if (y > 650) y = addPage();
+      sectionTitle('Rx Medicines', page.margin, y);
+      y += 20;
+      const headers = ['Medicine', 'Dose', 'Frequency', 'Timing', 'Duration', 'Instructions'];
+      const widths = [132, 66, 70, 82, 62, 98];
+      const rowX = widths.reduce((acc, width, index) => {
+        acc.push(index === 0 ? page.margin : acc[index - 1] + widths[index - 1]);
+        return acc;
+      }, []);
+      function tableHeader() {
+        doc.setFillColor(229, 244, 241);
+        doc.rect(page.margin, y - 11, 510, 20, 'F');
+        setText('bold', 8, [17, 124, 114]);
+        headers.forEach((header, index) => text(header, rowX[index] + 4, y + 2));
+        y += 22;
+      }
+      tableHeader();
+      payload.medicines.forEach((m, index) => {
+        const values = [
+          `${index + 1}. ${m.medicine_name}${m.generic_name ? ` (${m.generic_name})` : ''}`,
+          m.dosage,
+          m.frequency,
+          m.timing,
+          m.duration,
+          m.instructions || '-',
+        ];
+        const lines = values.map((value, i) => doc.splitTextToSize(String(value || '-'), widths[i] - 8));
+        const rowHeight = Math.max(28, Math.max(...lines.map(list => list.length)) * 11 + 12);
+        if (y + rowHeight > 760) {
+          y = addPage();
+          tableHeader();
+        }
+        doc.setDrawColor(219, 231, 228);
+        doc.rect(page.margin, y - 12, 510, rowHeight);
+        setText('normal', 8.5);
+        lines.forEach((list, colIndex) => {
+          let cellY = y;
+          list.forEach(lineText => {
+            text(lineText, rowX[colIndex] + 4, cellY);
+            cellY += 11;
+          });
+        });
+        y += rowHeight;
+      });
+
+      y += 24;
+      if (y > 690) y = addPage();
+      sectionTitle('Advice and Follow-up', page.margin, y);
+      y += 22;
+      setText('normal', 10);
+      y = wrapped(payload.advice || 'No additional advice recorded.', page.margin, y, 510, 13);
+      if (payload.follow_up_date) {
+        y += 12;
+        setText('bold', 10, [17, 124, 114]);
+        text(`Follow-up date: ${payload.follow_up_date}`, page.margin, y);
+      }
+
+      y = Math.max(y + 56, 690);
+      if (y > 740) y = addPage();
+      if (signatureDataUrl) {
+        try {
+          doc.addImage(signatureDataUrl, imageFormatFromDataUrl(signatureDataUrl), 390, y - 44, 150, 36, undefined, 'FAST');
+        } catch (_) {}
+      }
+      doc.setDrawColor(102, 121, 117);
       doc.line(390, y, 552, y);
-      y += 16; line(state.profile.signature_label || state.profile.doctor_name, 390, y);
-      y += 14; line(state.profile.stamp_label || `Reg: ${state.profile.registration_number}`, 390, y);
+      setText('bold', 10);
+      text(doctor.signature_label || doctor.name || 'Doctor signature', 390, y + 16);
+      setText('normal', 8, [102, 121, 117]);
+      text(doctor.stamp_label || (doctor.registration_number ? `Reg: ${doctor.registration_number}` : 'Registration on file'), 390, y + 29);
+      drawFooter();
       return doc.output('blob');
     }
 
@@ -1659,6 +1916,23 @@
       renderPrescriptionHistory(data || []);
     }
 
+    async function openPrescriptionPdf(rx) {
+      if (state.demo) {
+        showToast('Demo mode does not upload PDFs.');
+        return;
+      }
+      if (rx.pdf_storage_path) {
+        const signed = await sb.storage.from('prescriptions').createSignedUrl(rx.pdf_storage_path, 60 * 60);
+        if (!signed.error && signed.data?.signedUrl) {
+          window.open(signed.data.signedUrl, '_blank', 'noopener');
+          return;
+        }
+        showToast(signed.error?.message || 'Could not open stored PDF.', true);
+        return;
+      }
+      if (rx.pdf_url) window.open(rx.pdf_url, '_blank', 'noopener');
+    }
+
     async function loadVisitHistory() {
       if (!state.selected) return;
       if (state.demo) {
@@ -1675,13 +1949,20 @@
     }
 
     function renderPrescriptionHistory(data) {
+      state.renderedPrescriptionHistory = data;
       $('history').innerHTML = data.map(rx => `
         <div class="history-item">
           <strong>${escapeHtml(rx.status)} · ${new Date(rx.created_at).toLocaleString()}</strong>
           <p>${escapeHtml(rx.diagnosis || rx.clinical_remarks || 'No diagnosis/remarks')}</p>
           <span class="status ${escapeHtml(rx.delivery_status)}">${escapeHtml(rx.delivery_status)}</span>
-          ${rx.pdf_url ? `<p><a href="${escapeHtml(rx.pdf_url)}" target="_blank" rel="noopener">Open PDF</a></p>` : ''}
+          ${rx.pdf_url || rx.pdf_storage_path ? `<p><button class="btn" type="button" data-open-rx="${escapeHtml(rx.id)}">Open PDF</button></p>` : ''}
         </div>`).join('') || '<p style="color: var(--muted);">No prescriptions yet.</p>';
+      document.querySelectorAll('[data-open-rx]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const rx = state.renderedPrescriptionHistory?.find(item => item.id === btn.dataset.openRx);
+          if (rx) openPrescriptionPdf(rx);
+        });
+      });
     }
 
     function renderVisitHistory(data) {
