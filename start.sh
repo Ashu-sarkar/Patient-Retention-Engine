@@ -48,10 +48,13 @@ for i in $(seq 1 60); do
 done
 
 echo "[start.sh] Running production workflow setup..."
-if N8N_BASE_URL="${LOCAL_N8N_URL}" node /tests/setup-n8n.js; then
+SETUP_LOG="/tmp/patient-retention-setup.log"
+if N8N_BASE_URL="${LOCAL_N8N_URL}" node /tests/setup-n8n.js 2>&1 | tee "${SETUP_LOG}"; then
   echo "[start.sh] Workflow setup completed."
 else
   echo "[start.sh] ERROR: workflow setup failed; production webhooks may be unregistered." >&2
+  echo "[start.sh] Last setup log lines:" >&2
+  tail -80 "${SETUP_LOG}" >&2 || true
   echo "[start.sh] Stopping n8n so the platform restarts instead of serving a broken deployment." >&2
   kill "${N8N_PID}" 2>/dev/null || true
   wait "${N8N_PID}" 2>/dev/null || true
