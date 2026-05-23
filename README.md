@@ -6,7 +6,7 @@ An event-driven automation system for clinic patient follow-ups using **n8n**, *
 
 - Captures patient registrations from a QR form
 - Creates a doctor waiting-room queue from each QR submission
-- Lets doctors issue prescription PDFs from an authenticated dashboard
+- Lets doctors sign in with WhatsApp OTP and issue prescription PDFs from a personal dashboard
 - Stores patients, visits, prescriptions, message logs, delivery state, and operational logs in Supabase
 - Sends WhatsApp welcome, follow-up, missed appointment, health check, reactivation, and prescription messages through Twilio
 - Handles inbound WhatsApp replies from Twilio webhooks
@@ -79,7 +79,7 @@ npm run validate-env
 
 `./launch.sh` runs the Supabase preflight migration, starts n8n, creates credentials, imports workflows, and activates them.
 
-Configure and deploy `doctor-dashboard/index.html` after creating Supabase Auth users and matching `doctor_profiles` rows.
+Configure and deploy `doctor-dashboard/index.html`, then share the deployed `doctor-dashboard/` URL with doctors. Doctors log in with the registered WhatsApp number captured in hospital onboarding; the dashboard claims or creates the matching `doctor_profiles` row after OTP verification.
 
 ## Production Notes
 

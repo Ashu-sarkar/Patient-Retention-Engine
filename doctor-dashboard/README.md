@@ -1,6 +1,6 @@
 # Doctor Dashboard
 
-Authenticated Supabase dashboard for the clinic/doctor queue and prescription workflow.
+Authenticated Supabase dashboard for the clinic/doctor queue and prescription workflow. Doctors sign in with the WhatsApp number captured during hospital onboarding.
 
 ## Configure
 
@@ -14,24 +14,45 @@ const PRESCRIPTION_WEBHOOK_URL = 'https://vaitalcare-production.up.railway.app/w
 
 `SUPABASE_ANON_KEY` must be copied from Supabase Project Settings -> API. WF13 must be imported and active before prescription WhatsApp delivery works.
 
+The login URL to share with doctors is the deployed static URL for this folder, for example:
+
+```text
+https://your-domain.example/doctor-dashboard/
+```
+
+For local preview, open `doctor-dashboard/index.html?demo=1`.
+
+## WhatsApp OTP Login
+
+1. Enable phone OTP in Supabase Auth.
+2. Configure the Supabase Auth SMS provider to deliver OTPs through WhatsApp where supported by your provider setup.
+3. Ensure the hospital onboarding form captures each doctor's WhatsApp number in international format, for example `+919876543210`.
+4. Run `npm run preflight` so Supabase has the phone-matching RPC and RLS policies.
+
+At login, the dashboard sends an OTP to the entered WhatsApp number. After verification, Supabase issues the authenticated session. The dashboard then calls `get_or_create_doctor_profile_for_current_user()`:
+
+- If a `doctor_profiles.user_id` already matches the session, that profile is used.
+- If a profile has the same `doctor_phone`, it is claimed by setting `user_id`.
+- If no profile exists but the latest `hospital_boarding.doctor_phone` matches, a profile is created from hospital onboarding.
+- If no match exists, login succeeds but dashboard access is blocked with a profile-not-found notice.
+
 ## Doctor Accounts
 
-1. Create a Supabase Auth user for each doctor.
-2. Insert a matching `doctor_profiles` row:
+Manual profile creation is optional if hospital onboarding already has `doctor_phone`, `doctor_name`, `hospital_name`, and doctor registration details. If you want to create a profile ahead of time, insert a row with the doctor's registered WhatsApp number:
 
 ```sql
 INSERT INTO public.doctor_profiles
-  (user_id, doctor_name, clinic_name, registration_number, specialty,
+  (doctor_name, clinic_name, registration_number, specialty,
    qualification, clinic_address, clinic_city, clinic_phone, clinic_email,
    clinic_website, clinic_logo_url, doctor_phone, signature_image_url)
 VALUES
-  ('AUTH_USER_UUID', 'Dr. Sharma', 'City Hospital', 'STATE-MED-12345', 'General Medicine',
+  ('Dr. Sharma', 'City Hospital', 'STATE-MED-12345', 'General Medicine',
    'MBBS, MD', '12 Main Road', 'Bangalore', '+918080808080', 'frontdesk@example.com',
    'https://example.com', 'https://example.com/logo.png', '+919999000111',
    'https://example.com/signature.png');
 ```
 
-The dashboard uses RLS, so doctors can only see visits linked to their profile, matching doctor/clinic name, or their clinic when `is_clinic_admin = true`.
+The dashboard uses RLS, so doctors can only see visits linked to their claimed profile, matching doctor/clinic name, or their clinic when `is_clinic_admin = true`.
 If a profile is missing optional prescription header fields, the dashboard falls back to the latest matching `hospital_boarding` row for that doctor and clinic.
 
 ## Deploy

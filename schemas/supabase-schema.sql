@@ -226,11 +226,151 @@ CREATE TABLE IF NOT EXISTS public.doctor_profiles (
 
 CREATE INDEX IF NOT EXISTS idx_doctor_profiles_clinic_doctor
   ON public.doctor_profiles (lower(trim(clinic_name)), lower(trim(doctor_name)));
+CREATE INDEX IF NOT EXISTS idx_doctor_profiles_doctor_phone
+  ON public.doctor_profiles ((regexp_replace(coalesce(doctor_phone, ''), '[\s\-().]', '', 'g')));
 
 DROP TRIGGER IF EXISTS trg_doctor_profiles_updated_at ON public.doctor_profiles;
 CREATE TRIGGER trg_doctor_profiles_updated_at
   BEFORE UPDATE ON public.doctor_profiles
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+CREATE OR REPLACE FUNCTION public.normalized_whatsapp_phone(input_phone TEXT)
+RETURNS TEXT
+LANGUAGE SQL
+IMMUTABLE
+AS $$
+  SELECT CASE
+    WHEN input_phone IS NULL OR btrim(input_phone) = '' THEN NULL
+    WHEN regexp_replace(btrim(input_phone), '[\s\-().]', '', 'g') LIKE '+%' THEN regexp_replace(btrim(input_phone), '[\s\-().]', '', 'g')
+    WHEN regexp_replace(btrim(input_phone), '[\s\-().]', '', 'g') ~ '^[1-9][0-9]{6,14}$' THEN '+' || regexp_replace(btrim(input_phone), '[\s\-().]', '', 'g')
+    ELSE regexp_replace(btrim(input_phone), '[\s\-().]', '', 'g')
+  END
+$$;
+
+CREATE OR REPLACE FUNCTION public.current_auth_phone()
+RETURNS TEXT
+LANGUAGE SQL
+STABLE
+AS $$
+  SELECT public.normalized_whatsapp_phone(
+    COALESCE(auth.jwt() ->> 'phone', auth.jwt() -> 'user_metadata' ->> 'phone')
+  )
+$$;
+
+CREATE OR REPLACE FUNCTION public.doctor_profile_matches_current_user(profile_id UUID)
+RETURNS BOOLEAN
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.doctor_profiles dp
+    WHERE dp.id = profile_id
+      AND (
+        dp.user_id = auth.uid()
+        OR (
+          public.current_auth_phone() IS NOT NULL
+          AND public.normalized_whatsapp_phone(dp.doctor_phone) = public.current_auth_phone()
+        )
+      )
+  )
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_or_create_doctor_profile_for_current_user()
+RETURNS public.doctor_profiles
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  verified_phone TEXT := public.current_auth_phone();
+  profile public.doctor_profiles;
+  boarding public.hospital_boarding;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Authentication required';
+  END IF;
+
+  SELECT *
+    INTO profile
+    FROM public.doctor_profiles dp
+   WHERE dp.user_id = auth.uid()
+      OR (verified_phone IS NOT NULL AND public.normalized_whatsapp_phone(dp.doctor_phone) = verified_phone)
+   ORDER BY (dp.user_id = auth.uid()) DESC, dp.updated_at DESC
+   LIMIT 1;
+
+  IF FOUND THEN
+    IF profile.user_id IS NULL THEN
+      UPDATE public.doctor_profiles
+         SET user_id = auth.uid(),
+             doctor_phone = COALESCE(doctor_phone, verified_phone),
+             updated_at = NOW()
+       WHERE id = profile.id
+       RETURNING * INTO profile;
+    END IF;
+    RETURN profile;
+  END IF;
+
+  IF verified_phone IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  SELECT *
+    INTO boarding
+    FROM public.hospital_boarding hb
+   WHERE public.normalized_whatsapp_phone(hb.doctor_phone) = verified_phone
+   ORDER BY hb.created_at DESC
+   LIMIT 1;
+
+  IF NOT FOUND THEN
+    RETURN NULL;
+  END IF;
+
+  INSERT INTO public.doctor_profiles (
+    user_id,
+    doctor_name,
+    clinic_name,
+    registration_number,
+    specialty,
+    qualification,
+    clinic_address,
+    clinic_city,
+    clinic_phone,
+    clinic_email,
+    clinic_website,
+    clinic_logo_url,
+    doctor_phone,
+    signature_image_url,
+    signature_label,
+    stamp_label
+  )
+  VALUES (
+    auth.uid(),
+    boarding.doctor_name,
+    boarding.hospital_name,
+    COALESCE(NULLIF(boarding.doctor_registration_number, ''), 'PENDING-' || right(auth.uid()::text, 8)),
+    boarding.doctor_expertise,
+    boarding.doctor_qualification,
+    boarding.address,
+    boarding.city,
+    boarding.contact_phone,
+    boarding.clinic_email,
+    boarding.clinic_website,
+    boarding.clinic_logo_url,
+    verified_phone,
+    boarding.doctor_signature_url,
+    boarding.doctor_name,
+    COALESCE(NULLIF(boarding.doctor_registration_number, ''), 'Registration pending')
+  )
+  RETURNING * INTO profile;
+
+  RETURN profile;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.get_or_create_doctor_profile_for_current_user() TO authenticated;
 
 CREATE TABLE IF NOT EXISTS public.patient_visits (
   id                    UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -411,12 +551,180 @@ ALTER TABLE public.patient_visits      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.prescriptions       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.prescription_medicines ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.prescription_audit_logs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "doctors read own profile" ON public.doctor_profiles;
+CREATE POLICY "doctors read own profile"
+  ON public.doctor_profiles FOR SELECT
+  TO authenticated
+  USING (public.doctor_profile_matches_current_user(id));
+
+DROP POLICY IF EXISTS "doctors update own profile" ON public.doctor_profiles;
+CREATE POLICY "doctors update own profile"
+  ON public.doctor_profiles FOR UPDATE
+  TO authenticated
+  USING (public.doctor_profile_matches_current_user(id))
+  WITH CHECK (public.doctor_profile_matches_current_user(id));
+
+DROP POLICY IF EXISTS "doctors insert claimed profile" ON public.doctor_profiles;
+CREATE POLICY "doctors insert claimed profile"
+  ON public.doctor_profiles FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    user_id = auth.uid()
+    AND public.current_auth_phone() IS NOT NULL
+    AND public.normalized_whatsapp_phone(doctor_phone) = public.current_auth_phone()
+  );
+
+DROP POLICY IF EXISTS "doctors read matching hospital boarding" ON public.hospital_boarding;
+CREATE POLICY "doctors read matching hospital boarding"
+  ON public.hospital_boarding FOR SELECT
+  TO authenticated
+  USING (
+    (
+      public.current_auth_phone() IS NOT NULL
+      AND public.normalized_whatsapp_phone(hospital_boarding.doctor_phone) = public.current_auth_phone()
+    )
+    OR
+    EXISTS (
+      SELECT 1 FROM public.doctor_profiles dp
+      WHERE public.doctor_profile_matches_current_user(dp.id)
+        AND lower(trim(dp.clinic_name)) = lower(trim(hospital_boarding.hospital_name))
+        AND lower(trim(dp.doctor_name)) = lower(trim(hospital_boarding.doctor_name))
+    )
+  );
+
+DROP POLICY IF EXISTS "doctors read assigned visits" ON public.patient_visits;
+CREATE POLICY "doctors read assigned visits"
+  ON public.patient_visits FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.doctor_profiles dp
+      WHERE public.doctor_profile_matches_current_user(dp.id)
+        AND (
+          dp.id = patient_visits.doctor_profile_id
+          OR (dp.is_clinic_admin AND lower(trim(dp.clinic_name)) = lower(trim(patient_visits.clinic_name)))
+          OR (
+            lower(trim(dp.clinic_name)) = lower(trim(patient_visits.clinic_name))
+            AND lower(trim(dp.doctor_name)) = lower(trim(patient_visits.doctor_name))
+          )
+        )
+    )
+  );
+
+DROP POLICY IF EXISTS "doctors update assigned visits" ON public.patient_visits;
+CREATE POLICY "doctors update assigned visits"
+  ON public.patient_visits FOR UPDATE
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.doctor_profiles dp
+      WHERE public.doctor_profile_matches_current_user(dp.id)
+        AND (
+          dp.id = patient_visits.doctor_profile_id
+          OR (dp.is_clinic_admin AND lower(trim(dp.clinic_name)) = lower(trim(patient_visits.clinic_name)))
+          OR (
+            lower(trim(dp.clinic_name)) = lower(trim(patient_visits.clinic_name))
+            AND lower(trim(dp.doctor_name)) = lower(trim(patient_visits.doctor_name))
+          )
+        )
+    )
+  );
+
+DROP POLICY IF EXISTS "doctors read queue patients" ON public.patients;
+CREATE POLICY "doctors read queue patients"
+  ON public.patients FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1
+      FROM public.patient_visits pv
+      JOIN public.doctor_profiles dp ON public.doctor_profile_matches_current_user(dp.id)
+      WHERE pv.patient_id = patients.id
+        AND (
+          dp.id = pv.doctor_profile_id
+          OR (dp.is_clinic_admin AND lower(trim(dp.clinic_name)) = lower(trim(pv.clinic_name)))
+          OR (
+            lower(trim(dp.clinic_name)) = lower(trim(pv.clinic_name))
+            AND lower(trim(dp.doctor_name)) = lower(trim(pv.doctor_name))
+          )
+        )
+    )
+  );
+
+DROP POLICY IF EXISTS "doctors manage own prescriptions" ON public.prescriptions;
+CREATE POLICY "doctors manage own prescriptions"
+  ON public.prescriptions FOR ALL
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.doctor_profiles dp
+      WHERE public.doctor_profile_matches_current_user(dp.id)
+        AND dp.id = prescriptions.doctor_profile_id
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.doctor_profiles dp
+      WHERE public.doctor_profile_matches_current_user(dp.id)
+        AND dp.id = prescriptions.doctor_profile_id
+    )
+  );
+
+DROP POLICY IF EXISTS "doctors manage prescription medicines" ON public.prescription_medicines;
+CREATE POLICY "doctors manage prescription medicines"
+  ON public.prescription_medicines FOR ALL
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1
+      FROM public.prescriptions pr
+      JOIN public.doctor_profiles dp ON dp.id = pr.doctor_profile_id
+      WHERE pr.id = prescription_medicines.prescription_id
+        AND public.doctor_profile_matches_current_user(dp.id)
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1
+      FROM public.prescriptions pr
+      JOIN public.doctor_profiles dp ON dp.id = pr.doctor_profile_id
+      WHERE pr.id = prescription_medicines.prescription_id
+        AND public.doctor_profile_matches_current_user(dp.id)
+    )
+  );
+
+DROP POLICY IF EXISTS "doctors read prescription audit logs" ON public.prescription_audit_logs;
+CREATE POLICY "doctors read prescription audit logs"
+  ON public.prescription_audit_logs FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1
+      FROM public.prescriptions pr
+      JOIN public.doctor_profiles dp ON dp.id = pr.doctor_profile_id
+      WHERE pr.id = prescription_audit_logs.prescription_id
+        AND public.doctor_profile_matches_current_user(dp.id)
+    )
+  );
+
+DROP POLICY IF EXISTS "doctors insert prescription audit logs" ON public.prescription_audit_logs;
+CREATE POLICY "doctors insert prescription audit logs"
+  ON public.prescription_audit_logs FOR INSERT
+  TO authenticated
+  WITH CHECK (actor_user_id = auth.uid());
+
+DROP POLICY IF EXISTS "doctors manage prescription pdfs" ON storage.objects;
+CREATE POLICY "doctors manage prescription pdfs"
+  ON storage.objects FOR ALL
+  TO authenticated
+  USING (bucket_id = 'prescriptions' AND (storage.foldername(name))[1] = auth.uid()::text)
+  WITH CHECK (bucket_id = 'prescriptions' AND (storage.foldername(name))[1] = auth.uid()::text);
+
 -- Note: daily_intake_sheets table removed — Google Sheets intake is no longer used.
 -- All patient data enters via the QR form (WF11) which writes directly to public.patients.
 
 -- Service role bypasses RLS automatically — no policy needed for it.
--- Block anonymous / authenticated access by default (no permissive policy = deny all).
--- Add read-only policies below if you want a Supabase dashboard / reporting tool to query.
 
 -- Example: allow SELECT for authenticated users on patients (optional, add when needed)
 -- CREATE POLICY "authenticated read patients"

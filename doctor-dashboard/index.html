@@ -547,6 +547,35 @@
       -webkit-backdrop-filter: blur(18px);
     }
     .login h1 { margin: 0; font-size: 26px; }
+    .login-copy { color: var(--muted); margin: 4px 0 0; line-height: 1.5; }
+    .login-step {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      margin-top: 14px;
+      padding: 7px 9px;
+      border-radius: 8px;
+      color: var(--teal);
+      background: var(--teal-2);
+      border: 1px solid rgba(17, 124, 114, 0.14);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .otp-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .link-button {
+      border: 0;
+      background: transparent;
+      color: var(--teal);
+      font-weight: 800;
+      padding: 6px 0;
+      min-height: auto;
+    }
     .empty {
       min-height: 320px;
       display: grid;
@@ -607,17 +636,21 @@
   <section id="login-screen" class="login">
     <div class="panel">
       <h1>Doctor Dashboard</h1>
-      <p style="color: var(--muted); margin-top: 4px;">Sign in with the doctor account created in Supabase Auth.</p>
+      <p class="login-copy">Use the WhatsApp number registered through hospital onboarding. We will send a one-time code to confirm access.</p>
+      <span id="login-step" class="login-step">WhatsApp verification</span>
       <form id="login-form" class="filters" style="margin-top: 18px;">
         <div class="field">
-          <label for="email">Email</label>
-          <input id="email" type="email" autocomplete="email" required />
+          <label for="doctor-phone">Registered WhatsApp Number</label>
+          <input id="doctor-phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+91 98765 43210" required />
         </div>
-        <div class="field">
-          <label for="password">Password</label>
-          <input id="password" type="password" autocomplete="current-password" required />
+        <div id="otp-field" class="field hidden">
+          <label for="otp-code">One-Time Code</label>
+          <input id="otp-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="6-digit OTP" />
         </div>
-        <button class="btn primary" type="submit">Sign In</button>
+        <div class="otp-actions">
+          <button id="login-submit" class="btn primary" type="submit">Send WhatsApp OTP</button>
+          <button id="change-phone" class="link-button hidden" type="button">Change number</button>
+        </div>
       </form>
     </div>
   </section>
@@ -898,6 +931,8 @@
       demo: false,
       demoHistory: [],
       lastQueueError: null,
+      loginPhone: '',
+      otpSent: false,
     };
 
     function todayISO() {
@@ -911,6 +946,31 @@
       el.classList.remove('hidden');
       clearTimeout(showToast.timer);
       showToast.timer = setTimeout(() => el.classList.add('hidden'), 4200);
+    }
+
+    function normalizePhoneInput(value) {
+      const raw = String(value || '').trim();
+      if (!raw) return '';
+      const compact = raw.replace(/[\s\-().]/g, '');
+      if (compact.startsWith('+')) return compact;
+      if (/^\d{10}$/.test(compact)) return `+91${compact}`;
+      if (/^[1-9]\d{6,14}$/.test(compact)) return `+${compact}`;
+      return compact;
+    }
+
+    function isValidE164(phone) {
+      return /^\+[1-9]\d{6,14}$/.test(phone);
+    }
+
+    function resetLoginStep() {
+      state.loginPhone = '';
+      state.otpSent = false;
+      $('otp-field').classList.add('hidden');
+      $('otp-code').value = '';
+      $('doctor-phone').disabled = false;
+      $('change-phone').classList.add('hidden');
+      $('login-submit').textContent = 'Send WhatsApp OTP';
+      $('login-step').textContent = 'WhatsApp verification';
     }
 
     function showBanner(title, body, { error = false, action = null } = {}) {
@@ -1017,13 +1077,43 @@
       $('login-form').addEventListener('submit', async event => {
         event.preventDefault();
         if (!sb) return showConfigFallback();
-        const { data, error } = await sb.auth.signInWithPassword({
-          email: $('email').value.trim(),
-          password: $('password').value,
+        if (!state.otpSent) {
+          const phone = normalizePhoneInput($('doctor-phone').value);
+          if (!isValidE164(phone)) return showToast('Enter the registered WhatsApp number in international format.', true);
+          const button = $('login-submit');
+          setButtonBusy(button, true, 'Sending...');
+          const { error } = await sb.auth.signInWithOtp({
+            phone,
+            options: { channel: 'whatsapp' },
+          });
+          setButtonBusy(button, false);
+          if (error) return showToast(error.message, true);
+          state.loginPhone = phone;
+          state.otpSent = true;
+          $('doctor-phone').value = phone;
+          $('doctor-phone').disabled = true;
+          $('otp-field').classList.remove('hidden');
+          $('otp-code').required = true;
+          $('change-phone').classList.remove('hidden');
+          $('login-submit').textContent = 'Verify and Sign In';
+          $('login-step').textContent = `OTP sent to ${phone}`;
+          $('otp-code').focus();
+          return showToast('OTP sent on WhatsApp.');
+        }
+        const token = $('otp-code').value.trim();
+        if (!/^\d{4,8}$/.test(token)) return showToast('Enter the OTP sent on WhatsApp.', true);
+        const button = $('login-submit');
+        setButtonBusy(button, true, 'Verifying...');
+        const { data, error } = await sb.auth.verifyOtp({
+          phone: state.loginPhone,
+          token,
+          type: 'sms',
         });
+        setButtonBusy(button, false);
         if (error) return showToast(error.message, true);
         await enterApp(data.session);
       });
+      $('change-phone').addEventListener('click', resetLoginStep);
       $('sign-out').addEventListener('click', async () => {
         if (!sb) return location.reload();
         await sb.auth.signOut();
@@ -1131,18 +1221,32 @@
     }
 
     async function loadProfile() {
-      const { data, error } = await sb
-        .from('doctor_profiles')
-        .select('*')
-        .eq('user_id', state.session.user.id)
-        .single();
+      let { data, error } = await sb.rpc('get_or_create_doctor_profile_for_current_user');
+      if (error && /function .* does not exist|schema cache/i.test(error.message || '')) {
+        const fallback = await sb
+          .from('doctor_profiles')
+          .select('*')
+          .eq('user_id', state.session.user.id)
+          .single();
+        data = fallback.data;
+        error = fallback.error;
+      }
       if (error) {
         showBanner(
           'Doctor profile not found',
-          'Create a doctor_profiles row for this Supabase Auth user, then refresh the dashboard.',
+          'This WhatsApp number is not linked to a doctor profile or hospital onboarding row. Check the registered doctor phone, then try again.',
           { error: true, action: () => location.reload() }
         );
         throw error;
+      }
+      if (Array.isArray(data)) data = data[0] || null;
+      if (!data) {
+        showBanner(
+          'Doctor profile not found',
+          'This WhatsApp number has no matching doctor in hospital onboarding yet.',
+          { error: true, action: () => location.reload() }
+        );
+        throw new Error('Doctor profile not found for verified WhatsApp number.');
       }
       state.profile = await enrichProfileFromBoarding(data);
       $('doctor-subtitle').textContent = data.doctor_name;
