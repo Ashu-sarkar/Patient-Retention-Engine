@@ -233,23 +233,28 @@ async function listWorkflows() {
  */
 async function upsertWorkflow(wfJson, credMap) {
   const patched = patchCredentials(wfJson, credMap);
+  delete patched.versionId;
+  delete patched.activeVersionId;
+  patched.active = false;
+
   const all     = await listWorkflows();
   const found   = all.find(w => w.id === patched.id || w.name === patched.name);
 
   if (found) {
-    const merged = { ...found, nodes: patched.nodes, connections: patched.connections };
-    const { ok, json } = await request('PATCH', `/rest/workflows/${found.id}`, merged);
-    if (!ok) {
-      console.warn(`  ⚠️  Update "${patched.name}": ${JSON.stringify(json).slice(0, 120)}`);
-      return found.id;
+    const archive = await request('POST', `/rest/workflows/${found.id}/archive`, {});
+    if (!archive.ok && !/already archived/i.test(JSON.stringify(archive.json))) {
+      throw new Error(`Could not archive existing workflow "${found.name}": ${JSON.stringify(archive.json).slice(0, 200)}`);
     }
-    return found.id;
+
+    const del = await request('DELETE', `/rest/workflows/${found.id}`);
+    if (!del.ok) {
+      throw new Error(`Could not delete existing workflow "${found.name}": ${JSON.stringify(del.json).slice(0, 200)}`);
+    }
   }
 
   const { ok, json } = await request('POST', '/rest/workflows', patched);
   if (!ok) {
-    console.warn(`  ⚠️  Create "${patched.name}": ${JSON.stringify(json).slice(0, 120)}`);
-    return null;
+    throw new Error(`Could not create workflow "${patched.name}": ${JSON.stringify(json).slice(0, 200)}`);
   }
   return json?.data?.id ?? json?.id;
 }
