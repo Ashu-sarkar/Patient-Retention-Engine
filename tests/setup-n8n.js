@@ -181,14 +181,15 @@ async function upsertCredential(name, type, data) {
   if (existing) {
     // PATCH requires name + type to pass schema validation
     const { ok, json } = await request('PATCH', `/rest/credentials/${existing.id}`, { name, type, data });
-    if (!ok) console.warn(`  ⚠️  Could not update "${name}": ${JSON.stringify(json).slice(0, 120)}`);
-    else console.log(`  ⏭  Credential "${name}" updated (id: ${existing.id})`);
+    if (!ok) {
+      throw new Error(`Could not update credential "${name}": ${JSON.stringify(json).slice(0, 200)}`);
+    }
+    console.log(`  ⏭  Credential "${name}" updated (id: ${existing.id})`);
     return existing.id;
   }
   const { ok, json } = await request('POST', '/rest/credentials', { name, type, data });
   if (!ok) {
-    console.warn(`  ⚠️  Could not create "${name}": ${JSON.stringify(json).slice(0, 120)}`);
-    return null;
+    throw new Error(`Could not create credential "${name}": ${JSON.stringify(json).slice(0, 200)}`);
   }
   console.log(`  ✅ Created credential "${name}" (id: ${json?.data?.id ?? json?.id})`);
   return json?.data?.id ?? json?.id;
@@ -199,8 +200,7 @@ async function verifySupabasePostgres(pgData) {
   try {
     ({ Client } = require('pg'));
   } catch {
-    console.log('  ⚠️  pg package is unavailable; skipping direct Supabase DB connectivity probe.');
-    return;
+    throw new Error('pg package is unavailable; cannot verify Supabase DB connectivity.');
   }
   const client = new Client({
     host: pgData.host,
@@ -321,6 +321,27 @@ async function activateWorkflow(wfId) {
   return { active: r?.data?.active ?? ok ?? false, status, skipped: false, reactivated };
 }
 
+function requiredWorkflowNames() {
+  return fs.readdirSync(WF_DIR)
+    .filter(f => f.endsWith('.json'))
+    .map(file => JSON.parse(fs.readFileSync(path.join(WF_DIR, file), 'utf8')).name)
+    .sort();
+}
+
+function assertProductionReady(workflows) {
+  const required = requiredWorkflowNames();
+  const missing = required.filter(name => !workflows.some(wf => wf.name === name));
+  const inactive = required.filter(name => workflows.some(wf => wf.name === name && !wf.active));
+
+  if (missing.length || inactive.length) {
+    const details = [
+      missing.length ? `missing: ${missing.join(', ')}` : '',
+      inactive.length ? `inactive: ${inactive.join(', ')}` : '',
+    ].filter(Boolean).join('; ');
+    throw new Error(`Production workflow readiness check failed (${details})`);
+  }
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
   console.log('\n╔══════════════════════════════════════════════════════════╗');
@@ -419,6 +440,7 @@ async function main() {
   // 7. Summary
   console.log('\n── 7. Summary ──────────────────────────────────────────────');
   const final = await listWorkflows();
+  assertProductionReady(final);
   const activeCount = final.filter(w => w.active).length;
   console.log(`\n  🎉 ${activeCount}/${final.length} workflows active`);
   for (const wf of final.sort((a, b) => a.name.localeCompare(b.name))) {
