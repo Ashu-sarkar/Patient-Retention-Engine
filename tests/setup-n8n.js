@@ -295,30 +295,26 @@ function patchCredentials(wfJson, credMap) {
 }
 
 async function activateWorkflow(wfId) {
-  // Ensure the active version matches the latest edited workflow version.
+  // Always cycle activation. n8n can report a workflow as active in the DB while
+  // its production webhook is not mounted after CLI imports or restored volumes.
   const { json } = await request('GET', `/rest/workflows/${wfId}`);
   const wf = json?.data || {};
   const latestVersionId = wf.versionId || '';
-  const activeVersionId = wf.activeVersionId || '';
   const isActive = !!wf.active;
 
-  if (!latestVersionId) return { active: false, status: 0, skipped: false, reactivated: false };
-
-  if (isActive && activeVersionId === latestVersionId) {
-    return { active: true, status: 200, skipped: true, reactivated: false };
-  }
+  if (!latestVersionId) return { active: false, status: 0, reactivated: false };
 
   let reactivated = false;
-  if (isActive && activeVersionId !== latestVersionId) {
+  if (isActive) {
     const { ok: deactivated } = await request('POST', `/rest/workflows/${wfId}/deactivate`);
     if (!deactivated) {
-      return { active: false, status: 500, skipped: false, reactivated: false };
+      return { active: false, status: 500, reactivated: false };
     }
     reactivated = true;
   }
 
   const { ok, json: r, status } = await request('POST', `/rest/workflows/${wfId}/activate`, { versionId: latestVersionId });
-  return { active: r?.data?.active ?? ok ?? false, status, skipped: false, reactivated };
+  return { active: r?.data?.active ?? ok ?? false, status, reactivated };
 }
 
 function requiredWorkflowNames() {
@@ -427,10 +423,8 @@ async function main() {
   const allWfs = (await listWorkflows()).filter(wf => managedWorkflowNames.has(wf.name));
 
   for (const wf of allWfs) {
-    const { active, status, skipped, reactivated } = await activateWorkflow(wf.id);
-    if (skipped) {
-      console.log(`  ⏭  Already active: ${wf.name}`);
-    } else if (reactivated) {
+    const { active, status, reactivated } = await activateWorkflow(wf.id);
+    if (reactivated) {
       console.log(`  🔄 Re-activated latest version: ${wf.name}  (HTTP ${status})`);
     } else {
       console.log(`  ${active ? '✅' : '⚠️ '} ${wf.name}  (HTTP ${status})`);
