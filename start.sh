@@ -50,7 +50,8 @@ done
 echo "[start.sh] Running production workflow setup..."
 SETUP_LOG="/tmp/patient-retention-setup.log"
 echo "[start.sh] Restoring bundled workflow exports through n8n CLI..."
-if n8n import:workflow --separate --input=/workflows 2>&1 | tee "${SETUP_LOG}.import"; then
+if n8n import:workflow --separate --input=/workflows >"${SETUP_LOG}.import" 2>&1; then
+  cat "${SETUP_LOG}.import"
   echo "[start.sh] Workflow CLI import completed."
 else
   echo "[start.sh] WARNING: workflow CLI import failed; REST setup will still attempt import." >&2
@@ -76,7 +77,8 @@ do
   }
 done
 
-if N8N_BASE_URL="${LOCAL_N8N_URL}" node /tests/setup-n8n.js 2>&1 | tee "${SETUP_LOG}"; then
+if N8N_BASE_URL="${LOCAL_N8N_URL}" node /tests/setup-n8n.js >"${SETUP_LOG}" 2>&1; then
+  cat "${SETUP_LOG}"
   echo "[start.sh] Workflow setup completed."
 else
   echo "[start.sh] ERROR: workflow setup failed; production webhooks may be unregistered." >&2
