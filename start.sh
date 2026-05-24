@@ -90,4 +90,25 @@ else
   exit 1
 fi
 
+echo "[start.sh] Restarting n8n once so published workflow/webhook state is loaded..."
+kill "${N8N_PID}" 2>/dev/null || true
+wait "${N8N_PID}" 2>/dev/null || true
+
+echo "[start.sh] Starting n8n after workflow setup..."
+n8n start &
+N8N_PID=$!
+
+echo "[start.sh] Waiting for n8n at ${LOCAL_N8N_URL}/healthz after setup restart..."
+for i in $(seq 1 60); do
+  if wget -qO- "${LOCAL_N8N_URL}/healthz" >/dev/null 2>&1; then
+    echo "[start.sh] n8n is healthy after setup restart."
+    break
+  fi
+  if [ "$i" -eq 60 ]; then
+    echo "[start.sh] ERROR: n8n did not become healthy after setup restart." >&2
+    exit 1
+  fi
+  sleep 2
+done
+
 wait "${N8N_PID}"
