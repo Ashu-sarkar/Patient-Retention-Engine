@@ -57,7 +57,7 @@ else
   echo "[start.sh] WARNING: workflow CLI import failed; REST setup will still attempt import." >&2
   tail -80 "${SETUP_LOG}.import" >&2 || true
 fi
-echo "[start.sh] Marking bundled workflows active through n8n CLI..."
+echo "[start.sh] Publishing bundled workflows through n8n CLI..."
 for WF_ID in \
   wf1-followup-reminder \
   wf2-sameday-reminder \
@@ -72,8 +72,8 @@ for WF_ID in \
   wf12-hospital-boarding \
   wf13-prescription-delivery
 do
-  n8n update:workflow --id="${WF_ID}" --active=true || {
-    echo "[start.sh] WARNING: could not activate workflow ${WF_ID} through CLI." >&2
+  n8n publish:workflow --id="${WF_ID}" || {
+    echo "[start.sh] WARNING: could not publish workflow ${WF_ID} through CLI." >&2
   }
 done
 
@@ -110,5 +110,24 @@ for i in $(seq 1 60); do
   fi
   sleep 2
 done
+
+echo "[start.sh] Verifying production webhook active version..."
+LOCAL_N8N_URL="${LOCAL_N8N_URL}" node <<'NODE'
+(async () => {
+  const base = process.env.LOCAL_N8N_URL || 'http://127.0.0.1:5678';
+  const response = await fetch(`${base}/webhook/patient-form-intake`, {
+    method: 'POST',
+    body: new URLSearchParams({}),
+  });
+  const text = await response.text();
+  if (response.status === 404 || /Active version not found/i.test(text)) {
+    throw new Error(`WF11 production webhook is not published: HTTP ${response.status} ${text.slice(0, 200)}`);
+  }
+  console.log(`[start.sh] WF11 webhook mounted (HTTP ${response.status}).`);
+})().catch(error => {
+  console.error(`[start.sh] ERROR: ${error.message}`);
+  process.exit(1);
+});
+NODE
 
 wait "${N8N_PID}"

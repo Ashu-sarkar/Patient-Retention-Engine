@@ -227,9 +227,13 @@ async function listWorkflows() {
 }
 
 /**
- * Upsert a workflow:
- *  - If a workflow with same id/name exists → PATCH nodes+connections
- *  - Otherwise → POST to create
+ * Upsert a workflow without deleting it while n8n is running.
+ *
+ * n8n 2.x separates the draft workflow from the published active version.
+ * Deleting/recreating an active workflow during startup can leave the webhook
+ * route pointing at a workflow whose activeVersionId is null, which produces:
+ * "Active version not found for workflow with id ...". PATCH keeps the workflow
+ * identity stable, then activateWorkflow() republishes the current version.
  */
 async function upsertWorkflow(wfJson, credMap) {
   const patched = patchCredentials(wfJson, credMap);
@@ -237,19 +241,24 @@ async function upsertWorkflow(wfJson, credMap) {
   delete patched.activeVersionId;
   patched.active = false;
 
-  const all     = await listWorkflows();
-  const found   = all.find(w => w.id === patched.id || w.name === patched.name);
+  const all = await listWorkflows();
+  const found = all.find(w => !w.isArchived && (w.id === patched.id || w.name === patched.name));
 
   if (found) {
-    const archive = await request('POST', `/rest/workflows/${found.id}/archive`, {});
-    if (!archive.ok && !/already archived/i.test(JSON.stringify(archive.json))) {
-      throw new Error(`Could not archive existing workflow "${found.name}": ${JSON.stringify(archive.json).slice(0, 200)}`);
+    const patchPayload = {
+      name: patched.name,
+      nodes: patched.nodes,
+      connections: patched.connections,
+      settings: patched.settings || {},
+      staticData: patched.staticData || null,
+      pinData: patched.pinData || {},
+      tags: patched.tags || [],
+    };
+    const { ok, json } = await request('PATCH', `/rest/workflows/${found.id}`, patchPayload);
+    if (!ok) {
+      throw new Error(`Could not patch workflow "${found.name}": ${JSON.stringify(json).slice(0, 200)}`);
     }
-
-    const del = await request('DELETE', `/rest/workflows/${found.id}`);
-    if (!del.ok) {
-      throw new Error(`Could not delete existing workflow "${found.name}": ${JSON.stringify(del.json).slice(0, 200)}`);
-    }
+    return found.id;
   }
 
   const { ok, json } = await request('POST', '/rest/workflows', patched);
@@ -299,27 +308,45 @@ function patchCredentials(wfJson, credMap) {
   return clone;
 }
 
-async function activateWorkflow(wfId) {
-  // Always cycle activation. n8n can report a workflow as active in the DB while
-  // its production webhook is not mounted after CLI imports or restored volumes.
-  const { json } = await request('GET', `/rest/workflows/${wfId}`);
-  const wf = json?.data || {};
-  const latestVersionId = wf.versionId || '';
-  const isActive = !!wf.active;
+async function getWorkflow(wfId) {
+  const { ok, json, status } = await request('GET', `/rest/workflows/${wfId}`);
+  return { ok, status, workflow: json?.data || null };
+}
 
-  if (!latestVersionId) return { active: false, status: 0, reactivated: false };
+function hasPublishedActiveVersion(wf) {
+  return Boolean(wf?.active && wf.activeVersionId && wf.versionId && wf.activeVersionId === wf.versionId);
+}
+
+async function activateWorkflow(wfId) {
+  // Always cycle activation. In n8n 2.x a workflow can have active=true while
+  // activeVersionId is null; production webhooks then return "Active version not found".
+  let { workflow: wf } = await getWorkflow(wfId);
+  if (!wf?.versionId) return { active: false, status: 0, reactivated: false, activeVersionId: null };
 
   let reactivated = false;
-  if (isActive) {
-    const { ok: deactivated } = await request('POST', `/rest/workflows/${wfId}/deactivate`);
-    if (!deactivated) {
-      return { active: false, status: 500, reactivated: false };
+  let status = 0;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    if (wf.active || attempt > 1) {
+      const { ok: deactivated } = await request('POST', `/rest/workflows/${wfId}/deactivate`);
+      if (!deactivated && attempt === 1) {
+        return { active: false, status: 500, reactivated, activeVersionId: wf.activeVersionId || null };
+      }
+      reactivated = true;
+      await sleep(500);
     }
-    reactivated = true;
+
+    const activate = await request('POST', `/rest/workflows/${wfId}/activate`, { versionId: wf.versionId });
+    status = activate.status;
+    await sleep(700);
+
+    const refreshed = await getWorkflow(wfId);
+    wf = refreshed.workflow || wf;
+    if (hasPublishedActiveVersion(wf)) {
+      return { active: true, status, reactivated, activeVersionId: wf.activeVersionId };
+    }
   }
 
-  const { ok, json: r, status } = await request('POST', `/rest/workflows/${wfId}/activate`, { versionId: latestVersionId });
-  return { active: r?.data?.active ?? ok ?? false, status, reactivated };
+  return { active: false, status, reactivated, activeVersionId: wf.activeVersionId || null };
 }
 
 function requiredWorkflowNames() {
@@ -331,13 +358,16 @@ function requiredWorkflowNames() {
 
 function assertProductionReady(workflows) {
   const required = requiredWorkflowNames();
-  const missing = required.filter(name => !workflows.some(wf => wf.name === name));
-  const inactive = required.filter(name => workflows.some(wf => wf.name === name && !wf.active));
+  const missing = required.filter(name => !workflows.some(wf => wf.name === name && !wf.isArchived));
+  const notPublished = required.filter(name => {
+    const wf = workflows.find(candidate => candidate.name === name && !candidate.isArchived);
+    return wf && !hasPublishedActiveVersion(wf);
+  });
 
-  if (missing.length || inactive.length) {
+  if (missing.length || notPublished.length) {
     const details = [
       missing.length ? `missing: ${missing.join(', ')}` : '',
-      inactive.length ? `inactive: ${inactive.join(', ')}` : '',
+      notPublished.length ? `not published active: ${notPublished.join(', ')}` : '',
     ].filter(Boolean).join('; ');
     throw new Error(`Production workflow readiness check failed (${details})`);
   }
@@ -428,11 +458,12 @@ async function main() {
   const allWfs = (await listWorkflows()).filter(wf => managedWorkflowNames.has(wf.name));
 
   for (const wf of allWfs) {
-    const { active, status, reactivated } = await activateWorkflow(wf.id);
+    const { active, status, reactivated, activeVersionId } = await activateWorkflow(wf.id);
+    const suffix = activeVersionId ? `, activeVersionId: ${activeVersionId}` : '';
     if (reactivated) {
-      console.log(`  🔄 Re-activated latest version: ${wf.name}  (HTTP ${status})`);
+      console.log(`  🔄 Re-published latest version: ${wf.name}  (HTTP ${status}${suffix})`);
     } else {
-      console.log(`  ${active ? '✅' : '⚠️ '} ${wf.name}  (HTTP ${status})`);
+      console.log(`  ${active ? '✅' : '⚠️ '} ${wf.name}  (HTTP ${status}${suffix})`);
     }
   }
 
