@@ -56,6 +56,25 @@ else
   echo "[start.sh] WARNING: workflow CLI import failed; REST setup will still attempt import." >&2
   tail -80 "${SETUP_LOG}.import" >&2 || true
 fi
+echo "[start.sh] Marking bundled workflows active through n8n CLI..."
+for WF_ID in \
+  wf1-followup-reminder \
+  wf2-sameday-reminder \
+  wf3-missed-appointment \
+  wf4-health-check \
+  wf5-reactivation \
+  wf6-feedback-listener \
+  wf7-new-patient \
+  wf8-error-handler \
+  wf9-twilio-status-callback \
+  wf11-form-intake \
+  wf12-hospital-boarding \
+  wf13-prescription-delivery
+do
+  n8n update:workflow --id="${WF_ID}" --active=true || {
+    echo "[start.sh] WARNING: could not activate workflow ${WF_ID} through CLI." >&2
+  }
+done
 
 if N8N_BASE_URL="${LOCAL_N8N_URL}" node /tests/setup-n8n.js 2>&1 | tee "${SETUP_LOG}"; then
   echo "[start.sh] Workflow setup completed."
