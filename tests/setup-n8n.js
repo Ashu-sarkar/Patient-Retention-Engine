@@ -66,6 +66,7 @@ const OWNER_PASSWORD  = env.N8N_OWNER_PASSWORD || '';
 const OWNER_FIRSTNAME = env.N8N_OWNER_FIRSTNAME || 'Admin';
 const OWNER_LASTNAME  = env.N8N_OWNER_LASTNAME  || 'User';
 const REQUIRED_ENV = [
+  'SUPABASE_URL',
   'SUPABASE_DB_HOST',
   'SUPABASE_DB_USER',
   'SUPABASE_DB_PASSWORD',
@@ -75,6 +76,40 @@ const REQUIRED_ENV = [
   'TWILIO_WHATSAPP_FROM',
   'TWILIO_STATUS_CALLBACK_URL',
 ];
+
+function extractSupabaseProjectRef(supabaseUrl) {
+  try {
+    const url = new URL(String(supabaseUrl || '').trim());
+    const match = url.hostname.match(/^([a-z0-9]+)\.supabase\.co$/i);
+    return match ? match[1] : '';
+  } catch {
+    return '';
+  }
+}
+
+function isSupabasePoolerHost(host) {
+  return String(host || '').includes('pooler.supabase.com');
+}
+
+function validateSupabaseDbConfig(env) {
+  const host = String(env.SUPABASE_DB_HOST || '');
+  const user = String(env.SUPABASE_DB_USER || '');
+  const projectRef = extractSupabaseProjectRef(env.SUPABASE_URL);
+
+  if (isSupabasePoolerHost(host) && user === 'postgres') {
+    throw new Error(
+      'SUPABASE_DB_USER is set to "postgres", but Supabase pooler requires "postgres.<project-ref>". ' +
+      (projectRef ? `For this SUPABASE_URL, set SUPABASE_DB_USER=postgres.${projectRef}.` : 'Use the exact user shown in Supabase Dashboard → Connect → Session pooler.')
+    );
+  }
+
+  if (isSupabasePoolerHost(host) && projectRef && user !== `postgres.${projectRef}`) {
+    throw new Error(
+      `SUPABASE_DB_USER (${user}) does not match SUPABASE_URL project ref. ` +
+      `Set SUPABASE_DB_USER=postgres.${projectRef} for the Supabase session pooler.`
+    );
+  }
+}
 
 // ── HTTP helpers ──────────────────────────────────────────────────────────────
 let sessionCookie = '';
@@ -387,6 +422,7 @@ async function main() {
   if (missing.length) {
     throw new Error(`Missing required setup environment variables: ${missing.join(', ')}`);
   }
+  validateSupabaseDbConfig(env);
 
   // 1. Health check
   console.log('── 1. Connectivity ─────────────────────────────────────────');

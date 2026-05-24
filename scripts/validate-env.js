@@ -27,6 +27,16 @@ function isMissing(value) {
   return !value || /^YOUR_|^PLACEHOLDER/i.test(value) || value.includes('YOUR_');
 }
 
+function extractSupabaseProjectRef(supabaseUrl) {
+  try {
+    const url = new URL(String(supabaseUrl || '').trim());
+    const match = url.hostname.match(/^([a-z0-9]+)\.supabase\.co$/i);
+    return match ? match[1] : '';
+  } catch {
+    return '';
+  }
+}
+
 const env = { ...parseEnv(envPath), ...process.env };
 const errors = [];
 const warnings = [];
@@ -120,6 +130,18 @@ if (env.INTERNAL_WEBHOOK_SECRET && env.INTERNAL_WEBHOOK_SECRET.length < 32) {
 
 if (env.N8N_ENCRYPTION_KEY && env.INTERNAL_WEBHOOK_SECRET && env.N8N_ENCRYPTION_KEY === env.INTERNAL_WEBHOOK_SECRET) {
   errors.push('INTERNAL_WEBHOOK_SECRET must be different from N8N_ENCRYPTION_KEY.');
+}
+
+const supabaseProjectRef = extractSupabaseProjectRef(env.SUPABASE_URL);
+if (String(env.SUPABASE_DB_HOST || '').includes('pooler.supabase.com')) {
+  if (env.SUPABASE_DB_USER === 'postgres') {
+    errors.push(
+      'SUPABASE_DB_USER is set to "postgres", but Supabase pooler requires "postgres.<project-ref>". ' +
+      (supabaseProjectRef ? `Use SUPABASE_DB_USER=postgres.${supabaseProjectRef}.` : 'Use the exact user from Supabase Dashboard → Connect → Session pooler.')
+    );
+  } else if (supabaseProjectRef && env.SUPABASE_DB_USER !== `postgres.${supabaseProjectRef}`) {
+    errors.push(`SUPABASE_DB_USER must be postgres.${supabaseProjectRef} for this SUPABASE_URL and pooler host.`);
+  }
 }
 
 for (const key of ['WEBHOOK_URL', 'TWILIO_STATUS_CALLBACK_URL', 'N8N_PRESCRIPTION_DELIVERY_URL', 'DOCTOR_DASHBOARD_ORIGIN']) {
