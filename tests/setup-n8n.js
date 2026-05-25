@@ -237,6 +237,11 @@ async function verifySupabasePostgres(pgData) {
   } catch {
     throw new Error('pg package is unavailable; cannot verify Supabase DB connectivity.');
   }
+
+  console.log(`  Connecting to Postgres:`);
+  console.log(`    host=${pgData.host}  port=${pgData.port}  db=${pgData.database}`);
+  console.log(`    user=${pgData.user}  password=${pgData.password ? `[set, ${pgData.password.length} chars]` : '[MISSING]'}`);
+
   const client = new Client({
     host: pgData.host,
     port: pgData.port,
@@ -250,6 +255,25 @@ async function verifySupabasePostgres(pgData) {
     await client.connect();
     await client.query('SELECT 1');
     console.log('  ✅ Supabase Postgres connectivity verified.');
+  } catch (err) {
+    const msg = err.message || '';
+    if (/password authentication failed/i.test(msg)) {
+      throw new Error(
+        `Supabase DB password is wrong or the pooler user is incorrect.\n` +
+        `  Connecting as: ${pgData.user} @ ${pgData.host}:${pgData.port}\n` +
+        `  Fix: verify SUPABASE_DB_PASSWORD in Railway matches Supabase Dashboard → Settings → Database.\n` +
+        `  Also confirm SUPABASE_DB_USER=postgres.${pgData.user.split('.')[1] || '<project-ref>'} (not plain "postgres").\n` +
+        `  Original error: ${msg}`
+      );
+    }
+    if (/ECONNREFUSED|ETIMEDOUT|ENOTFOUND|connect ETIME/i.test(msg)) {
+      throw new Error(
+        `Cannot reach Supabase pooler at ${pgData.host}:${pgData.port}.\n` +
+        `  Fix: confirm SUPABASE_DB_HOST=aws-1-ap-south-1.pooler.supabase.com and SUPABASE_DB_PORT=5432.\n` +
+        `  Original error: ${msg}`
+      );
+    }
+    throw err;
   } finally {
     await client.end().catch(() => {});
   }
@@ -438,6 +462,11 @@ async function main() {
 
   // 4. Credentials
   console.log('\n── 4. Credentials ──────────────────────────────────────────');
+  console.log(`  SUPABASE_DB_HOST     = ${env.SUPABASE_DB_HOST     || '[MISSING]'}`);
+  console.log(`  SUPABASE_DB_PORT     = ${env.SUPABASE_DB_PORT     || '5432 (default)'}`);
+  console.log(`  SUPABASE_DB_NAME     = ${env.SUPABASE_DB_NAME     || 'postgres (default)'}`);
+  console.log(`  SUPABASE_DB_USER     = ${env.SUPABASE_DB_USER     || '[MISSING — will default to "postgres"]'}`);
+  console.log(`  SUPABASE_DB_PASSWORD = ${env.SUPABASE_DB_PASSWORD ? `[set, ${env.SUPABASE_DB_PASSWORD.length} chars]` : '[MISSING]'}`);
 
   const pgData = {
     host:                 env.SUPABASE_DB_HOST     || '',
