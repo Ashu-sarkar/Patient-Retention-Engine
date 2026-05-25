@@ -13,3 +13,5 @@ node_modules/
 # Logs & local data
 *.log
 npm-debug.log*
+.vercel
+.env*

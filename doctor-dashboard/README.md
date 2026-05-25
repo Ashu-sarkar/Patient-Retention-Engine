@@ -38,7 +38,8 @@ Set these Supabase function secrets before deployment:
 ```bash
 supabase secrets set N8N_PRESCRIPTION_DELIVERY_URL=https://your-n8n.example.com/webhook/prescription-delivery
 supabase secrets set INTERNAL_WEBHOOK_SECRET="$(openssl rand -hex 32)"
-supabase secrets set DOCTOR_DASHBOARD_ORIGIN=https://your-dashboard.example.com
+# Comma-separated; Vercel preview URLs matching vaitalcare-doctor*.vercel.app are allowed by default
+supabase secrets set DOCTOR_DASHBOARD_ORIGIN=https://vaitalcare-doctor.vercel.app,http://localhost:3000
 ```
 
 Use the same `INTERNAL_WEBHOOK_SECRET` in the n8n runtime environment so WF13 can verify `X-Internal-Signature`.

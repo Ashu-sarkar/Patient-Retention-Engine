@@ -136,7 +136,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=UPDATE public.prescriptions\nSET delivery_status = 'sent', updated_at = NOW()\nWHERE id = '{{ $('Validate Delivery Payload').first().json.prescription_id }}';",
+        "query": "=UPDATE public.prescriptions\nSET delivery_status = 'sent', updated_at = NOW()\nWHERE id = '{{ $('Validate Delivery Payload').item.json.prescription_id }}';",
         "options": {}
       },
       "id": "13131313-1313-1313-1313-000000000006",
@@ -170,15 +170,15 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "patient_id": "={{ $('Validate Delivery Payload').first().json.patient_id }}",
-            "patient_name": "={{ $('Validate Delivery Payload').first().json.patient_name }}",
-            "phone": "={{ $('Validate Delivery Payload').first().json.phone }}",
+            "patient_id": "={{ $('Validate Delivery Payload').item.json.patient_id }}",
+            "patient_name": "={{ $('Validate Delivery Payload').item.json.patient_name }}",
+            "phone": "={{ $('Validate Delivery Payload').item.json.phone }}",
             "workflow_name": "workflow-13-prescription-delivery",
             "message_type": "prescription_pdf",
-            "message_sent": "={{ $('Validate Delivery Payload').first().json._message_body }}",
+            "message_sent": "={{ $('Validate Delivery Payload').item.json._message_body }}",
             "sent_at": "={{ new Date().toISOString() }}",
             "delivery_status": "sent",
-            "scheduled_date": "={{ $('Validate Delivery Payload').first().json._scheduled_date }}",
+            "scheduled_date": "={{ $('Validate Delivery Payload').item.json._scheduled_date }}",
             "provider_message_id": "={{ $json.sid || $json.Sid || '' }}",
             "twilio_message_sid": "={{ $json.sid || $json.Sid || '' }}"
           },
@@ -205,7 +205,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=UPDATE public.prescriptions\nSET delivery_status = 'failed', updated_at = NOW()\nWHERE id = '{{ $('Validate Delivery Payload').first().json.prescription_id }}';",
+        "query": "=UPDATE public.prescriptions\nSET delivery_status = 'failed', updated_at = NOW()\nWHERE id = '{{ $('Validate Delivery Payload').item.json.prescription_id }}';",
         "options": {}
       },
       "id": "13131313-1313-1313-1313-000000000008",
@@ -243,7 +243,7 @@
             "execution_id": "={{ $execution.id }}",
             "log_level": "ERROR",
             "message": "Prescription delivery failed",
-            "details": "={{ JSON.stringify({ prescription_id: $('Validate Delivery Payload').first().json.prescription_id, phone: $('Validate Delivery Payload').first().json.phone, error: $json.error?.message || 'HTTP request failed' }) }}"
+            "details": "={{ JSON.stringify({ prescription_id: $('Validate Delivery Payload').item.json.prescription_id, phone: $('Validate Delivery Payload').item.json.phone, error: $json.error?.message || 'HTTP request failed' }) }}"
           },
           "matchingColumns": [],
           "schema": []
@@ -285,7 +285,7 @@
             "execution_id": "={{ $execution.id }}",
             "log_level": "WARN",
             "message": "Prescription delivery rejected by validation",
-            "details": "={{ JSON.stringify({ errors: $('Validate Delivery Payload').first().json._errors }) }}"
+            "details": "={{ JSON.stringify({ errors: $('Validate Delivery Payload').item.json._errors }) }}"
           },
           "matchingColumns": [],
           "schema": []
@@ -327,7 +327,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ status: 'error', message: 'Validation failed', errors: $('Validate Delivery Payload').first().json._errors }) }}",
+        "responseBody": "={{ JSON.stringify({ status: 'error', message: 'Validation failed', errors: $('Validate Delivery Payload').item.json._errors }) }}",
         "options": {
           "responseCode": 400
         }

@@ -884,7 +884,7 @@
             </div>
             <div class="btn-row" id="issue-section">
               <button class="btn" type="submit">Save Draft</button>
-              <button id="issue" class="btn primary" type="button">Issue PDF + WhatsApp</button>
+              <button id="issue" class="btn primary" type="button">Prescription + WhatsApp</button>
             </div>
           </form>
         </section>
@@ -1711,7 +1711,7 @@
         if (!state.demo) await triggerPrescriptionDelivery(prescription.id);
         state.currentDraft = null;
         $('draft-state').textContent = 'Issued';
-        showToast('Prescription issued and queued for WhatsApp.');
+        showToast('Prescription issued. Sending on WhatsApp…');
         await loadVisits();
         await loadPrescriptionHistory();
       } catch (error) {
@@ -1979,12 +1979,21 @@
     async function triggerPrescriptionDelivery(prescriptionId) {
       if (!PRESCRIPTION_DELIVERY_FUNCTION) return;
       try {
-        const { error } = await sb.functions.invoke(PRESCRIPTION_DELIVERY_FUNCTION, {
+        const { data, error } = await sb.functions.invoke(PRESCRIPTION_DELIVERY_FUNCTION, {
           body: { prescription_id: prescriptionId },
         });
         if (error) throw error;
+        if (data?.error) throw new Error(String(data.error));
+        showToast('Prescription sent on WhatsApp.');
+        await loadPrescriptionHistory();
       } catch (error) {
-        showToast(error.message || 'Prescription saved, but secure delivery gateway was unreachable.', true);
+        const msg = error?.message || String(error);
+        const corsHint = /cors|failed to fetch|network/i.test(msg)
+          ? ' Browser blocked the delivery request (CORS). Redeploy the prescription-delivery edge function or add this dashboard URL to DOCTOR_DASHBOARD_ORIGIN in Supabase secrets.'
+          : '';
+        showToast((msg || 'Prescription saved, but WhatsApp delivery failed.') + corsHint, true);
+        await sb.from('prescriptions').update({ delivery_status: 'failed' }).eq('id', prescriptionId);
+        await loadPrescriptionHistory();
       }
     }
 

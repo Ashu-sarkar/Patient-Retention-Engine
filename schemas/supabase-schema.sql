@@ -317,11 +317,17 @@ BEGIN
     RETURN NULL;
   END IF;
 
-  SELECT *
+  SELECT hb.*
     INTO boarding
     FROM public.hospital_boarding hb
    WHERE public.normalized_whatsapp_phone(hb.doctor_phone) = verified_phone
-   ORDER BY hb.created_at DESC
+   ORDER BY (
+      SELECT MAX(pv.checked_in_at)
+      FROM public.patient_visits pv
+      WHERE lower(trim(pv.clinic_name)) = lower(trim(hb.hospital_name))
+        AND lower(trim(pv.doctor_name)) = lower(trim(hb.doctor_name))
+    ) DESC NULLS LAST,
+    hb.created_at DESC
    LIMIT 1;
 
   IF NOT FOUND THEN
@@ -593,6 +599,28 @@ CREATE POLICY "doctors read matching hospital boarding"
     )
   );
 
+CREATE OR REPLACE FUNCTION public.doctor_boarding_matches_visit(
+  p_clinic_name TEXT,
+  p_doctor_name TEXT
+)
+RETURNS BOOLEAN
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT public.current_auth_phone() IS NOT NULL
+    AND EXISTS (
+      SELECT 1
+      FROM public.hospital_boarding hb
+      WHERE public.normalized_whatsapp_phone(hb.doctor_phone) = public.current_auth_phone()
+        AND lower(trim(hb.hospital_name)) = lower(trim(p_clinic_name))
+        AND lower(trim(hb.doctor_name)) = lower(trim(p_doctor_name))
+    );
+$$;
+
+GRANT EXECUTE ON FUNCTION public.doctor_boarding_matches_visit(TEXT, TEXT) TO authenticated;
+
 DROP POLICY IF EXISTS "doctors read assigned visits" ON public.patient_visits;
 CREATE POLICY "doctors read assigned visits"
   ON public.patient_visits FOR SELECT
@@ -610,6 +638,7 @@ CREATE POLICY "doctors read assigned visits"
           )
         )
     )
+    OR public.doctor_boarding_matches_visit(patient_visits.clinic_name, patient_visits.doctor_name)
   );
 
 DROP POLICY IF EXISTS "doctors update assigned visits" ON public.patient_visits;
@@ -629,6 +658,7 @@ CREATE POLICY "doctors update assigned visits"
           )
         )
     )
+    OR public.doctor_boarding_matches_visit(patient_visits.clinic_name, patient_visits.doctor_name)
   );
 
 DROP POLICY IF EXISTS "doctors read queue patients" ON public.patients;
@@ -639,15 +669,21 @@ CREATE POLICY "doctors read queue patients"
     EXISTS (
       SELECT 1
       FROM public.patient_visits pv
-      JOIN public.doctor_profiles dp ON public.doctor_profile_matches_current_user(dp.id)
       WHERE pv.patient_id = patients.id
         AND (
-          dp.id = pv.doctor_profile_id
-          OR (dp.is_clinic_admin AND lower(trim(dp.clinic_name)) = lower(trim(pv.clinic_name)))
-          OR (
-            lower(trim(dp.clinic_name)) = lower(trim(pv.clinic_name))
-            AND lower(trim(dp.doctor_name)) = lower(trim(pv.doctor_name))
+          EXISTS (
+            SELECT 1 FROM public.doctor_profiles dp
+            WHERE public.doctor_profile_matches_current_user(dp.id)
+              AND (
+                dp.id = pv.doctor_profile_id
+                OR (dp.is_clinic_admin AND lower(trim(dp.clinic_name)) = lower(trim(pv.clinic_name)))
+                OR (
+                  lower(trim(dp.clinic_name)) = lower(trim(pv.clinic_name))
+                  AND lower(trim(dp.doctor_name)) = lower(trim(pv.doctor_name))
+                )
+              )
           )
+          OR public.doctor_boarding_matches_visit(pv.clinic_name, pv.doctor_name)
         )
     )
   );
