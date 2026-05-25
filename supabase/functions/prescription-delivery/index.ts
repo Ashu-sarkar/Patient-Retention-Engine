@@ -44,6 +44,19 @@ function isOriginAllowed(origin: string): boolean {
   return false;
 }
 
+/** Ensure calls always hit n8n WF13, not a bare host or static site. */
+function normalizeN8nPrescriptionUrl(raw: string): string {
+  const trimmed = raw.trim().replace(/\/$/, '');
+  if (!trimmed) return '';
+  if (trimmed.endsWith('/webhook/prescription-delivery')) return trimmed;
+  if (trimmed.endsWith('/webhook')) return `${trimmed}/prescription-delivery`;
+  return `${trimmed}/webhook/prescription-delivery`;
+}
+
+function isHtmlErrorPage(text: string): boolean {
+  return /<!DOCTYPE\s+html/i.test(text) || /Cannot POST/i.test(text);
+}
+
 function corsHeadersFor(req: Request): Record<string, string> {
   const origin = req.headers.get('Origin') || '';
   const headers: Record<string, string> = {
@@ -111,7 +124,7 @@ Deno.serve(async (req) => {
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
   const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') || '';
-  const n8nUrl = Deno.env.get('N8N_PRESCRIPTION_DELIVERY_URL') || '';
+  const n8nUrl = normalizeN8nPrescriptionUrl(Deno.env.get('N8N_PRESCRIPTION_DELIVERY_URL') || '');
   const internalSecret = Deno.env.get('INTERNAL_WEBHOOK_SECRET') || '';
 
   if (!supabaseUrl || !supabaseAnonKey || !n8nUrl || !internalSecret) {
@@ -238,17 +251,40 @@ Deno.serve(async (req) => {
     body: canonicalBody,
   });
 
-  if (!delivery.ok) {
+  const responseText = await delivery.text().catch(() => '');
+
+  if (!delivery.ok || isHtmlErrorPage(responseText)) {
     await supabase
       .from('prescriptions')
       .update({ delivery_status: 'failed' })
       .eq('id', prescription.id);
 
-    const text = await delivery.text().catch(() => '');
+    const misconfigured = delivery.status === 404 && isHtmlErrorPage(responseText);
     return jsonResponse(req, 502, {
-      error: 'Prescription delivery workflow failed',
+      error: misconfigured
+        ? 'Prescription delivery webhook is not reachable on n8n (check N8N_PRESCRIPTION_DELIVERY_URL secret)'
+        : 'Prescription delivery workflow failed',
       status: delivery.status,
-      detail: text.slice(0, 300),
+      n8n_url: n8nUrl,
+      detail: responseText.slice(0, 300),
+    });
+  }
+
+  let parsed: Record<string, unknown> | null = null;
+  try {
+    parsed = JSON.parse(responseText) as Record<string, unknown>;
+  } catch {
+    /* n8n may return empty body on success */
+  }
+  if (parsed?.status === 'error') {
+    await supabase
+      .from('prescriptions')
+      .update({ delivery_status: 'failed' })
+      .eq('id', prescription.id);
+    return jsonResponse(req, 502, {
+      error: 'Prescription delivery workflow rejected the payload',
+      status: delivery.status,
+      detail: parsed,
     });
   }
 

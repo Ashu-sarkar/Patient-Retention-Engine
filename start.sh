@@ -145,7 +145,7 @@ LOCAL_N8N_URL="${LOCAL_N8N_URL}" node <<'NODE'
 
     if (response.status === 400) {
       console.log(`[start.sh] WF11 webhook mounted and validating input (HTTP 400, attempt ${attempt}).`);
-      process.exit(0);
+      break;
     }
 
     const notFound     = response.status === 404 && /Cannot POST/i.test(text);
@@ -167,6 +167,25 @@ LOCAL_N8N_URL="${LOCAL_N8N_URL}" node <<'NODE'
       throw new Error(`WF11 webhook route not registered after restart. Workflow may be inactive in DB. Body: ${text.slice(0, 300)}`);
     }
     throw new Error(`WF11 webhook returned unexpected HTTP ${response.status}. Expected 400 validation error. Body: ${text.slice(0, 300)}`);
+  }
+
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    const wf13 = await fetch(`${base}/webhook/prescription-delivery`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    const wf13Text = await wf13.text();
+    if (wf13.status === 400 && wf13Text.includes('prescription_id')) {
+      console.log(`[start.sh] WF13 webhook mounted and validating input (HTTP 400, attempt ${attempt}).`);
+      process.exit(0);
+    }
+    if (attempt < 5) {
+      console.log(`[start.sh] WF13 probe attempt ${attempt}/5: HTTP ${wf13.status} — retrying in 5 s...`);
+      await sleep(5000);
+      continue;
+    }
+    throw new Error(`WF13 webhook returned unexpected HTTP ${wf13.status}. Expected 400 validation error. Body: ${wf13Text.slice(0, 300)}`);
   }
 })().catch(error => {
   console.error(`[start.sh] ERROR: ${error.message}`);
