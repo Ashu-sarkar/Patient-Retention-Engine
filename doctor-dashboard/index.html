@@ -884,7 +884,7 @@
             </div>
             <div class="btn-row" id="issue-section">
               <button class="btn" type="submit">Save Draft</button>
-              <button id="issue" class="btn primary" type="button">Prescription + WhatsApp</button>
+              <button id="issue" class="btn primary" type="button">Issue Prescription</button>
             </div>
           </form>
         </section>
@@ -1711,7 +1711,7 @@
         if (!state.demo) await triggerPrescriptionDelivery(prescription.id);
         state.currentDraft = null;
         $('draft-state').textContent = 'Issued';
-        showToast('Prescription issued. Sending on WhatsApp…');
+        showToast('Prescription issued.');
         await loadVisits();
         await loadPrescriptionHistory();
       } catch (error) {

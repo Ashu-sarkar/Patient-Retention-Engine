@@ -17,6 +17,7 @@
     "test:production-e2e": "node tests/run-production-e2e.js",
     "test:production-browser": "node tests/browser-production-e2e.mjs",
     "sync:prescription-secrets": "bash scripts/sync-prescription-delivery-secrets.sh",
+    "test:playbook": "node production-test-playbook/verify.js",
     "smoke": "node tests/run-tests.js"
   },
   "dependencies": {
