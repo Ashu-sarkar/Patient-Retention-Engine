@@ -141,6 +141,8 @@ export TOMORROW=$(date -v+1d +%Y-%m-%d 2>/dev/null || date -d 'tomorrow' +%Y-%m-
 
 ### WF12 — Hospital boarding (`/webhook/hospital-boarding`)
 
+On success, WF12 sends the approved `hospital_onboarding` Twilio template to **clinic `contact_phone`** and **`doctor_phone`** when they differ. Requires `TWILIO_CONTENT_HOSPITAL_ONBOARDING` in n8n and an updated WF12 workflow (re-run `npm run setup:n8n` after deploy).
+
 ```bash
 # Happy path — creates doctor profile bootstrap data (doctor_phone = +919685722570)
 railway_post_form hospital-boarding \

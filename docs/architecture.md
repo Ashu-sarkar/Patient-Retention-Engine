@@ -46,7 +46,7 @@ QR form submission
 | WF8 | n8n error trigger | Error logging and admin alert |
 | WF9 | Twilio status callback | Delivery/read/failure tracking |
 | WF11 | Form webhook | Patient intake |
-| WF12 | Form webhook | Hospital/clinic onboarding |
+| WF12 | Form webhook | Hospital/clinic onboarding + `hospital_onboarding` WhatsApp to clinic and doctor phones |
 | WF13 | Form webhook | Prescription PDF WhatsApp delivery |
 
 ## Doctor Dashboard Flow
@@ -104,6 +104,8 @@ TWILIO_CONTENT_MISSED_RECOVERY=
 TWILIO_CONTENT_MISSED_NUDGE=
 TWILIO_CONTENT_HEALTH_CHECK=
 TWILIO_CONTENT_REACTIVATION=
+TWILIO_CONTENT_HOSPITAL_ONBOARDING=
+TWILIO_CONTENT_PATIENT_ONBOARDING=
 ```
 
 Legacy direct-provider variables must not be present.

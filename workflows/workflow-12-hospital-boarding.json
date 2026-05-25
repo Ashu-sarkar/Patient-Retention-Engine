@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## WF12 — Hospital / Clinic Boarding\n\n**Trigger:** POST webhook from `hospital-form/index.html`.\n**Path:** `/webhook/hospital-boarding`\n\n**Flow:**\n1. Receive JSON/form data for facility, doctor, and prescription-header metadata\n2. Server-side validation (mirrors frontend)\n3. INSERT into `public.hospital_boarding`\n4. Log to `public.system_logs`\n5. Respond 200 with `{ status, id, hospital_name, facility_type, doctor_name }` (limited fields for UI)\n\n**Prescription placeholders captured:** clinic_logo_url, clinic_email, clinic_website, doctor_qualification, doctor_phone, doctor_signature_url. Copy these into the matching `doctor_profiles` row when the Supabase Auth doctor account is created.\n\n**Activation:** Import workflow, set Postgres credential, activate.\n\n**Credentials:** Postgres nodes → Supabase DB (service role / DB user with INSERT on `hospital_boarding`)",
+        "content": "## WF12 — Hospital / Clinic Boarding\n\n**Trigger:** POST webhook from `hospital-form/index.html`.\n**Path:** `/webhook/hospital-boarding`\n\n**Flow:**\n1. Receive JSON/form data for facility, doctor, and prescription-header metadata\n2. Server-side validation (mirrors frontend)\n3. INSERT into `public.hospital_boarding`\n4. Send `hospital_onboarding` WhatsApp to clinic `contact_phone` and `doctor_phone` (when different)\n5. Log to `public.message_logs` / `public.system_logs`\n6. Respond 200 with `{ status, id, hospital_name, facility_type, doctor_name }` (limited fields for UI)\n\n**Prescription placeholders captured:** clinic_logo_url, clinic_email, clinic_website, doctor_qualification, doctor_phone, doctor_signature_url. Copy these into the matching `doctor_profiles` row when the Supabase Auth doctor account is created.\n\n**Activation:** Import workflow, set Postgres + Twilio Basic Auth credentials, activate. Set `TWILIO_CONTENT_HOSPITAL_ONBOARDING` in n8n env.\n\n**Credentials:** Postgres nodes → Supabase DB; HTTP Request → Twilio Basic Auth",
         "height": 400,
         "width": 420
       },
@@ -101,6 +101,197 @@
     },
     {
       "parameters": {
+        "jsCode": "// Build one Twilio send item per recipient: clinic contact_phone and doctor_phone (if distinct).\nconst row = $('Insert Hospital Row').first().json;\nconst form = $('Validate Hospital Form').first().json;\nconst tz = $env.TIMEZONE || 'Asia/Kolkata';\nconst scheduledDate = new Date().toLocaleDateString('en-CA', { timeZone: tz });\nconst contentSid = $env.TWILIO_CONTENT_HOSPITAL_ONBOARDING || '';\n\nfunction toE164(raw) {\n  const p = String(raw || '').trim().replace(/\\s+/g, '');\n  if (!p) return '';\n  if (/^\\+[1-9]\\d{6,14}$/.test(p)) return p;\n  if (/^[0-9]{10}$/.test(p)) return '+91' + p;\n  if (/^[1-9]\\d{6,14}$/.test(p)) return '+' + p;\n  return '';\n}\n\nconst hospital = String(row.hospital_name || form.hospital_name || '').trim();\nconst facility = String(row.facility_type || form.facility_type || '').trim();\nconst doctor = String(row.doctor_name || form.doctor_name || '').trim();\nconst city = String(row.city || form.city || '').trim();\nconst boardingId = String(row.id || '').trim();\nconst contentVars = JSON.stringify({ '1': hospital, '2': facility, '3': doctor, '4': city });\nconst messageBody = `Hi ${hospital}, your onboarding for ${facility} is complete. We have registered ${doctor} as the primary contact and ${city} as the facility location.`;\n\nconst targets = [\n  { role: 'clinic', phone: toE164(row.contact_phone || form.contact_phone) },\n  { role: 'doctor', phone: toE164(form.doctor_phone) },\n];\nconst seen = new Set();\nconst out = [];\nfor (const t of targets) {\n  if (!t.phone || seen.has(t.phone)) continue;\n  seen.add(t.phone);\n  out.push({\n    json: {\n      _skip: false,\n      _recipient_role: t.role,\n      _boarding_id: boardingId,\n      _phone: t.phone,\n      _to_phone: 'whatsapp:' + t.phone,\n      _hospital_name: hospital,\n      _facility_type: facility,\n      _doctor_name: doctor,\n      _city: city,\n      _message_type: 'hospital_onboarding',\n      _scheduled_date: scheduledDate,\n      _content_sid: contentSid,\n      _content_variables: contentVars,\n      _message_body: messageBody,\n    },\n  });\n}\nif (out.length === 0) {\n  return [{ json: { _skip: true, reason: 'No valid WhatsApp recipients', boardingId } }];\n}\nreturn out;"
+      },
+      "id": "12121212-1212-1212-1212-000000000010",
+      "name": "Build Hospital Onboarding Messages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "skip-check-wf12",
+              "leftValue": "={{ $json._skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "12121212-1212-1212-1212-000000000011",
+      "name": "Skip if No Recipients?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.twilio.com/2010-04-01/Accounts/' + $env.TWILIO_ACCOUNT_SID + '/Messages.json' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "From",
+              "value": "={{ $env.TWILIO_WHATSAPP_FROM }}"
+            },
+            {
+              "name": "To",
+              "value": "={{ $json._to_phone }}"
+            },
+            {
+              "name": "ContentSid",
+              "value": "={{ $json._content_sid }}"
+            },
+            {
+              "name": "ContentVariables",
+              "value": "={{ $json._content_variables }}"
+            },
+            {
+              "name": "StatusCallback",
+              "value": "={{ $env.TWILIO_STATUS_CALLBACK_URL || \"\" }}"
+            }
+          ]
+        },
+        "options": {
+          "retry": {
+            "maxTries": 2,
+            "waitBetweenTries": 15000
+          }
+        }
+      },
+      "id": "12121212-1212-1212-1212-000000000012",
+      "name": "Send Hospital Onboarding WA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1560,
+        80
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "REPLACE_TWILIO_BASIC_AUTH",
+          "name": "Twilio Basic Auth"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "message_logs",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "patient_name": "={{ $('Build Hospital Onboarding Messages').item.json._hospital_name }}",
+            "phone": "={{ $('Build Hospital Onboarding Messages').item.json._phone }}",
+            "workflow_name": "workflow-12-hospital-boarding",
+            "message_type": "={{ $('Build Hospital Onboarding Messages').item.json._message_type }}",
+            "message_sent": "={{ $('Build Hospital Onboarding Messages').item.json._message_body }}",
+            "sent_at": "={{ new Date().toISOString() }}",
+            "delivery_status": "sent",
+            "scheduled_date": "={{ $('Build Hospital Onboarding Messages').item.json._scheduled_date }}",
+            "provider_message_id": "={{ $json.sid || $json.Sid || \"\" }}",
+            "twilio_message_sid": "={{ $json.sid || $json.Sid || \"\" }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "12121212-1212-1212-1212-000000000013",
+      "name": "Log Hospital Onboarding WA",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1780,
+        80
+      ],
+      "continueOnFail": true,
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_SUPABASE_POSTGRES",
+          "name": "Supabase (Postgres)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "system_logs",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "workflow_name": "workflow-12-hospital-boarding",
+            "execution_id": "={{ $execution.id }}",
+            "log_level": "ERROR",
+            "message": "Failed to send hospital onboarding WhatsApp",
+            "details": "={{ JSON.stringify({ boarding_id: $('Build Hospital Onboarding Messages').item.json._boarding_id, recipient_role: $('Build Hospital Onboarding Messages').item.json._recipient_role, phone: $('Build Hospital Onboarding Messages').item.json._phone, error: $json.error?.message || 'HTTP request failed' }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "12121212-1212-1212-1212-000000000014",
+      "name": "Log Hospital WA Failure",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1780,
+        260
+      ],
+      "continueOnFail": true,
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_SUPABASE_POSTGRES",
+          "name": "Supabase (Postgres)"
+        }
+      }
+    },
+    {
+      "parameters": {
         "operation": "insert",
         "schema": {
           "__rl": true,
@@ -131,7 +322,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
       "position": [
-        1120,
+        2000,
         200
       ],
       "continueOnFail": true,
@@ -155,7 +346,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        1340,
+        2220,
         200
       ]
     },
@@ -265,6 +456,75 @@
       "main": [
         [
           {
+            "node": "Build Hospital Onboarding Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Hospital Onboarding Messages": {
+      "main": [
+        [
+          {
+            "node": "Skip if No Recipients?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip if No Recipients?": {
+      "main": [
+        [
+          {
+            "node": "Log Hospital Boarding",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Hospital Onboarding WA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Hospital Onboarding WA": {
+      "main": [
+        [
+          {
+            "node": "Log Hospital Onboarding WA",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Hospital WA Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Hospital Onboarding WA": {
+      "main": [
+        [
+          {
+            "node": "Log Hospital Boarding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Hospital WA Failure": {
+      "main": [
+        [
+          {
             "node": "Log Hospital Boarding",
             "type": "main",
             "index": 0
@@ -311,7 +571,7 @@
   ],
   "triggerCount": 1,
   "updatedAt": "2026-04-17T00:00:00.000Z",
-  "versionId": "wf12-v1",
+  "versionId": "wf12-v2-hospital-onboarding-wa",
   "id": "wf12-hospital-boarding",
   "meta": {
     "templateCredsSetupCompleted": false
