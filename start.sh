@@ -8,21 +8,6 @@ set -e
 N8N_PORT="${N8N_PORT:-5678}"
 LOCAL_N8N_URL="http://127.0.0.1:${N8N_PORT}"
 
-WORKFLOW_IDS="
-wf1-followup-reminder
-wf2-sameday-reminder
-wf3-missed-appointment
-wf4-health-check
-wf5-reactivation
-wf6-feedback-listener
-wf7-new-patient
-wf8-error-handler
-wf9-twilio-status-callback
-wf11-form-intake
-wf12-hospital-boarding
-wf13-prescription-delivery
-"
-
 validate_supabase_env() {
   if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_DB_HOST:-}" ] || [ -z "${SUPABASE_DB_USER:-}" ]; then
     echo "[start.sh] WARNING: Supabase env incomplete; workflow setup may fail." >&2
@@ -43,23 +28,6 @@ validate_supabase_env() {
       fi
       ;;
   esac
-}
-
-publish_workflows() {
-  echo "[start.sh] Publishing workflows through n8n CLI..."
-  FAILED=0
-  for WF_ID in $WORKFLOW_IDS; do
-    if n8n publish:workflow --id="${WF_ID}"; then
-      echo "[start.sh] Published ${WF_ID}."
-    else
-      echo "[start.sh] ERROR: could not publish workflow ${WF_ID}." >&2
-      FAILED=$((FAILED + 1))
-    fi
-  done
-  if [ "$FAILED" -gt 0 ]; then
-    echo "[start.sh] ERROR: ${FAILED} workflow publish step(s) failed." >&2
-    return 1
-  fi
 }
 
 # Railway does not read docker-compose.yml, so keep the runtime defaults that
@@ -128,16 +96,10 @@ else
   exit 1
 fi
 
-# setup-n8n.js patches workflows (new versionId). Publish after patching so
-# activeVersionId matches the credential-bound version n8n will serve.
-if ! publish_workflows; then
-  echo "[start.sh] ERROR: workflow publish failed after setup; webhooks will not mount." >&2
-  kill "${N8N_PID}" 2>/dev/null || true
-  wait "${N8N_PID}" 2>/dev/null || true
-  exit 1
-fi
-
-echo "[start.sh] Restarting n8n once so published workflow/webhook state is loaded..."
+# setup-n8n.js activates all workflows via REST API, which persists activeVersionId to DB.
+# Restart n8n now so the fresh process reloads the DB state and registers webhook routes.
+# Do NOT run n8n publish:workflow CLI here — it flips active=false, unregistering webhooks.
+echo "[start.sh] Restarting n8n so activated workflow state is reloaded from DB..."
 kill "${N8N_PID}" 2>/dev/null || true
 wait "${N8N_PID}" 2>/dev/null || true
 
