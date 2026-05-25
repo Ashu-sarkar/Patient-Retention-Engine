@@ -537,6 +537,9 @@ function readRuntimeConfig() {
     try { return localStorage.getItem(key) || ''; } catch (_) { return ''; }
   };
   const cleanBase = value => String(value || '').trim().replace(/\/+$/, '');
+  const defaultWebhookBase = location.protocol === 'file:' || /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)
+    ? 'http://localhost:5678'
+    : DEFAULT_WEBHOOK_BASE;
   const webhookUrl =
     params.get('webhookUrl') ||
     params.get('hospitalWebhookUrl') ||
@@ -548,7 +551,7 @@ function readRuntimeConfig() {
     params.get('webhookBase') ||
     globalConfig.webhookBase ||
     readStored('vaitalcare.webhookBase') ||
-    DEFAULT_WEBHOOK_BASE
+    defaultWebhookBase
   );
   return {
     webhookUrl: webhookUrl || `${webhookBase}${HOSPITAL_WEBHOOK_PATH}`,
@@ -759,7 +762,10 @@ form.addEventListener('submit', async function (e) {
       body,
     });
 
-    if (!res.ok) throw new Error('HTTP ' + res.status);
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status}${text ? `: ${text.slice(0, 180)}` : ''}`);
+    }
 
     let data = {};
     try { data = await res.json(); } catch (_) {}

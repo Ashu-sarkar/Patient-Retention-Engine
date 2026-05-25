@@ -986,7 +986,16 @@ DROP POLICY IF EXISTS "doctors insert prescription audit logs" ON public.prescri
 CREATE POLICY "doctors insert prescription audit logs"
   ON public.prescription_audit_logs FOR INSERT
   TO authenticated
-  WITH CHECK (actor_user_id = auth.uid());
+  WITH CHECK (
+    actor_user_id = auth.uid()
+    AND EXISTS (
+      SELECT 1
+      FROM public.prescriptions pr
+      JOIN public.doctor_profiles dp ON dp.id = pr.doctor_profile_id
+      WHERE pr.id = prescription_audit_logs.prescription_id
+        AND public.doctor_profile_matches_current_user(dp.id)
+    )
+  );
 
 DROP POLICY IF EXISTS "doctors manage prescription pdfs" ON storage.objects;
 CREATE POLICY "doctors manage prescription pdfs"
@@ -994,5 +1003,25 @@ CREATE POLICY "doctors manage prescription pdfs"
   TO authenticated
   USING (bucket_id = 'prescriptions' AND (storage.foldername(name))[1] = auth.uid()::text)
   WITH CHECK (bucket_id = 'prescriptions' AND (storage.foldername(name))[1] = auth.uid()::text);
+
+-- ── Public hospital list (used by patient intake form without auth) ──────────
+CREATE OR REPLACE FUNCTION public.get_public_hospital_list()
+RETURNS TABLE(hospital_name TEXT, doctor_name TEXT)
+LANGUAGE SQL
+SECURITY DEFINER
+SET search_path = public
+STABLE
+AS $$
+  SELECT DISTINCT
+    hb.hospital_name,
+    hb.doctor_name
+  FROM public.hospital_boarding hb
+  WHERE hb.hospital_name IS NOT NULL AND trim(hb.hospital_name) <> ''
+    AND hb.doctor_name   IS NOT NULL AND trim(hb.doctor_name)   <> ''
+  ORDER BY hb.hospital_name, hb.doctor_name;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.get_public_hospital_list() TO anon;
+GRANT EXECUTE ON FUNCTION public.get_public_hospital_list() TO authenticated;
 
 NOTIFY pgrst, 'reload schema';

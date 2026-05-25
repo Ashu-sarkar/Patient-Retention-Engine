@@ -15,7 +15,7 @@
  *   phone_number       — Required, exactly 10 digits (no country code)
  *   dob                — Optional, YYYY-MM-DD, must be in the past
  *   sex                — Optional, one of: Male | Female | Other
- *   chief_complaint    — Required text, min 2 chars
+ *   chief_complaint    — Optional text (min 2 chars if provided); captured when available
  *   symptoms_duration  — Optional visit context
  *   known_allergies    — Optional visit context
  *   current_medicines  — Optional visit context
@@ -33,7 +33,6 @@
 const REQUIRED_FIELDS = [
   'patient_name',
   'phone_number',
-  'chief_complaint',
   'hospital_name',
   'doctor_name',
   'visit_date',

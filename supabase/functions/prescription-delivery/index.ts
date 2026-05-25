@@ -11,8 +11,9 @@ type Medicine = {
   sort_order?: number;
 };
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': Deno.env.get('DOCTOR_DASHBOARD_ORIGIN') || '*',
+const _allowedOrigin = Deno.env.get('DOCTOR_DASHBOARD_ORIGIN') || '';
+const corsHeaders: Record<string, string> = {
+  ...(_allowedOrigin ? { 'Access-Control-Allow-Origin': _allowedOrigin } : {}),
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };

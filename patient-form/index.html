@@ -709,8 +709,10 @@ if (window.matchMedia) {
    ?webhookBase=http://localhost:5678, ?webhookUrl=..., window.VAITALCARE_CONFIG,
    or localStorage keys vaitalcare.webhookBase / vaitalcare.patientWebhookUrl.
    ═══════════════════════════════════════════════════════════════════ */
-const DEFAULT_WEBHOOK_BASE = 'https://vaitalcare-production.up.railway.app';
-const PATIENT_WEBHOOK_PATH = '/webhook/patient-form-intake';
+const DEFAULT_WEBHOOK_BASE  = 'https://vaitalcare-production.up.railway.app';
+const PATIENT_WEBHOOK_PATH  = '/webhook/patient-form-intake';
+const SUPABASE_URL          = 'https://crsdccqseuhnimoxxeky.supabase.co';
+const SUPABASE_ANON_KEY     = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNyc2RjY3FzZXVobmltb3h4ZWt5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMjc1NzQsImV4cCI6MjA5MTkwMzU3NH0.3iz7x2JQj3qn6KI8JS3tjxV9vaBsN-mL6xDTvmJMDxA';
 
 function readRuntimeConfig() {
   const params = new URLSearchParams(location.search);
@@ -743,11 +745,45 @@ function readRuntimeConfig() {
 const RUNTIME_CONFIG = readRuntimeConfig();
 const WEBHOOK_URL = RUNTIME_CONFIG.webhookUrl;
 
-const HOSPITALS = {
-  'City Hospital':    ['Dr. Sharma', 'Dr. Mehta', 'Dr. Patel', 'Dr. Divya Rai Shukla'],
+// Seed list shown instantly while DB loads; replaced once live data arrives
+let HOSPITALS = {
+  'City Hospital':    ['Dr. Sharma', 'Dr. Mehta', 'Dr. Patel'],
   'General Hospital': ['Dr. Kumar', 'Dr. Patel', 'Dr. Sharma'],
   'Metro Clinic':     ['Dr. Mehta', 'Dr. Kumar'],
 };
+
+async function loadHospitalsFromDB() {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_public_hospital_list`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
+      body:    '{}',
+    });
+    if (!res.ok) return;
+    const rows = await res.json();
+    if (!Array.isArray(rows) || rows.length === 0) return;
+
+    const map = {};
+    rows.forEach(({ hospital_name, doctor_name }) => {
+      if (!map[hospital_name]) map[hospital_name] = [];
+      map[hospital_name].push(doctor_name);
+    });
+
+    HOSPITALS = map;
+
+    // Rebuild hospital dropdown with live data
+    const hSel = $('hospital_name');
+    const prev = hSel.value;
+    Array.from(hSel.options).forEach(o => { if (o.value) o.remove(); });
+    Object.keys(HOSPITALS).forEach(h => {
+      const o = document.createElement('option');
+      o.value = o.textContent = h;
+      hSel.appendChild(o);
+    });
+    if (prev && HOSPITALS[prev]) { hSel.value = prev; updateDoctors(prev); }
+    else { hSel.value = ''; updateDoctors(''); }
+  } catch (_) { /* silently keep seed data on network failure */ }
+}
 
 /* ═══════════════════════════════════════════════════════════════════
    DOM REFS
@@ -777,7 +813,7 @@ const toast      = $('js-toast');
   $('visit_date').max   = today;
   $('dob').max          = today;
 
-  // Populate hospital dropdown
+  // Populate hospital dropdown with seed data immediately
   const hSel = $('hospital_name');
   Object.keys(HOSPITALS).forEach(h => {
     const o = document.createElement('option');
@@ -795,6 +831,9 @@ const toast      = $('js-toast');
       updateDoctors(match);
     }
   }
+
+  // Refresh dropdown with live DB data in the background
+  loadHospitalsFromDB();
 })();
 
 /* ─── helpers ──────────────────────────────────────────────────── */
@@ -979,6 +1018,7 @@ form.addEventListener('submit', async function (e) {
     try { data = await res.json(); } catch (_) { /* n8n may return empty body */ }
 
     /* ── Success ── */
+    busy = false;
     successScr.classList.add('show');
     if (data.patient_code) {
       $('js-code-value').textContent = data.patient_code;
