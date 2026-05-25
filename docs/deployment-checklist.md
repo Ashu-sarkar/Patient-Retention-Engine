@@ -107,6 +107,59 @@ Without these, inbound replies and free-form session messages can still work, bu
 
 ## Post-Deploy Checks
 
+After Railway variables are added, redeploy once so `start.sh` can import workflows, run setup, publish active versions, restart n8n, and verify webhooks.
+
+Required Supabase pooler user format:
+
+```env
+SUPABASE_URL=https://crsdccqseuhnimoxxeky.supabase.co
+SUPABASE_DB_HOST=aws-1-ap-south-1.pooler.supabase.com
+SUPABASE_DB_USER=postgres.crsdccqseuhnimoxxeky
+```
+
+Do **not** use `SUPABASE_DB_USER=postgres` with the session pooler host.
+
+### Automated startup verification
+
+Railway `start.sh` now:
+
+1. Validates `SUPABASE_DB_USER` against `SUPABASE_URL` before boot
+2. Imports bundled workflows
+3. Runs `tests/setup-n8n.js` (credentials + workflow patch)
+4. Publishes every bundled workflow with `n8n publish:workflow --id=...`
+5. Restarts n8n so the production webhook registry reloads
+6. Probes `POST /webhook/patient-form-intake` and expects HTTP 400 validation (not 404)
+
+If deployment fails or returns 502, inspect Railway logs for `[start.sh] ERROR` and fix env before redeploying.
+
+### Manual verification
+
+```bash
+# Health
+curl -i https://vaitalcare-production.up.railway.app/healthz
+
+# WF11 should return HTTP 400 validation, not 404 active-version-not-found
+curl -i -X POST https://vaitalcare-production.up.railway.app/webhook/patient-form-intake --data ''
+```
+
+Healthy webhook response:
+
+```http
+HTTP/2 400
+{"status":"error","message":"Validation failed",...}
+```
+
+If you still see:
+
+```http
+HTTP/2 404
+{"code":404,"message":"Active version not found for workflow with id \"wf11-form-intake\""}
+```
+
+redeploy again and confirm startup logs show `Published wf11-form-intake` followed by `WF11 webhook mounted and validating input (HTTP 400)`.
+
+### n8n UI checks
+
 After Railway variables are added:
 
 1. Open `https://vaitalcare-production.up.railway.app`

@@ -510,7 +510,11 @@ async function main() {
   const activeCount = final.filter(w => w.active).length;
   console.log(`\n  🎉 ${activeCount}/${final.length} workflows active`);
   for (const wf of final.sort((a, b) => a.name.localeCompare(b.name))) {
-    console.log(`  ${wf.active ? '✅' : '⚠️ '} ${wf.name}`);
+    const published = hasPublishedActiveVersion(wf);
+    const versionInfo = wf.versionId
+      ? `versionId=${wf.versionId}, activeVersionId=${wf.activeVersionId || '<null>'}`
+      : 'no versionId';
+    console.log(`  ${published ? '✅' : '⚠️ '} ${wf.name} (${versionInfo})`);
   }
   if (!twilioSid || !twilioToken) {
     console.log('\n  ⚠️  Twilio credential is incomplete.');

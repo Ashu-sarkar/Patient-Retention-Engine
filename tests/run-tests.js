@@ -328,7 +328,7 @@ async function main() {
       `Missing workflows: ${missing.join(', ')}. Run: docker compose down -v && docker compose up --build -d`);
   });
 
-  await test('1.4  Webhook workflows (WF11, WF12, WF13, WF7, WF6, WF9) are active', async () => {
+  await test('1.4  Webhook workflows (WF11, WF12, WF13, WF7, WF6, WF9) are published active', async () => {
     const relevant = allWorkflows.filter(w =>
       w.name.includes('WF11') || w.name.includes('WF12') || w.name.includes('WF13') || w.name.includes('WF7') || w.name.includes('WF6') || w.name.includes('WF9'));
     assert(relevant.length === 6,
@@ -336,6 +336,11 @@ async function main() {
     const inactive = relevant.filter(w => !w.active).map(w => w.name);
     assert(inactive.length === 0,
       `Inactive: ${inactive.join(', ')}. Run: node tests/setup-n8n.js`);
+    const notPublished = relevant.filter(w =>
+      !w.activeVersionId || !w.versionId || w.activeVersionId !== w.versionId
+    ).map(w => w.name);
+    assert(notPublished.length === 0,
+      `Missing published active version: ${notPublished.join(', ')}. Run: n8n publish:workflow --id=<workflow-id> then restart n8n.`);
   });
 
   await test('1.5  Supabase tables exist for retention + doctor dashboard', async () => {
