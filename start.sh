@@ -72,6 +72,11 @@ for i in $(seq 1 60); do
   fi
   sleep 2
 done
+# healthz returns 200 as soon as the HTTP server is up, but n8n's internal
+# workflow registry and credential cache may still be loading. Give it time
+# before the REST setup calls land, otherwise activate can race with init.
+echo "[start.sh] Waiting 8 s for n8n internal state to settle before setup..."
+sleep 8
 
 echo "[start.sh] Running production workflow setup..."
 SETUP_LOG="/tmp/patient-retention-setup.log"
@@ -119,23 +124,50 @@ for i in $(seq 1 60); do
   fi
   sleep 2
 done
+# Webhook routes are registered asynchronously after healthz returns 200.
+# Wait for n8n to finish loading all active workflow webhooks into Express.
+echo "[start.sh] Waiting 10 s for webhook registry to load after restart..."
+sleep 10
 
 echo "[start.sh] Verifying production webhook active version..."
 LOCAL_N8N_URL="${LOCAL_N8N_URL}" node <<'NODE'
 (async () => {
   const base = process.env.LOCAL_N8N_URL || 'http://127.0.0.1:5678';
-  const response = await fetch(`${base}/webhook/patient-form-intake`, {
-    method: 'POST',
-    body: new URLSearchParams({}),
-  });
-  const text = await response.text();
-  if (response.status === 404 || /Active version not found/i.test(text)) {
-    throw new Error(`WF11 production webhook is not published: HTTP ${response.status} ${text.slice(0, 200)}`);
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  // Retry the probe — webhook routes may still be registering right after boot.
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    const response = await fetch(`${base}/webhook/patient-form-intake`, {
+      method: 'POST',
+      body: new URLSearchParams({}),
+    });
+    const text = await response.text();
+
+    if (response.status === 400) {
+      console.log(`[start.sh] WF11 webhook mounted and validating input (HTTP 400, attempt ${attempt}).`);
+      process.exit(0);
+    }
+
+    const notFound     = response.status === 404 && /Cannot POST/i.test(text);
+    const noVersion    = response.status === 404 && /Active version not found/i.test(text);
+    const unexpectedOk = response.status === 200;
+
+    if (attempt < 5) {
+      const reason = notFound ? 'route not yet registered' : noVersion ? 'activeVersionId not set' : `HTTP ${response.status}`;
+      console.log(`[start.sh] Probe attempt ${attempt}/5: ${reason} — retrying in 5 s...`);
+      await sleep(5000);
+      continue;
+    }
+
+    // Final attempt failed — surface the exact failure so Railway logs are actionable.
+    if (noVersion) {
+      throw new Error(`WF11 activeVersionId is null after restart. Setup activated the workflow but DB state was not reloaded. Body: ${text.slice(0, 300)}`);
+    }
+    if (notFound) {
+      throw new Error(`WF11 webhook route not registered after restart. Workflow may be inactive in DB. Body: ${text.slice(0, 300)}`);
+    }
+    throw new Error(`WF11 webhook returned unexpected HTTP ${response.status}. Expected 400 validation error. Body: ${text.slice(0, 300)}`);
   }
-  if (response.status !== 400) {
-    throw new Error(`WF11 webhook returned HTTP ${response.status}, expected HTTP 400 validation error. Body: ${text.slice(0, 200)}`);
-  }
-  console.log('[start.sh] WF11 webhook mounted and validating input (HTTP 400).');
 })().catch(error => {
   console.error(`[start.sh] ERROR: ${error.message}`);
   process.exit(1);

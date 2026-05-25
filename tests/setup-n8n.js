@@ -379,24 +379,34 @@ function hasPublishedActiveVersion(wf) {
 async function activateWorkflow(wfId) {
   // Always cycle activation. In n8n 2.x a workflow can have active=true while
   // activeVersionId is null; production webhooks then return "Active version not found".
+  // Re-fetch versionId fresh each attempt so we always activate the latest version.
   let { workflow: wf } = await getWorkflow(wfId);
   if (!wf?.versionId) return { active: false, status: 0, reactivated: false, activeVersionId: null };
 
   let reactivated = false;
   let status = 0;
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    // Re-fetch on retries to pick up the latest versionId in case n8n processed
+    // a PATCH between our last read and now.
+    if (attempt > 1) {
+      const refreshedBefore = await getWorkflow(wfId);
+      wf = refreshedBefore.workflow || wf;
+    }
+
     if (wf.active || attempt > 1) {
       const { ok: deactivated } = await request('POST', `/rest/workflows/${wfId}/deactivate`);
       if (!deactivated && attempt === 1) {
         return { active: false, status: 500, reactivated, activeVersionId: wf.activeVersionId || null };
       }
       reactivated = true;
-      await sleep(500);
+      await sleep(800);
     }
 
     const activate = await request('POST', `/rest/workflows/${wfId}/activate`, { versionId: wf.versionId });
     status = activate.status;
-    await sleep(700);
+    // n8n's activate endpoint is async internally — give it time to
+    // commit activeVersionId to DB before we verify the result.
+    await sleep(1500);
 
     const refreshed = await getWorkflow(wfId);
     wf = refreshed.workflow || wf;
@@ -514,6 +524,14 @@ async function main() {
       console.warn(`  ⚠️  ${file}: ${e.message}`);
     }
   }
+
+  // Each PATCH creates a new versionId in n8n's DB. Give n8n time to finish
+  // committing those writes before activation reads the current versionId.
+  // Without this pause, activate can read a stale versionId and set
+  // activeVersionId to the wrong version, causing "Active version not found"
+  // on the next restart.
+  console.log('  Settling 3 s after workflow patches...');
+  await sleep(3000);
 
   // 6. Activate
   console.log('\n── 6. Activate workflows ───────────────────────────────────');
