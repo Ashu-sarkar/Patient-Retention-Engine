@@ -1984,7 +1984,8 @@
         });
         if (error) throw error;
         if (data?.error) throw new Error(String(data.error));
-        showToast('Prescription sent on WhatsApp.');
+        const linkNote = data?.pdf_link ? ' Tap the link in WhatsApp to open your PDF.' : '';
+        showToast(`Prescription sent on WhatsApp.${linkNote}`);
         await loadPrescriptionHistory();
       } catch (error) {
         const msg = error?.message || String(error);

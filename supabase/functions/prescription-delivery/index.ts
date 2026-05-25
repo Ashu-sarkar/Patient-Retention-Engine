@@ -11,13 +11,11 @@ type Medicine = {
   sort_order?: number;
 };
 
-/** Comma-separated list in Supabase secret DOCTOR_DASHBOARD_ORIGIN */
 const configuredOrigins = (Deno.env.get('DOCTOR_DASHBOARD_ORIGIN') || '')
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);
 
-/** Always allow Vercel production + preview URLs for this dashboard. */
 const DEFAULT_ORIGIN_PATTERNS = [
   /^https:\/\/vaitalcare-doctor(?:-[a-z0-9-]+)?\.vercel\.app$/i,
   /^http:\/\/localhost(?::\d+)?$/i,
@@ -42,19 +40,6 @@ function isOriginAllowed(origin: string): boolean {
     if (re.test(origin)) return true;
   }
   return false;
-}
-
-/** Ensure calls always hit n8n WF13, not a bare host or static site. */
-function normalizeN8nPrescriptionUrl(raw: string): string {
-  const trimmed = raw.trim().replace(/\/$/, '');
-  if (!trimmed) return '';
-  if (trimmed.endsWith('/webhook/prescription-delivery')) return trimmed;
-  if (trimmed.endsWith('/webhook')) return `${trimmed}/prescription-delivery`;
-  return `${trimmed}/webhook/prescription-delivery`;
-}
-
-function isHtmlErrorPage(text: string): boolean {
-  return /<!DOCTYPE\s+html/i.test(text) || /Cannot POST/i.test(text);
 }
 
 function corsHeadersFor(req: Request): Record<string, string> {
@@ -82,16 +67,6 @@ function clean(value: unknown, max = 1000) {
   return String(value || '').trim().slice(0, max);
 }
 
-function canonicalStringify(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonicalStringify).join(',')}]`;
-  const obj = value as Record<string, unknown>;
-  return `{${Object.keys(obj)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${canonicalStringify(obj[key])}`)
-    .join(',')}}`;
-}
-
 async function hmacSha256Hex(secret: string, data: string) {
   const key = await crypto.subtle.importKey(
     'raw',
@@ -104,6 +79,88 @@ async function hmacSha256Hex(secret: string, data: string) {
   return Array.from(new Uint8Array(signature))
     .map((byte) => byte.toString(16).padStart(2, '0'))
     .join('');
+}
+
+async function buildShortPdfLink(
+  supabaseUrl: string,
+  secret: string,
+  prescriptionId: string,
+): Promise<string> {
+  const token = (await hmacSha256Hex(secret, `pdf:${prescriptionId}`)).slice(0, 32);
+  const base = supabaseUrl.replace(/\/$/, '');
+  return `${base}/functions/v1/prescription-pdf?id=${prescriptionId}&t=${token}`;
+}
+
+function summariseMedicines(medicines: Medicine[]) {
+  return medicines
+    .map((m, index) => {
+      const name = clean(m.medicine_name, 180);
+      const parts = [m.dosage, m.frequency, m.timing, m.duration]
+        .map((v) => clean(v, 80))
+        .filter(Boolean)
+        .join(', ');
+      return name ? `${index + 1}. ${name}${parts ? ` - ${parts}` : ''}` : '';
+    })
+    .filter(Boolean)
+    .join('; ')
+    .slice(0, 900) || 'As listed in your prescription PDF';
+}
+
+function parseTwilioResponse(text: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const part of text.split('&')) {
+    const [k, v] = part.split('=');
+    if (k) out[decodeURIComponent(k)] = decodeURIComponent(v || '');
+  }
+  return out;
+}
+
+async function sendTwilioWhatsApp(opts: {
+  accountSid: string;
+  authToken: string;
+  from: string;
+  toPhone: string;
+  contentSid?: string;
+  contentVariables?: Record<string, string>;
+  body?: string;
+  mediaUrl?: string;
+  statusCallback?: string;
+}) {
+  const form = new URLSearchParams();
+  form.set('From', opts.from.startsWith('whatsapp:') ? opts.from : `whatsapp:${opts.from}`);
+  form.set('To', opts.toPhone.startsWith('whatsapp:') ? opts.toPhone : `whatsapp:${opts.toPhone}`);
+
+  if (opts.contentSid) {
+    form.set('ContentSid', opts.contentSid);
+    form.set('ContentVariables', JSON.stringify(opts.contentVariables || {}));
+  } else {
+    if (opts.body) form.set('Body', opts.body);
+    if (opts.mediaUrl) form.set('MediaUrl', opts.mediaUrl);
+  }
+  if (opts.statusCallback) form.set('StatusCallback', opts.statusCallback);
+
+  const auth = btoa(`${opts.accountSid}:${opts.authToken}`);
+  const res = await fetch(
+    `https://api.twilio.com/2010-04-01/Accounts/${opts.accountSid}/Messages.json`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${auth}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: form.toString(),
+    },
+  );
+
+  const text = await res.text();
+  let json: Record<string, unknown> = {};
+  try {
+    json = JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    json = parseTwilioResponse(text);
+  }
+
+  return { ok: res.ok, status: res.status, json, text };
 }
 
 Deno.serve(async (req) => {
@@ -124,11 +181,21 @@ Deno.serve(async (req) => {
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
   const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') || '';
-  const n8nUrl = normalizeN8nPrescriptionUrl(Deno.env.get('N8N_PRESCRIPTION_DELIVERY_URL') || '');
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
   const internalSecret = Deno.env.get('INTERNAL_WEBHOOK_SECRET') || '';
+  const twilioSid = Deno.env.get('TWILIO_ACCOUNT_SID') || '';
+  const twilioToken = Deno.env.get('TWILIO_AUTH_TOKEN') || '';
+  const twilioFrom = Deno.env.get('TWILIO_WHATSAPP_FROM') || '';
+  const contentSid = Deno.env.get('TWILIO_CONTENT_PRESCRIPTION_DELIVERY') || '';
+  const statusCallback = Deno.env.get('TWILIO_STATUS_CALLBACK_URL') || '';
 
-  if (!supabaseUrl || !supabaseAnonKey || !n8nUrl || !internalSecret) {
+  if (!supabaseUrl || !supabaseAnonKey || !serviceKey || !internalSecret) {
     return jsonResponse(req, 500, { error: 'Prescription delivery gateway is not configured' });
+  }
+  if (!twilioSid || !twilioToken || !twilioFrom) {
+    return jsonResponse(req, 500, {
+      error: 'Twilio secrets missing on prescription-delivery function (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM)',
+    });
   }
 
   const authorization = req.headers.get('Authorization') || '';
@@ -144,12 +211,15 @@ Deno.serve(async (req) => {
   }
 
   const prescriptionId = clean(body.prescription_id, 80);
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(prescriptionId)) {
+  if (!/^[0-9a-f-]{36}$/i.test(prescriptionId)) {
     return jsonResponse(req, 400, { error: 'prescription_id must be a UUID' });
   }
 
   const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     global: { headers: { Authorization: authorization } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const admin = createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
@@ -163,21 +233,17 @@ Deno.serve(async (req) => {
       status,
       patient_id,
       visit_id,
-      doctor_profile_id,
       delivery_status,
       pdf_url,
-      pdf_storage_path,
       doctor_snapshot,
       clinic_snapshot,
       patient:patients(id, name, phone),
       medicines:prescription_medicines(
         medicine_name,
-        generic_name,
         dosage,
         frequency,
         timing,
         duration,
-        instructions,
         sort_order
       )
     `)
@@ -209,84 +275,88 @@ Deno.serve(async (req) => {
     return jsonResponse(req, 422, { error: 'Prescription PDF URL must be an HTTPS signed URL' });
   }
 
-  const doctor = prescription.doctor_snapshot || {};
-  const clinic = prescription.clinic_snapshot || {};
-  const medicines = (Array.isArray(prescription.medicines) ? prescription.medicines : [])
-    .sort((a: Medicine, b: Medicine) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
-    .map((medicine: Medicine) => ({
-      medicine_name: clean(medicine.medicine_name, 180),
-      generic_name: medicine.generic_name ? clean(medicine.generic_name, 180) : null,
-      dosage: clean(medicine.dosage, 80),
-      frequency: clean(medicine.frequency, 80),
-      timing: clean(medicine.timing, 80),
-      duration: clean(medicine.duration, 80),
-      instructions: medicine.instructions ? clean(medicine.instructions, 500) : null,
-    }));
+  const doctor = prescription.doctor_snapshot as Record<string, unknown> || {};
+  const clinic = prescription.clinic_snapshot as Record<string, unknown> || {};
+  const patientName = clean(patient?.name, 180) || 'there';
+  const doctorName = clean(doctor.name, 180) || 'your doctor';
+  const clinicName = clean(clinic.name, 180) || 'our clinic';
+  const medicines = (Array.isArray(prescription.medicines) ? prescription.medicines : []) as Medicine[];
+  const medicineSummary = summariseMedicines(medicines);
+  const shortPdfLink = await buildShortPdfLink(supabaseUrl, internalSecret, prescription.id);
+  const messageBody =
+    `Hi ${patientName}, your prescription from ${doctorName} at ${clinicName} is ready. ` +
+    `Medicines: ${medicineSummary}. Open PDF: ${shortPdfLink}`;
 
-  const payload = {
-    prescription_id: prescription.id,
+  const scheduledDate = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
+  // 1) Approved template card (short link in {{5}} — full signed URLs break Twilio variables)
+  let twilioResult = contentSid
+    ? await sendTwilioWhatsApp({
+        accountSid: twilioSid,
+        authToken: twilioToken,
+        from: twilioFrom,
+        toPhone: phone,
+        contentSid,
+        contentVariables: {
+          '1': patientName,
+          '2': doctorName,
+          '3': clinicName,
+          '4': medicineSummary,
+          '5': shortPdfLink,
+        },
+        statusCallback: statusCallback || undefined,
+      })
+    : { ok: false, status: 0, json: {}, text: 'No content template configured' };
+
+  // 2) Fallback: attach PDF directly when template fails (works inside 24h session window)
+  if (!twilioResult.ok) {
+    twilioResult = await sendTwilioWhatsApp({
+      accountSid: twilioSid,
+      authToken: twilioToken,
+      from: twilioFrom,
+      toPhone: phone,
+      body: messageBody,
+      mediaUrl: pdfUrl,
+      statusCallback: statusCallback || undefined,
+    });
+  }
+
+  if (!twilioResult.ok) {
+    await supabase.from('prescriptions').update({ delivery_status: 'failed' }).eq('id', prescription.id);
+    const twilioError = String((twilioResult.json as Record<string, unknown>).message || twilioResult.text).slice(0, 300);
+    return jsonResponse(req, 502, {
+      error: 'WhatsApp delivery failed',
+      twilio_status: twilioResult.status,
+      detail: twilioError,
+    });
+  }
+
+  const messageSid = clean(
+    (twilioResult.json as Record<string, unknown>).sid ||
+      (twilioResult.json as Record<string, unknown>).Sid,
+    80,
+  );
+
+  await supabase.from('prescriptions').update({ delivery_status: 'sent' }).eq('id', prescription.id);
+
+  await admin.from('message_logs').insert({
     patient_id: prescription.patient_id,
-    visit_id: prescription.visit_id,
-    patient_name: clean(patient?.name, 180) || 'there',
+    patient_name: patientName,
     phone,
-    doctor_name: clean((doctor as Record<string, unknown>).name, 180) || 'your doctor',
-    clinic_name: clean((clinic as Record<string, unknown>).name, 180) || 'our clinic',
-    medicines,
-    pdf_url: pdfUrl,
-    pdf_storage_path: clean(prescription.pdf_storage_path, 500) || null,
-    requested_by: userData.user.id,
-  };
-
-  const timestamp = String(Date.now());
-  const canonicalBody = canonicalStringify(payload);
-  const signature = await hmacSha256Hex(internalSecret, `${timestamp}.${canonicalBody}`);
-
-  const delivery = await fetch(n8nUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Internal-Timestamp': timestamp,
-      'X-Internal-Signature': `sha256=${signature}`,
-    },
-    body: canonicalBody,
+    workflow_name: 'prescription-delivery-edge',
+    message_type: 'prescription_pdf',
+    message_sent: messageBody,
+    sent_at: new Date().toISOString(),
+    scheduled_date: scheduledDate,
+    delivery_status: 'sent',
+    provider_message_id: messageSid,
+    twilio_message_sid: messageSid,
   });
 
-  const responseText = await delivery.text().catch(() => '');
-
-  if (!delivery.ok || isHtmlErrorPage(responseText)) {
-    await supabase
-      .from('prescriptions')
-      .update({ delivery_status: 'failed' })
-      .eq('id', prescription.id);
-
-    const misconfigured = delivery.status === 404 && isHtmlErrorPage(responseText);
-    return jsonResponse(req, 502, {
-      error: misconfigured
-        ? 'Prescription delivery webhook is not reachable on n8n (check N8N_PRESCRIPTION_DELIVERY_URL secret)'
-        : 'Prescription delivery workflow failed',
-      status: delivery.status,
-      n8n_url: n8nUrl,
-      detail: responseText.slice(0, 300),
-    });
-  }
-
-  let parsed: Record<string, unknown> | null = null;
-  try {
-    parsed = JSON.parse(responseText) as Record<string, unknown>;
-  } catch {
-    /* n8n may return empty body on success */
-  }
-  if (parsed?.status === 'error') {
-    await supabase
-      .from('prescriptions')
-      .update({ delivery_status: 'failed' })
-      .eq('id', prescription.id);
-    return jsonResponse(req, 502, {
-      error: 'Prescription delivery workflow rejected the payload',
-      status: delivery.status,
-      detail: parsed,
-    });
-  }
-
-  return jsonResponse(req, 200, { status: 'ok', message: 'Prescription delivery queued' });
+  return jsonResponse(req, 200, {
+    status: 'ok',
+    message: 'Prescription sent on WhatsApp',
+    twilio_message_sid: messageSid,
+    pdf_link: shortPdfLink,
+  });
 });

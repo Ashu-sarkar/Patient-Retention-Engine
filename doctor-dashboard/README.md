@@ -31,7 +31,7 @@ For local preview, open `doctor-dashboard/index.html?demo=1`.
 
 ## Secure Prescription Delivery
 
-The browser dashboard does not call n8n directly. After a prescription PDF is issued, it invokes the Supabase Edge Function `prescription-delivery` with only `prescription_id`. The function verifies the Supabase Auth session, relies on RLS to prove prescription ownership, loads the trusted patient/doctor/medicine/PDF data from Supabase, then calls WF13 with an HMAC-signed request.
+The browser dashboard does not call n8n directly. After a prescription PDF is issued, it invokes the Supabase Edge Function `prescription-delivery` with only `prescription_id`. The function verifies the doctor session, loads the prescription from Supabase, and sends WhatsApp via Twilio (template card with a short PDF link, or PDF attachment as fallback). Sync secrets with `npm run sync:prescription-secrets`.
 
 Set these Supabase function secrets before deployment:
 
