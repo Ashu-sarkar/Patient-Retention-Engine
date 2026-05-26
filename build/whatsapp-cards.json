@@ -1,60 +1,40 @@
 {
-  "generated_at": "2026-05-26T13:54:30.913Z",
+  "generated_at": "2026-05-26T17:25:52.847Z",
   "cards": [
     {
       "id": "patient_onboarding",
-      "friendly_name": "patient_onboarding",
+      "friendly_name": "patient_warm_welcome_v1",
       "category": "UTILITY",
       "workflow": "workflow-7-new-patient",
       "twilio_content_env": "TWILIO_CONTENT_PATIENT_ONBOARDING",
       "variables": {
-        "1": "Ashutosh Sarkar",
-        "2": "City Hospital",
-        "3": "Dr. A. Sharma",
-        "4": "Your visit date is 2026-05-26."
+        "1": "Priya",
+        "2": "Mehta Clinic",
+        "3": "Dr. Mehta"
       },
       "variable_map": {
         "1": "patient_name",
         "2": "clinic_name",
-        "3": "doctor_name",
-        "4": "visit_detail"
+        "3": "doctor_name"
       },
-      "body": "Hi {{1}}, welcome to {{2}}. We have registered your visit with {{3}}. {{4}} Reply YES if this looks correct or HELP if you need support.",
+      "body": "Hi {{1}}, a very warm welcome to {{2}}.\n\nWe're glad you chose our clinic today. {{3}} will be with you shortly.\n\nYour details are safe with {{2}}, and we'll send your prescription and care updates to this number when they're ready.\n\nPlease keep this number handy. See you inside!",
       "content_api_payload": {
-        "friendly_name": "patient_onboarding",
+        "friendly_name": "patient_warm_welcome_v1",
         "language": "en",
         "variables": {
-          "1": "Ashutosh Sarkar",
-          "2": "City Hospital",
-          "3": "Dr. A. Sharma",
-          "4": "Your visit date is 2026-05-26."
+          "1": "Priya",
+          "2": "Mehta Clinic",
+          "3": "Dr. Mehta"
         },
         "types": {
           "whatsapp/card": {
-            "header_text": "Patient Onboarding",
-            "body": "Hi {{1}}, welcome to {{2}}. We have registered your visit with {{3}}. {{4}} Reply YES if this looks correct or HELP if you need support.",
-            "footer": "vAItalcare support",
-            "actions": [
-              {
-                "type": "QUICK_REPLY",
-                "title": "Yes",
-                "id": "yes"
-              },
-              {
-                "type": "QUICK_REPLY",
-                "title": "Reschedule",
-                "id": "reschedule"
-              },
-              {
-                "type": "QUICK_REPLY",
-                "title": "Help",
-                "id": "help"
-              }
-            ]
+            "header_text": "{{2}}",
+            "body": "Hi {{1}}, a very warm welcome to {{2}}.\n\nWe're glad you chose our clinic today. {{3}} will be with you shortly.\n\nYour details are safe with {{2}}, and we'll send your prescription and care updates to this number when they're ready.\n\nPlease keep this number handy. See you inside!",
+            "footer": "vAItalcare support"
           }
         }
       },
-      "notes": "Patient-facing first message after QR intake. Matches WF7 variables: {{1}} patient, {{2}} clinic, {{3}} doctor, {{4}} visit detail. Follow-up dates are doctor-owned and sent with prescriptions/reminders."
+      "notes": "Warm clinic-owned first welcome after QR intake. Doctor name should be passed as a display name such as Dr. Mehta, not prefixed again in the template. No patient reply flow is implied."
     },
     {
       "id": "hospital_onboarding",
@@ -65,7 +45,7 @@
       "variables": {
         "1": "City Hospital",
         "2": "General Hospital",
-        "3": "Dr. A. Sharma",
+        "3": "Dr. Mehta",
         "4": "Bangalore"
       },
       "variable_map": {
@@ -81,194 +61,278 @@
         "variables": {
           "1": "City Hospital",
           "2": "General Hospital",
-          "3": "Dr. A. Sharma",
+          "3": "Dr. Mehta",
           "4": "Bangalore"
         },
         "types": {
           "whatsapp/card": {
             "header_text": "Hospital Onboarding",
             "body": "Hi {{1}}, your onboarding for {{2}} is complete. We have registered {{3}} as the primary contact and {{4}} as the facility location. Reply CONFIRM if this is correct or EDIT if you need changes.",
-            "footer": "vAItalcare support",
-            "actions": [
-              {
-                "type": "QUICK_REPLY",
-                "title": "Confirm",
-                "id": "confirm"
-              },
-              {
-                "type": "QUICK_REPLY",
-                "title": "Edit",
-                "id": "edit"
-              }
-            ]
+            "footer": "vAItalcare support"
           }
         }
       },
       "notes": "Admin/ops card for newly boarded hospitals. Matches existing Twilio hospital_onboarding card: {{1}} hospital, {{2}} facility type, {{3}} doctor/contact, {{4}} city."
     },
     {
-      "id": "patient_reminder",
-      "friendly_name": "patient_reminder",
+      "id": "prescription_delivery",
+      "friendly_name": "prescription_care_note_v1",
       "category": "UTILITY",
-      "workflow": "workflow-1-followup-reminder, workflow-2-sameday-reminder, workflow-3-missed-appointment, workflow-4-health-check, workflow-5-reactivation",
-      "twilio_content_env": "TWILIO_CONTENT_PATIENT_REMINDER",
+      "workflow": "workflow-13-prescription-delivery",
+      "twilio_content_env": "TWILIO_CONTENT_PRESCRIPTION_DELIVERY",
       "variables": {
-        "1": "Ashutosh Sarkar",
-        "2": "City Hospital",
-        "3": "Dr. A. Sharma",
-        "4": "Your follow-up is scheduled for tomorrow at 10:30 AM."
+        "1": "Priya",
+        "2": "Dr. Mehta",
+        "3": "https://example.com/prescriptions/sample.pdf",
+        "4": "Follow-up date: Fri, 30 May."
+      },
+      "variable_map": {
+        "1": "patient_name",
+        "2": "doctor_name",
+        "3": "pdf_url",
+        "4": "follow_up_detail"
+      },
+      "body": "Hi {{1}}, your prescription from today's visit with {{2}} is ready.\n\nOpen prescription: {{3}}\n\n{{4}}\n\nPlease show this at any pharmacy - all dosage timings are listed inside.\n\nTake it easy today and make sure to rest well. Wishing you a speedy recovery.",
+      "content_api_payload": {
+        "friendly_name": "prescription_care_note_v1",
+        "language": "en",
+        "variables": {
+          "1": "Priya",
+          "2": "Dr. Mehta",
+          "3": "https://example.com/prescriptions/sample.pdf",
+          "4": "Follow-up date: Fri, 30 May."
+        },
+        "types": {
+          "whatsapp/card": {
+            "header_text": "Care",
+            "body": "Hi {{1}}, your prescription from today's visit with {{2}} is ready.\n\nOpen prescription: {{3}}\n\n{{4}}\n\nPlease show this at any pharmacy - all dosage timings are listed inside.\n\nTake it easy today and make sure to rest well. Wishing you a speedy recovery.",
+            "footer": "vAItalcare support"
+          }
+        }
+      },
+      "notes": "Prescription delivery card. Edge function maps {{1}} patient, {{2}} doctor, {{3}} PDF URL, {{4}} follow-up detail."
+    },
+    {
+      "id": "medicine_morning_dose",
+      "friendly_name": "medicine_morning_dose_v1",
+      "category": "UTILITY",
+      "workflow": "future-medicine-reminder-workflow",
+      "twilio_content_env": "TWILIO_CONTENT_MEDICINE_MORNING_DOSE",
+      "variables": {
+        "1": "Priya",
+        "2": "Mehta Clinic",
+        "3": "Metformin",
+        "4": "before breakfast"
+      },
+      "variable_map": {
+        "1": "patient_name",
+        "2": "clinic_name",
+        "3": "medicine_name",
+        "4": "timing"
+      },
+      "body": "Good morning {{1}}!\n\nJust a small reminder from {{2}} - it's time for your {{3}} {{4}}.\n\nConsistency makes such a difference. You're doing great - keep it up!",
+      "content_api_payload": {
+        "friendly_name": "medicine_morning_dose_v1",
+        "language": "en",
+        "variables": {
+          "1": "Priya",
+          "2": "Mehta Clinic",
+          "3": "Metformin",
+          "4": "before breakfast"
+        },
+        "types": {
+          "whatsapp/card": {
+            "header_text": "Reminder",
+            "body": "Good morning {{1}}!\n\nJust a small reminder from {{2}} - it's time for your {{3}} {{4}}.\n\nConsistency makes such a difference. You're doing great - keep it up!",
+            "footer": "vAItalcare support"
+          }
+        }
+      },
+      "notes": "Morning medicine dose reminder. Requires medicine scheduling workflow before runtime use."
+    },
+    {
+      "id": "medicine_afternoon_dose",
+      "friendly_name": "medicine_afternoon_dose_v1",
+      "category": "UTILITY",
+      "workflow": "future-medicine-reminder-workflow",
+      "twilio_content_env": "TWILIO_CONTENT_MEDICINE_AFTERNOON_DOSE",
+      "variables": {
+        "1": "Priya",
+        "2": "Mehta Clinic",
+        "3": "Dr. Mehta",
+        "4": "Metformin",
+        "5": "before breakfast"
       },
       "variable_map": {
         "1": "patient_name",
         "2": "clinic_name",
         "3": "doctor_name",
-        "4": "reminder_detail"
+        "4": "medicine_name",
+        "5": "timing"
       },
-      "body": "Hi {{1}}, this is a care reminder from {{2}} for your appointment with {{3}}. {{4}} Reply YES to confirm, RESCHEDULE to change, or HELP if you need support.",
+      "body": "Hi {{1}}, hope your day is going well!\n\nA gentle reminder from {{2}} - please take your {{4}} {{5}} today.\n\n{{3}} is rooting for your recovery. You've got this!",
       "content_api_payload": {
-        "friendly_name": "patient_reminder",
+        "friendly_name": "medicine_afternoon_dose_v1",
         "language": "en",
         "variables": {
-          "1": "Ashutosh Sarkar",
-          "2": "City Hospital",
-          "3": "Dr. A. Sharma",
-          "4": "Your follow-up is scheduled for tomorrow at 10:30 AM."
+          "1": "Priya",
+          "2": "Mehta Clinic",
+          "3": "Dr. Mehta",
+          "4": "Metformin",
+          "5": "before breakfast"
         },
         "types": {
           "whatsapp/card": {
-            "header_text": "Patient Reminder",
-            "body": "Hi {{1}}, this is a care reminder from {{2}} for your appointment with {{3}}. {{4}} Reply YES to confirm, RESCHEDULE to change, or HELP if you need support.",
-            "footer": "vAItalcare support",
-            "actions": [
-              {
-                "type": "QUICK_REPLY",
-                "title": "Yes",
-                "id": "yes"
-              },
-              {
-                "type": "QUICK_REPLY",
-                "title": "Reschedule",
-                "id": "reschedule"
-              },
-              {
-                "type": "QUICK_REPLY",
-                "title": "Help",
-                "id": "help"
-              }
-            ]
+            "header_text": "Reminder",
+            "body": "Hi {{1}}, hope your day is going well!\n\nA gentle reminder from {{2}} - please take your {{4}} {{5}} today.\n\n{{3}} is rooting for your recovery. You've got this!",
+            "footer": "vAItalcare support"
           }
         }
       },
-      "notes": "Reusable patient reminder card. The workflow should fill reminder_detail with tomorrow/today/missed/health-check context."
+      "notes": "Afternoon medicine dose reminder. Requires medicine scheduling workflow before runtime use."
     },
     {
-      "id": "medicine_reminder",
-      "friendly_name": "medicine_reminder",
+      "id": "medicine_evening_dose",
+      "friendly_name": "medicine_evening_dose_v1",
       "category": "UTILITY",
       "workflow": "future-medicine-reminder-workflow",
-      "twilio_content_env": "TWILIO_CONTENT_MEDICINE_REMINDER",
+      "twilio_content_env": "TWILIO_CONTENT_MEDICINE_EVENING_DOSE",
       "variables": {
-        "1": "Ashutosh Sarkar",
-        "2": "Paracetamol 500 mg",
-        "3": "1 tablet",
-        "4": "after breakfast",
-        "5": "Take with water after food."
+        "1": "Priya",
+        "2": "Mehta Clinic",
+        "3": "Metformin",
+        "4": "before breakfast"
       },
       "variable_map": {
         "1": "patient_name",
-        "2": "medicine_name",
-        "3": "dosage",
-        "4": "timing",
-        "5": "instruction"
+        "2": "clinic_name",
+        "3": "medicine_name",
+        "4": "timing"
       },
-      "body": "Hi {{1}}, it is time for {{2}}. Dose: {{3}}. Timing: {{4}}. {{5}} Reply TAKEN once done or HELP if you have a concern.",
+      "body": "Good evening {{1}},\n\nTime for your {{3}} {{4}} - {{2}} checking in with your evening reminder.\n\nRest well tonight. {{2}} is with you every step of the way.",
       "content_api_payload": {
-        "friendly_name": "medicine_reminder",
+        "friendly_name": "medicine_evening_dose_v1",
         "language": "en",
         "variables": {
-          "1": "Ashutosh Sarkar",
-          "2": "Paracetamol 500 mg",
-          "3": "1 tablet",
-          "4": "after breakfast",
-          "5": "Take with water after food."
+          "1": "Priya",
+          "2": "Mehta Clinic",
+          "3": "Metformin",
+          "4": "before breakfast"
         },
         "types": {
           "whatsapp/card": {
-            "header_text": "Medicine Reminder",
-            "body": "Hi {{1}}, it is time for {{2}}. Dose: {{3}}. Timing: {{4}}. {{5}} Reply TAKEN once done or HELP if you have a concern.",
-            "footer": "vAItalcare support",
-            "actions": [
-              {
-                "type": "QUICK_REPLY",
-                "title": "Taken",
-                "id": "taken"
-              },
-              {
-                "type": "QUICK_REPLY",
-                "title": "Help",
-                "id": "help"
-              }
-            ]
+            "header_text": "Reminder",
+            "body": "Good evening {{1}},\n\nTime for your {{3}} {{4}} - {{2}} checking in with your evening reminder.\n\nRest well tonight. {{2}} is with you every step of the way.",
+            "footer": "vAItalcare support"
           }
         }
       },
-      "notes": "Patient-facing medication adherence reminder. Requires a scheduling workflow before runtime use."
+      "notes": "Evening medicine dose reminder. Requires medicine scheduling workflow before runtime use."
     },
     {
-      "id": "prescription_delivery",
-      "friendly_name": "prescription_delivery",
+      "id": "medicine_course_complete",
+      "friendly_name": "medicine_course_complete_v1",
       "category": "UTILITY",
-      "workflow": "workflow-13-prescription-delivery",
-      "twilio_content_env": "TWILIO_CONTENT_PRESCRIPTION_DELIVERY",
+      "workflow": "future-medicine-course-workflow",
+      "twilio_content_env": "TWILIO_CONTENT_MEDICINE_COURSE_COMPLETE",
       "variables": {
-        "1": "Ashutosh Sarkar",
-        "2": "Dr. A. Sharma",
-        "3": "City Hospital",
-        "4": "Paracetamol 500 mg - 1 tablet, twice daily, after food, 5 days",
-        "5": "Follow-up date: 2026-05-30.",
-        "6": "https://example.com/prescriptions/sample.pdf"
+        "1": "Priya",
+        "2": "Dr. Mehta"
+      },
+      "variable_map": {
+        "1": "patient_name",
+        "2": "doctor_name"
+      },
+      "body": "Hi {{1}}, you've completed your full medicine course from {{2}}!\n\nThat takes real commitment - well done.\n\nIf you're feeling much better, that's wonderful news. If any symptoms linger or return, please visit the clinic for a review. We're always here to help.",
+      "content_api_payload": {
+        "friendly_name": "medicine_course_complete_v1",
+        "language": "en",
+        "variables": {
+          "1": "Priya",
+          "2": "Dr. Mehta"
+        },
+        "types": {
+          "whatsapp/card": {
+            "header_text": "Milestone",
+            "body": "Hi {{1}}, you've completed your full medicine course from {{2}}!\n\nThat takes real commitment - well done.\n\nIf you're feeling much better, that's wonderful news. If any symptoms linger or return, please visit the clinic for a review. We're always here to help.",
+            "footer": "vAItalcare support"
+          }
+        }
+      },
+      "notes": "Medicine course completion message. Requires course-end scheduling workflow before runtime use."
+    },
+    {
+      "id": "followup_day_before",
+      "friendly_name": "followup_day_before_v1",
+      "category": "UTILITY",
+      "workflow": "workflow-1-followup-reminder",
+      "twilio_content_env": "TWILIO_CONTENT_FOLLOW_UP_REMINDER",
+      "variables": {
+        "1": "Priya",
+        "2": "Mehta Clinic",
+        "3": "Dr. Mehta",
+        "4": "Fri, 30 May"
+      },
+      "variable_map": {
+        "1": "patient_name",
+        "2": "clinic_name",
+        "3": "doctor_name",
+        "4": "follow_up_date"
+      },
+      "body": "Hi {{1}}, a warm reminder from {{2}}.\n\n{{3}} is looking forward to seeing you tomorrow, {{4}}, for your follow-up visit.\n\nYour recovery really matters to us - please do try to come in. It'll be a quick and comfortable visit.",
+      "content_api_payload": {
+        "friendly_name": "followup_day_before_v1",
+        "language": "en",
+        "variables": {
+          "1": "Priya",
+          "2": "Mehta Clinic",
+          "3": "Dr. Mehta",
+          "4": "Fri, 30 May"
+        },
+        "types": {
+          "whatsapp/card": {
+            "header_text": "Reminder",
+            "body": "Hi {{1}}, a warm reminder from {{2}}.\n\n{{3}} is looking forward to seeing you tomorrow, {{4}}, for your follow-up visit.\n\nYour recovery really matters to us - please do try to come in. It'll be a quick and comfortable visit.",
+            "footer": "vAItalcare support"
+          }
+        }
+      },
+      "notes": "Day-before follow-up reminder. WF1 maps {{1}} patient, {{2}} clinic, {{3}} doctor, {{4}} formatted follow-up date."
+    },
+    {
+      "id": "same_day_morning_reminder",
+      "friendly_name": "same_day_morning_reminder_v1",
+      "category": "UTILITY",
+      "workflow": "workflow-2-sameday-reminder",
+      "twilio_content_env": "TWILIO_CONTENT_SAME_DAY_REMINDER",
+      "variables": {
+        "1": "Priya",
+        "2": "Dr. Mehta",
+        "3": "Mehta Clinic"
       },
       "variable_map": {
         "1": "patient_name",
         "2": "doctor_name",
-        "3": "clinic_name",
-        "4": "medicine_summary",
-        "5": "follow_up_detail",
-        "6": "pdf_url"
+        "3": "clinic_name"
       },
-      "body": "Hi {{1}}, your prescription from {{2}} at {{3}} is ready. Medicines: {{4}}. {{5}} Open prescription: {{6}}",
+      "body": "Good morning {{1}}!\n\nJust a friendly reminder - your visit with {{2}} at {{3}} is today.\n\nWe're ready for you whenever you arrive. See you soon, take care on your way!",
       "content_api_payload": {
-        "friendly_name": "prescription_delivery",
+        "friendly_name": "same_day_morning_reminder_v1",
         "language": "en",
         "variables": {
-          "1": "Ashutosh Sarkar",
-          "2": "Dr. A. Sharma",
-          "3": "City Hospital",
-          "4": "Paracetamol 500 mg - 1 tablet, twice daily, after food, 5 days",
-          "5": "Follow-up date: 2026-05-30.",
-          "6": "https://example.com/prescriptions/sample.pdf"
+          "1": "Priya",
+          "2": "Dr. Mehta",
+          "3": "Mehta Clinic"
         },
         "types": {
           "whatsapp/card": {
-            "header_text": "Prescription Delivery",
-            "body": "Hi {{1}}, your prescription from {{2}} at {{3}} is ready. Medicines: {{4}}. {{5}} Open prescription: {{6}}",
-            "footer": "vAItalcare support",
-            "actions": [
-              {
-                "type": "QUICK_REPLY",
-                "title": "Received",
-                "id": "received"
-              },
-              {
-                "type": "QUICK_REPLY",
-                "title": "Help",
-                "id": "help"
-              }
-            ]
+            "header_text": "Reminder",
+            "body": "Good morning {{1}}!\n\nJust a friendly reminder - your visit with {{2}} at {{3}} is today.\n\nWe're ready for you whenever you arrive. See you soon, take care on your way!",
+            "footer": "vAItalcare support"
           }
         }
       },
-      "notes": "Post-consultation prescription card. WF13/edge delivery map {{1}} patient, {{2}} doctor, {{3}} clinic, {{4}} medicine summary, {{5}} follow-up detail, {{6}} PDF URL."
+      "notes": "Same-day follow-up reminder. WF2 maps {{1}} patient, {{2}} doctor, {{3}} clinic."
     }
   ]
 }

@@ -290,12 +290,13 @@ Deno.serve(async (req) => {
     ? `Follow-up date: ${followUpDate}.`
     : 'No follow-up date has been scheduled.';
   const messageBody =
-    `Hi ${patientName}, your prescription from ${doctorName} at ${clinicName} is ready. ` +
-    `Medicines: ${medicineSummary}. ${followUpText} Open PDF: ${shortPdfLink}`;
+    `Hi ${patientName}, your prescription from today's visit with ${doctorName} is ready. ` +
+    `Open prescription: ${shortPdfLink}. ${followUpText} ` +
+    'Please show this at any pharmacy - all dosage timings are listed inside.';
 
   const scheduledDate = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
-  // 1) Approved template card (short link in {{6}} — full signed URLs break Twilio variables)
+  // 1) Approved template card (short link in {{3}} — full signed URLs break Twilio variables)
   let twilioResult = contentSid
     ? await sendTwilioWhatsApp({
         accountSid: twilioSid,
@@ -306,10 +307,8 @@ Deno.serve(async (req) => {
         contentVariables: {
           '1': patientName,
           '2': doctorName,
-          '3': clinicName,
-          '4': medicineSummary,
-          '5': followUpText,
-          '6': shortPdfLink,
+          '3': shortPdfLink,
+          '4': followUpText,
         },
         statusCallback: statusCallback || undefined,
       })

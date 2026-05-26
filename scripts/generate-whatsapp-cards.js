@@ -21,49 +21,30 @@ function renderMessage(template) {
 function sampleFor(name) {
   const samples = {
     name: 'Ashutosh Sarkar',
-    patient_name: 'Ashutosh Sarkar',
-    doctor_name: 'Dr. A. Sharma',
+    patient_name: 'Priya',
+    doctor_name: 'Dr. Mehta',
     visit_detail: 'Your visit date is 2026-05-26.',
-    clinic_name: 'City Hospital',
+    clinic_name: 'Mehta Clinic',
     hospital_name: 'City Hospital',
     facility_type: 'General Hospital',
     city: 'Bangalore',
     reminder_detail: 'Your follow-up is scheduled for tomorrow at 10:30 AM.',
-    medicine_name: 'Paracetamol 500 mg',
+    follow_up_date: 'Fri, 30 May',
+    medicine_name: 'Metformin',
     dosage: '1 tablet',
-    timing: 'after breakfast',
+    timing: 'before breakfast',
     instruction: 'Take with water after food.',
     medicine_summary: 'Paracetamol 500 mg - 1 tablet, twice daily, after food, 5 days',
-    follow_up_detail: 'Follow-up date: 2026-05-30.',
+    follow_up_detail: 'Follow-up date: Fri, 30 May.',
     pdf_url: 'https://example.com/prescriptions/sample.pdf',
   };
   return samples[name] || `Sample ${name}`;
 }
 
 function cardActions(id) {
-  if (id === 'hospital_onboarding') {
-    return [
-      { type: 'QUICK_REPLY', title: 'Confirm', id: 'confirm' },
-      { type: 'QUICK_REPLY', title: 'Edit', id: 'edit' },
-    ];
-  }
-  if (id === 'medicine_reminder') {
-    return [
-      { type: 'QUICK_REPLY', title: 'Taken', id: 'taken' },
-      { type: 'QUICK_REPLY', title: 'Help', id: 'help' },
-    ];
-  }
-  if (id === 'prescription_delivery') {
-    return [
-      { type: 'QUICK_REPLY', title: 'Received', id: 'received' },
-      { type: 'QUICK_REPLY', title: 'Help', id: 'help' },
-    ];
-  }
-  return [
-    { type: 'QUICK_REPLY', title: 'Yes', id: 'yes' },
-    { type: 'QUICK_REPLY', title: 'Reschedule', id: 'reschedule' },
-    { type: 'QUICK_REPLY', title: 'Help', id: 'help' },
-  ];
+  const template = registry.templates.find(item => item.id === id);
+  if (Array.isArray(template?.actions)) return template.actions;
+  return [];
 }
 
 function titleFor(id) {
@@ -90,14 +71,13 @@ const cards = registry.templates
       content_api_payload: {
         friendly_name: template.twilio_friendly_name || template.id,
         language: template.language || 'en',
-        variables,
-        types: {
-          'whatsapp/card': {
-            header_text: titleFor(template.twilio_friendly_name || template.id),
+      variables,
+      types: {
+          'whatsapp/card': Object.assign({
+            header_text: template.header_text ? renderMessage({ ...template, message: template.header_text }) : titleFor(template.twilio_friendly_name || template.id),
             body: renderMessage(template),
             footer: 'vAItalcare support',
-            actions: cardActions(template.id),
-          },
+          }, cardActions(template.id).length ? { actions: cardActions(template.id) } : {}),
         },
       },
       notes: template.notes || '',

@@ -30,20 +30,21 @@ function renderMessage(template) {
 
 function sampleFor(name) {
   const samples = {
-    patient_name: 'Ashutosh Sarkar',
-    clinic_name: 'City Hospital',
-    doctor_name: 'Dr. A. Sharma',
+    patient_name: 'Priya',
+    clinic_name: 'Mehta Clinic',
+    doctor_name: 'Dr. Mehta',
     visit_detail: 'Your visit date is 2026-05-26.',
     hospital_name: 'City Hospital',
     facility_type: 'General Hospital',
     city: 'Bangalore',
     reminder_detail: 'Your follow-up is scheduled for tomorrow at 10:30 AM.',
-    medicine_name: 'Paracetamol 500 mg',
+    follow_up_date: 'Fri, 30 May',
+    medicine_name: 'Metformin',
     dosage: '1 tablet',
-    timing: 'after breakfast',
+    timing: 'before breakfast',
     instruction: 'Take with water after food.',
     medicine_summary: 'Paracetamol 500 mg - 1 tablet, twice daily, after food, 5 days',
-    follow_up_detail: 'Follow-up date: 2026-05-30.',
+    follow_up_detail: 'Follow-up date: Fri, 30 May.',
     pdf_url: 'https://example.com/prescriptions/sample.pdf',
   };
   return samples[name] || `Sample ${name}`;
@@ -106,29 +107,11 @@ async function main() {
       variables,
       types: {
         'whatsapp/card': {
-          header_text: (template.twilio_friendly_name || template.id).replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase()),
-          body: renderMessage(template),
-          footer: 'vAItalcare support',
-          actions: template.id === 'hospital_onboarding'
-            ? [
-                { type: 'QUICK_REPLY', title: 'Confirm', id: 'confirm' },
-                { type: 'QUICK_REPLY', title: 'Edit', id: 'edit' },
-              ]
-            : template.id === 'medicine_reminder'
-              ? [
-                  { type: 'QUICK_REPLY', title: 'Taken', id: 'taken' },
-                  { type: 'QUICK_REPLY', title: 'Help', id: 'help' },
-                ]
-              : template.id === 'prescription_delivery'
-                ? [
-                    { type: 'QUICK_REPLY', title: 'Received', id: 'received' },
-                    { type: 'QUICK_REPLY', title: 'Help', id: 'help' },
-                  ]
-                : [
-                    { type: 'QUICK_REPLY', title: 'Yes', id: 'yes' },
-                    { type: 'QUICK_REPLY', title: 'Reschedule', id: 'reschedule' },
-                    { type: 'QUICK_REPLY', title: 'Help', id: 'help' },
-                  ],
+          ...Object.assign({
+            header_text: template.header_text ? renderMessage({ ...template, message: template.header_text }) : (template.twilio_friendly_name || template.id).replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase()),
+            body: renderMessage(template),
+            footer: 'vAItalcare support',
+          }, Array.isArray(template.actions) && template.actions.length ? { actions: template.actions } : {}),
         },
       },
     };
