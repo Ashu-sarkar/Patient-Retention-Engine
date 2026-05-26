@@ -235,6 +235,8 @@ Deno.serve(async (req) => {
       visit_id,
       delivery_status,
       pdf_url,
+      follow_up_required,
+      follow_up_date,
       doctor_snapshot,
       clinic_snapshot,
       patient:patients(id, name, phone),
@@ -283,13 +285,17 @@ Deno.serve(async (req) => {
   const medicines = (Array.isArray(prescription.medicines) ? prescription.medicines : []) as Medicine[];
   const medicineSummary = summariseMedicines(medicines);
   const shortPdfLink = await buildShortPdfLink(supabaseUrl, internalSecret, prescription.id);
+  const followUpDate = clean(prescription.follow_up_date, 40);
+  const followUpText = prescription.follow_up_required === 'Yes' && followUpDate
+    ? `Follow-up date: ${followUpDate}.`
+    : 'No follow-up date has been scheduled.';
   const messageBody =
     `Hi ${patientName}, your prescription from ${doctorName} at ${clinicName} is ready. ` +
-    `Medicines: ${medicineSummary}. Open PDF: ${shortPdfLink}`;
+    `Medicines: ${medicineSummary}. ${followUpText} Open PDF: ${shortPdfLink}`;
 
   const scheduledDate = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
-  // 1) Approved template card (short link in {{5}} — full signed URLs break Twilio variables)
+  // 1) Approved template card (short link in {{6}} — full signed URLs break Twilio variables)
   let twilioResult = contentSid
     ? await sendTwilioWhatsApp({
         accountSid: twilioSid,
@@ -302,7 +308,8 @@ Deno.serve(async (req) => {
           '2': doctorName,
           '3': clinicName,
           '4': medicineSummary,
-          '5': shortPdfLink,
+          '5': followUpText,
+          '6': shortPdfLink,
         },
         statusCallback: statusCallback || undefined,
       })

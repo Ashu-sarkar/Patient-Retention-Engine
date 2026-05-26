@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-22T23:40:50.607Z",
+  "generated_at": "2026-05-26T13:54:30.913Z",
   "cards": [
     {
       "id": "patient_onboarding",
@@ -11,15 +11,15 @@
         "1": "Ashutosh Sarkar",
         "2": "City Hospital",
         "3": "Dr. A. Sharma",
-        "4": "2026-05-25"
+        "4": "Your visit date is 2026-05-26."
       },
       "variable_map": {
         "1": "patient_name",
         "2": "clinic_name",
         "3": "doctor_name",
-        "4": "follow_up_date"
+        "4": "visit_detail"
       },
-      "body": "Hi {{1}}, welcome to {{2}}. We have registered your visit with {{3}}. Your follow-up date is {{4}}. Reply YES if this looks correct or RESCHEDULE if you need help.",
+      "body": "Hi {{1}}, welcome to {{2}}. We have registered your visit with {{3}}. {{4}} Reply YES if this looks correct or HELP if you need support.",
       "content_api_payload": {
         "friendly_name": "patient_onboarding",
         "language": "en",
@@ -27,12 +27,12 @@
           "1": "Ashutosh Sarkar",
           "2": "City Hospital",
           "3": "Dr. A. Sharma",
-          "4": "2026-05-25"
+          "4": "Your visit date is 2026-05-26."
         },
         "types": {
           "whatsapp/card": {
             "header_text": "Patient Onboarding",
-            "body": "Hi {{1}}, welcome to {{2}}. We have registered your visit with {{3}}. Your follow-up date is {{4}}. Reply YES if this looks correct or RESCHEDULE if you need help.",
+            "body": "Hi {{1}}, welcome to {{2}}. We have registered your visit with {{3}}. {{4}} Reply YES if this looks correct or HELP if you need support.",
             "footer": "vAItalcare support",
             "actions": [
               {
@@ -54,7 +54,7 @@
           }
         }
       },
-      "notes": "Patient-facing first message after QR intake. Matches existing Twilio patient_onboarding card: {{1}} patient, {{2}} clinic, {{3}} doctor, {{4}} follow-up date."
+      "notes": "Patient-facing first message after QR intake. Matches WF7 variables: {{1}} patient, {{2}} clinic, {{3}} doctor, {{4}} visit detail. Follow-up dates are doctor-owned and sent with prescriptions/reminders."
     },
     {
       "id": "hospital_onboarding",
@@ -225,16 +225,18 @@
         "2": "Dr. A. Sharma",
         "3": "City Hospital",
         "4": "Paracetamol 500 mg - 1 tablet, twice daily, after food, 5 days",
-        "5": "https://example.com/prescriptions/sample.pdf"
+        "5": "Follow-up date: 2026-05-30.",
+        "6": "https://example.com/prescriptions/sample.pdf"
       },
       "variable_map": {
         "1": "patient_name",
         "2": "doctor_name",
         "3": "clinic_name",
         "4": "medicine_summary",
-        "5": "pdf_url"
+        "5": "follow_up_detail",
+        "6": "pdf_url"
       },
-      "body": "Hi {{1}}, your prescription from {{2}} at {{3}} is ready. Medicines: {{4}}. Open prescription: {{5}}",
+      "body": "Hi {{1}}, your prescription from {{2}} at {{3}} is ready. Medicines: {{4}}. {{5}} Open prescription: {{6}}",
       "content_api_payload": {
         "friendly_name": "prescription_delivery",
         "language": "en",
@@ -243,12 +245,13 @@
           "2": "Dr. A. Sharma",
           "3": "City Hospital",
           "4": "Paracetamol 500 mg - 1 tablet, twice daily, after food, 5 days",
-          "5": "https://example.com/prescriptions/sample.pdf"
+          "5": "Follow-up date: 2026-05-30.",
+          "6": "https://example.com/prescriptions/sample.pdf"
         },
         "types": {
           "whatsapp/card": {
             "header_text": "Prescription Delivery",
-            "body": "Hi {{1}}, your prescription from {{2}} at {{3}} is ready. Medicines: {{4}}. Open prescription: {{5}}",
+            "body": "Hi {{1}}, your prescription from {{2}} at {{3}} is ready. Medicines: {{4}}. {{5}} Open prescription: {{6}}",
             "footer": "vAItalcare support",
             "actions": [
               {
@@ -265,7 +268,7 @@
           }
         }
       },
-      "notes": "Post-consultation prescription card. WF13 maps {{1}} patient, {{2}} doctor, {{3}} clinic, {{4}} medicine summary, {{5}} PDF URL."
+      "notes": "Post-consultation prescription card. WF13/edge delivery map {{1}} patient, {{2}} doctor, {{3}} clinic, {{4}} medicine summary, {{5}} follow-up detail, {{6}} PDF URL."
     }
   ]
 }

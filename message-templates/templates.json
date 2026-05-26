@@ -8,20 +8,20 @@
       "trigger": "New patient record created",
       "category": "UTILITY",
       "twilio_friendly_name": "patient_onboarding",
-      "message": "Hi {{patient_name}}, welcome to {{clinic_name}}. We have registered your visit with {{doctor_name}}. Your follow-up date is {{follow_up_date}}. Reply YES if this looks correct or RESCHEDULE if you need help.",
+      "message": "Hi {{patient_name}}, welcome to {{clinic_name}}. We have registered your visit with {{doctor_name}}. {{visit_detail}} Reply YES if this looks correct or HELP if you need support.",
       "placeholders": [
         "patient_name",
         "clinic_name",
         "doctor_name",
-        "follow_up_date"
+        "visit_detail"
       ],
       "component_parameters": [
         "patient_name",
         "clinic_name",
         "doctor_name",
-        "follow_up_date"
+        "visit_detail"
       ],
-      "notes": "Patient-facing first message after QR intake. Matches existing Twilio patient_onboarding card: {{1}} patient, {{2}} clinic, {{3}} doctor, {{4}} follow-up date.",
+      "notes": "Patient-facing first message after QR intake. Matches WF7 variables: {{1}} patient, {{2}} clinic, {{3}} doctor, {{4}} visit detail. Follow-up dates are doctor-owned and sent with prescriptions/reminders.",
       "twilio_content_env": "TWILIO_CONTENT_PATIENT_ONBOARDING",
       "twilio_content_sid": "HXb8192571b56c7e1570f6b1e0b8b86279"
     },
@@ -102,12 +102,13 @@
       "trigger": "Doctor issues prescription PDF after consultation",
       "category": "UTILITY",
       "twilio_friendly_name": "prescription_delivery",
-      "message": "Hi {{patient_name}}, your prescription from {{doctor_name}} at {{clinic_name}} is ready. Medicines: {{medicine_summary}}. Open prescription: {{pdf_url}}",
+      "message": "Hi {{patient_name}}, your prescription from {{doctor_name}} at {{clinic_name}} is ready. Medicines: {{medicine_summary}}. {{follow_up_detail}} Open prescription: {{pdf_url}}",
       "placeholders": [
         "patient_name",
         "doctor_name",
         "clinic_name",
         "medicine_summary",
+        "follow_up_detail",
         "pdf_url"
       ],
       "component_parameters": [
@@ -115,9 +116,10 @@
         "doctor_name",
         "clinic_name",
         "medicine_summary",
+        "follow_up_detail",
         "pdf_url"
       ],
-      "notes": "Post-consultation prescription card. WF13 maps {{1}} patient, {{2}} doctor, {{3}} clinic, {{4}} medicine summary, {{5}} PDF URL.",
+      "notes": "Post-consultation prescription card. WF13/edge delivery map {{1}} patient, {{2}} doctor, {{3}} clinic, {{4}} medicine summary, {{5}} follow-up detail, {{6}} PDF URL.",
       "twilio_content_env": "TWILIO_CONTENT_PRESCRIPTION_DELIVERY",
       "twilio_content_sid": null
     },

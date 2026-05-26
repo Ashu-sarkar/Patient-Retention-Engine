@@ -22,11 +22,11 @@ This writes `build/whatsapp-cards.json` with Twilio-ready card bodies, variable 
 
 | Env var | Twilio friendly name | Purpose | Variables |
 |---|---|---|---|
-| `TWILIO_CONTENT_PATIENT_ONBOARDING` | `patient_onboarding` | First WhatsApp after patient QR intake | `{{1}}` patient, `{{2}}` clinic, `{{3}}` doctor |
+| `TWILIO_CONTENT_PATIENT_ONBOARDING` | `patient_onboarding` | First WhatsApp after patient QR intake | `{{1}}` patient, `{{2}}` clinic, `{{3}}` doctor, `{{4}}` visit detail |
 | `TWILIO_CONTENT_HOSPITAL_ONBOARDING` | `hospital_onboarding` | Admin/ops notification after hospital signup | `{{1}}` hospital, `{{2}}` facility type, `{{3}}` doctor, `{{4}}` city |
 | `TWILIO_CONTENT_PATIENT_REMINDER` | `patient_reminder` | Appointment, missed follow-up, health check, or reactivation reminder | `{{1}}` patient, `{{2}}` clinic, `{{3}}` doctor, `{{4}}` reminder detail |
 | `TWILIO_CONTENT_MEDICINE_REMINDER` | `medicine_reminder` | Scheduled medicine dose reminder | `{{1}}` patient, `{{2}}` medicine, `{{3}}` dosage, `{{4}}` timing, `{{5}}` instruction |
-| `TWILIO_CONTENT_PRESCRIPTION_DELIVERY` | `prescription_delivery` | Post-consultation prescription delivery | `{{1}}` patient, `{{2}}` doctor, `{{3}}` clinic, `{{4}}` medicine summary, `{{5}}` PDF URL |
+| `TWILIO_CONTENT_PRESCRIPTION_DELIVERY` | `prescription_delivery` | Post-consultation prescription delivery | `{{1}}` patient, `{{2}}` doctor, `{{3}}` clinic, `{{4}}` medicine summary, `{{5}}` follow-up detail, `{{6}}` PDF URL |
 
 Create or dry-run these in Twilio:
 

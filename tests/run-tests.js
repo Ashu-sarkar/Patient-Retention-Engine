@@ -460,8 +460,6 @@ async function main() {
     hospital_name    : 'Test Hospital',
     doctor_name      : 'Dr Alpha',
     visit_date       : date(-1),             // yesterday
-    follow_up_required: 'Yes',
-    follow_up_date   : date(3),             // 3 days from now
   };
 
   await test('2.1  Valid registration → 200 + patient_code + visit_id in response', async () => {
@@ -479,7 +477,8 @@ async function main() {
     assert(pat.name === 'Test Patient Alpha', `Name mismatch: "${pat.name}"`);
     assert(pat.patient_code?.startsWith('PAT-'), `patient_code looks wrong: ${pat.patient_code}`);
     assert(pat.status === 'pending', `Expected status=pending, got ${pat.status}`);
-    assert(pat.follow_up_required === 'Yes', 'follow_up_required should be Yes');
+    assert(pat.follow_up_required === 'No', 'follow_up_required should default to No until prescription issue');
+    assert(!pat.follow_up_date, `follow_up_date should be empty until prescription issue, got ${pat.follow_up_date}`);
   });
 
   await test('2.2b Patient visit queue row persisted in Supabase', async () => {
@@ -525,12 +524,15 @@ async function main() {
     assert(JSON.stringify(json.errors).includes('visit_date'), `Expected visit_date error`);
   });
 
-  await test('2.7  Validation: follow_up=Yes without follow_up_date → 400', async () => {
+  await test('2.7  Intake ignores stray follow-up fields from old clients', async () => {
     const { status, json } = await wh('patient-form-intake', 'POST', {
       ...BASE, phone_number: '9000099992', follow_up_required: 'Yes', follow_up_date: '',
     });
-    assert(status === 400, `Expected 400, got ${status}`);
-    assert(JSON.stringify(json.errors).includes('follow_up_date'), `Expected follow_up_date error`);
+    assert(status === 200, `Expected 200, got ${status}: ${JSON.stringify(json)}`);
+    await sleep(1000);
+    const pat = await getPatient('+919000099992');
+    assert(pat?.follow_up_required === 'No', `follow_up_required should remain No, got ${pat?.follow_up_required}`);
+    assert(!pat?.follow_up_date, `follow_up_date should remain empty, got ${pat?.follow_up_date}`);
   });
 
   await test('2.8  Validation: invalid sex value → 400', async () => {
@@ -572,8 +574,6 @@ async function main() {
       phone             : '+919000000099',
       clinic_name       : 'Test Clinic',
       doctor_name       : 'Dr WF7',
-      follow_up_required: 'Yes',
-      follow_up_date    : date(5),
       visit_date        : date(-1),
     });
     assert([200, 202].includes(status), `Expected 200/202, got ${status}: ${JSON.stringify(json)}`);
@@ -858,8 +858,6 @@ async function main() {
       hospital_name     : 'E2E Hospital',
       doctor_name       : 'Dr E2E',
       visit_date        : date(-1),
-      follow_up_required: 'Yes',
-      follow_up_date    : date(4),
     });
     assert(status === 200, `Form submit failed: ${status} ${JSON.stringify(json)}`);
     assert(json.status === 'success', `Expected success: ${JSON.stringify(json)}`);
@@ -875,7 +873,8 @@ async function main() {
     assert(pat, 'E2E patient not found in Supabase');
     assert(pat.patient_code === e2ePatientCode, `Code mismatch: ${pat.patient_code}`);
     assert(pat.sex === 'Female', `Sex mismatch: ${pat.sex}`);
-    assert(pat.follow_up_required === 'Yes', 'follow_up_required wrong');
+    assert(pat.follow_up_required === 'No', `follow_up_required should be No until prescription issue, got ${pat.follow_up_required}`);
+    assert(!pat.follow_up_date, `follow_up_date should be empty until prescription issue, got ${pat.follow_up_date}`);
     assert(pat.status === 'pending', `Status should be pending, got ${pat.status}`);
   });
 
@@ -916,12 +915,13 @@ async function main() {
       hospital_name     : 'E2E Hospital 2',
       doctor_name       : 'Dr New',
       visit_date        : date(0),
-      follow_up_required: 'No',
     });
     assert(status === 200, `Re-reg failed: ${status} ${JSON.stringify(json)}`);
     await sleep(1500);
     const pat = await getPatient(`+91${TP.e2e}`);
     assert(pat?.status === 'pending', `Re-reg should reset status to pending, got ${pat?.status}`);
+    assert(pat?.follow_up_required === 'No', `Re-reg should reset follow_up_required to No, got ${pat?.follow_up_required}`);
+    assert(!pat?.follow_up_date, `Re-reg should clear follow_up_date, got ${pat?.follow_up_date}`);
     assert(pat?.doctor_name === 'Dr New', `doctor_name not updated: ${pat?.doctor_name}`);
     assert(pat?.health_check_sent === false, 'health_check_sent should reset to false');
   });

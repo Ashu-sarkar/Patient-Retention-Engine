@@ -24,9 +24,6 @@
  *   hospital_name      — Required, non-empty string
  *   doctor_name        — Required, non-empty string
  *   visit_date         — Required, YYYY-MM-DD, must not be in the future
- *   follow_up_required — Required, Yes | No
- *   follow_up_date     — Conditional: required when follow_up_required = Yes,
- *                        must be strictly after visit_date
  */
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -36,11 +33,9 @@ const REQUIRED_FIELDS = [
   'hospital_name',
   'doctor_name',
   'visit_date',
-  'follow_up_required',
 ];
 
 const VALID_SEX_VALUES        = ['Male', 'Female', 'Other'];
-const VALID_FOLLOW_UP_VALUES  = ['Yes', 'No'];
 const PHONE_RE                = /^[0-9]{10}$/;
 const DATE_ISO_RE             = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -118,12 +113,6 @@ function validateIntakeRow(row) {
     errors.push(`sex: must be one of ${VALID_SEX_VALUES.join(', ')}`);
   }
 
-  // ── follow_up_required ────────────────────────────────────
-  const fuReq = String(row.follow_up_required || '').trim();
-  if (fuReq && !VALID_FOLLOW_UP_VALUES.includes(fuReq)) {
-    errors.push(`follow_up_required: must be Yes or No`);
-  }
-
   // ── visit_date ─────────────────────────────────────────────
   let visitDate = null;
   try {
@@ -145,26 +134,6 @@ function validateIntakeRow(row) {
     errors.push(e.message);
   }
 
-  // ── follow_up_date (conditional) ──────────────────────────
-  const fuDateRaw = String(row.follow_up_date || '').trim();
-  if (fuReq === 'Yes') {
-    if (!fuDateRaw) {
-      errors.push('follow_up_date: required when follow_up_required is Yes');
-    } else {
-      try {
-        const fuDate = parseDate(fuDateRaw, 'follow_up_date');
-        if (visitDate && fuDate && fuDate <= visitDate) {
-          errors.push('follow_up_date: must be after visit_date');
-        }
-      } catch (e) {
-        errors.push(e.message);
-      }
-    }
-  } else if (fuReq === 'No' && fuDateRaw) {
-    // Soft warning — don't block but clear it
-    errors.push('follow_up_date: should be empty when follow_up_required is No');
-  }
-
   if (errors.length > 0) {
     return { valid: false, errors, normalised: null };
   }
@@ -184,8 +153,8 @@ function validateIntakeRow(row) {
     current_medicines:  row.current_medicines ? String(row.current_medicines).trim() : null,
     existing_conditions: row.existing_conditions ? String(row.existing_conditions).trim() : null,
     vitals_notes:       row.vitals_notes ? String(row.vitals_notes).trim() : null,
-    follow_up_required: fuReq,
-    follow_up_date:     fuReq === 'Yes' ? String(row.follow_up_date).trim() : null,
+    follow_up_required: 'No',
+    follow_up_date:     null,
   };
 
   return { valid: true, errors: [], normalised };
@@ -200,7 +169,7 @@ if (typeof module !== 'undefined') {
 if (typeof process !== 'undefined' && process.argv[1] && process.argv[1].endsWith('validate-patient-data.js')) {
   const tests = [
     {
-      label: 'VALID — with follow-up',
+      label: 'VALID — standard intake',
       row: {
         patient_name: 'Ramesh Kumar', phone_number: '9876543210',
         dob: '1990-05-15', sex: 'Male',
@@ -209,18 +178,16 @@ if (typeof process !== 'undefined' && process.argv[1] && process.argv[1].endsWit
         known_allergies: 'None',
         hospital_name: 'City Hospital', doctor_name: 'Dr. Sharma',
         visit_date: new Date().toLocaleDateString('en-CA'),
-        follow_up_required: 'Yes', follow_up_date: '2099-12-31',
       },
     },
     {
-      label: 'VALID — no follow-up, no dob/sex',
+      label: 'VALID — no dob/sex',
       row: {
         patient_name: 'Priya', phone_number: '9000000001',
         dob: '', sex: '',
         chief_complaint: 'Routine consultation',
         hospital_name: 'Metro Clinic', doctor_name: 'Dr. Mehta',
         visit_date: new Date().toLocaleDateString('en-CA'),
-        follow_up_required: 'No', follow_up_date: '',
       },
     },
     {
@@ -231,18 +198,6 @@ if (typeof process !== 'undefined' && process.argv[1] && process.argv[1].endsWit
         chief_complaint: '',
         hospital_name: 'City Hospital', doctor_name: 'Dr. Patel',
         visit_date: '2099-01-01',
-        follow_up_required: 'Yes', follow_up_date: '',
-      },
-    },
-    {
-      label: 'INVALID — follow_up_date not after visit_date',
-      row: {
-        patient_name: 'Suresh Gupta', phone_number: '8888888888',
-        dob: '', sex: 'Male',
-        chief_complaint: 'Follow-up visit',
-        hospital_name: 'General Hospital', doctor_name: 'Dr. Kumar',
-        visit_date: '2025-06-10',
-        follow_up_required: 'Yes', follow_up_date: '2025-06-10',
       },
     },
   ];

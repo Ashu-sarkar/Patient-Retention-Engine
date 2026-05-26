@@ -872,8 +872,15 @@
               <textarea id="advice" placeholder="Diet, tests, precautions, or follow-up advice"></textarea>
             </div>
             <div class="field">
+              <label for="rx-follow-up-required">Follow-up Required?</label>
+              <select id="rx-follow-up-required">
+                <option value="No">No</option>
+                <option value="Yes">Yes</option>
+              </select>
+            </div>
+            <div class="field">
               <label for="rx-follow-up">Follow-up Date</label>
-              <input id="rx-follow-up" type="date" />
+              <input id="rx-follow-up" type="date" disabled />
             </div>
             <div id="medicine-section">
               <div class="btn-row" style="justify-content: space-between; margin-bottom: 8px;">
@@ -1165,6 +1172,7 @@
         await saveDraft();
       });
       $('issue').addEventListener('click', issuePrescription);
+      $('rx-follow-up-required').addEventListener('change', updateFollowUpControls);
       $('save-context').addEventListener('click', async () => {
         if (await saveClinicalContext()) showToast('Visit context saved.');
       });
@@ -1454,7 +1462,9 @@
       $('diagnosis').value = '';
       $('remarks').value = '';
       $('advice').value = '';
+      $('rx-follow-up-required').value = 'No';
       $('rx-follow-up').value = '';
+      updateFollowUpControls();
       state.medicines = [blankMedicine()];
       $('draft-state').textContent = 'Draft';
       $('draft-state').className = 'status in_consultation';
@@ -1541,6 +1551,7 @@
     }
 
     function collectPrescription() {
+      const followUpRequired = $('rx-follow-up-required').value === 'Yes' ? 'Yes' : 'No';
       const medicines = state.medicines
         .map((m, index) => ({ ...m, sort_order: index + 1 }))
         .filter(m => m.medicine_name || m.dosage || m.frequency || m.timing || m.duration);
@@ -1548,9 +1559,24 @@
         diagnosis: $('diagnosis').value.trim(),
         clinical_remarks: $('remarks').value.trim(),
         advice: $('advice').value.trim(),
-        follow_up_date: $('rx-follow-up').value || null,
+        follow_up_required: followUpRequired,
+        follow_up_date: followUpRequired === 'Yes' ? $('rx-follow-up').value || null : null,
         medicines,
       };
+    }
+
+    function updateFollowUpControls() {
+      const required = $('rx-follow-up-required').value === 'Yes';
+      const input = $('rx-follow-up');
+      input.disabled = !required;
+      if (state.selected?.visit_date) {
+        const next = new Date(`${state.selected.visit_date}T00:00:00`);
+        next.setDate(next.getDate() + 1);
+        input.min = next.toLocaleDateString('en-CA');
+      } else {
+        input.min = todayISO();
+      }
+      if (!required) input.value = '';
     }
 
     function buildPrescriptionSnapshots() {
@@ -1583,6 +1609,12 @@
     function validateIssue(payload) {
       if (!payload.diagnosis && !payload.clinical_remarks) return 'Add diagnosis or remarks before issuing.';
       if (payload.medicines.length === 0) return 'Add at least one medicine.';
+      if (payload.follow_up_required === 'Yes') {
+        if (!payload.follow_up_date) return 'Add a follow-up date or set follow-up required to No.';
+        if (state.selected?.visit_date && payload.follow_up_date <= state.selected.visit_date) {
+          return 'Follow-up date must be after the visit date.';
+        }
+      }
       const invalid = payload.medicines.find(m => !m.medicine_name || !m.dosage || !m.frequency || !m.timing || !m.duration);
       if (invalid) return 'Each medicine needs name, dosage, frequency, timing, and duration.';
       return null;
@@ -1607,6 +1639,7 @@
           diagnosis: payload.diagnosis,
           clinical_remarks: payload.clinical_remarks,
           advice: payload.advice,
+          follow_up_required: payload.follow_up_required,
           follow_up_date: payload.follow_up_date,
           ...buildPrescriptionSnapshots(),
           medicines: payload.medicines,
@@ -1626,6 +1659,7 @@
         diagnosis: payload.diagnosis,
         clinical_remarks: payload.clinical_remarks,
         advice: payload.advice,
+        follow_up_required: payload.follow_up_required,
         follow_up_date: payload.follow_up_date,
         ...buildPrescriptionSnapshots(),
         delivery_status: 'not_sent',

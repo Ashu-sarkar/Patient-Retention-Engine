@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Workflow 1: Follow-Up Reminder\n\n**Trigger:** Daily at 9:00 AM\n\n**Logic:** Reads patients from Supabase. Finds all patients whose `follow_up_date` is tomorrow, `status = pending`, and `message_count < 5`. Sends a WhatsApp reminder via Twilio WhatsApp (template: patient_followup_reminder), updates the patient record, and logs the send.\n\n**Data source:** Supabase `public.patients` — populated by WF11 (QR form intake)\n\n**Before activating:**\n1. Set credential on \"Read Patients from Supabase\" → Supabase DB\n2. Set credential on \"Send WhatsApp Reminder\" → Twilio Basic Auth\n3. Set credential on all Postgres write nodes → Supabase DB\n4. Ensure the `patient_followup_reminder` template is approved in Twilio Content Template Manager",
+        "content": "## Workflow 1: Follow-Up Reminder\n\n**Trigger:** Daily at 9:00 AM\n\n**Logic:** Reads patients from Supabase. Finds all patients whose `follow_up_date` is tomorrow, `status = pending`, and `message_count < 5`. Sends a WhatsApp reminder via Twilio WhatsApp (template: patient_followup_reminder), updates the patient record, and logs the send.\n\n**Data source:** Supabase `public.patients` — identity is populated by WF11, while `follow_up_date` is synced from the doctor-issued prescription\n\n**Before activating:**\n1. Set credential on \"Read Patients from Supabase\" → Supabase DB\n2. Set credential on \"Send WhatsApp Reminder\" → Twilio Basic Auth\n3. Set credential on all Postgres write nodes → Supabase DB\n4. Ensure the `patient_followup_reminder` template is approved in Twilio Content Template Manager",
         "height": 280,
         "width": 420
       },

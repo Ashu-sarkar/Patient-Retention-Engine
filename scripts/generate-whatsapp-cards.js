@@ -23,7 +23,7 @@ function sampleFor(name) {
     name: 'Ashutosh Sarkar',
     patient_name: 'Ashutosh Sarkar',
     doctor_name: 'Dr. A. Sharma',
-    follow_up_date: '2026-05-25',
+    visit_detail: 'Your visit date is 2026-05-26.',
     clinic_name: 'City Hospital',
     hospital_name: 'City Hospital',
     facility_type: 'General Hospital',
@@ -34,6 +34,7 @@ function sampleFor(name) {
     timing: 'after breakfast',
     instruction: 'Take with water after food.',
     medicine_summary: 'Paracetamol 500 mg - 1 tablet, twice daily, after food, 5 days',
+    follow_up_detail: 'Follow-up date: 2026-05-30.',
     pdf_url: 'https://example.com/prescriptions/sample.pdf',
   };
   return samples[name] || `Sample ${name}`;

@@ -618,34 +618,6 @@
             </span>
           </div>
 
-          <!-- Follow-up Required -->
-          <div class="field">
-            <label class="label" for="follow_up_required">
-              Follow-up Required?&nbsp;<span class="req">*</span>
-            </label>
-            <select id="follow_up_required" name="follow_up_required" class="sel">
-              <option value="">Select</option>
-              <option value="No">No</option>
-              <option value="Yes">Yes</option>
-            </select>
-            <span class="errmsg" id="e-follow_up_required">
-              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="6" fill="currentColor"/><path d="M6 3.5v3" stroke="#fff" stroke-width="1.2" stroke-linecap="round"/><circle cx="6" cy="8.5" r=".55" fill="#fff"/></svg>
-              Please select if follow-up is required
-            </span>
-          </div>
-
-          <!-- Follow-up Date (conditional) -->
-          <div class="conditional-field" id="cond-followup">
-            <label class="label" for="follow_up_date">
-              Follow-up Date&nbsp;<span class="req">*</span>
-            </label>
-            <input id="follow_up_date" name="follow_up_date" type="date" class="inp" />
-            <span class="errmsg" id="e-follow_up_date">
-              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="6" fill="currentColor"/><path d="M6 3.5v3" stroke="#fff" stroke-width="1.2" stroke-linecap="round"/><circle cx="6" cy="8.5" r=".55" fill="#fff"/></svg>
-              Follow-up date must be after the visit date
-            </span>
-          </div>
-
         </div>
       </div>
 
@@ -865,34 +837,6 @@ $('hospital_name').addEventListener('change', function () {
 });
 
 /* ═══════════════════════════════════════════════════════════════════
-   FOLLOW-UP DATE CONDITIONAL TOGGLE
-   ═══════════════════════════════════════════════════════════════════ */
-$('follow_up_required').addEventListener('change', function () {
-  const show = this.value === 'Yes';
-  const wrap = $('cond-followup');
-  const inp  = $('follow_up_date');
-  wrap.classList.toggle('show', show);
-  if (show) {
-    inp.min = localDateISO(1);   // tomorrow minimum
-    inp.focus();
-  } else {
-    inp.value = '';
-    clearErr('follow_up_date');
-  }
-});
-
-// Update follow-up min date when visit date changes
-$('visit_date').addEventListener('change', function () {
-  if ($('follow_up_required').value === 'Yes') {
-    const fuInp = $('follow_up_date');
-    const next  = new Date(this.value);
-    next.setDate(next.getDate() + 1);
-    fuInp.min = next.toLocaleDateString('en-CA');
-    if (fuInp.value && fuInp.value <= this.value) fuInp.value = '';
-  }
-});
-
-/* ═══════════════════════════════════════════════════════════════════
    PHONE — DIGITS ONLY, MAX 10
    ═══════════════════════════════════════════════════════════════════ */
 $('phone_number').addEventListener('input', function () {
@@ -918,7 +862,7 @@ function clearErr (id) {
 }
 function clearAllErr () {
   ['patient_name','phone_number','hospital_name','doctor_name',
-   'visit_date','follow_up_required','follow_up_date']
+   'visit_date']
     .forEach(clearErr);
 }
 
@@ -933,17 +877,12 @@ function validate () {
   const hosp    = $('hospital_name').value;
   const doc     = $('doctor_name').value;
   const vDate   = $('visit_date').value;
-  const fuReq   = $('follow_up_required').value;
-  const fuDate  = $('follow_up_date').value;
 
   if (!name || name.length < 2)              { showErr('patient_name');       ok = false; firstInvalid = firstInvalid || $('patient_name'); }
   if (!/^[0-9]{10}$/.test(phone))           { showErr('phone_number');       ok = false; firstInvalid = firstInvalid || $('phone_number'); }
   if (!hosp)                                 { showErr('hospital_name');      ok = false; firstInvalid = firstInvalid || $('hospital_name'); }
   if (!doc)                                  { showErr('doctor_name');        ok = false; firstInvalid = firstInvalid || $('doctor_name'); }
   if (!vDate)                                { showErr('visit_date');         ok = false; firstInvalid = firstInvalid || $('visit_date'); }
-  if (!fuReq)                                { showErr('follow_up_required'); ok = false; firstInvalid = firstInvalid || $('follow_up_required'); }
-  if (fuReq === 'Yes' && (!fuDate || fuDate <= vDate)) {
-                                               showErr('follow_up_date');     ok = false; firstInvalid = firstInvalid || $('follow_up_date'); }
 
   if (!ok && firstInvalid) {
     firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -956,7 +895,7 @@ function validate () {
    CLEAR ERRORS ON CHANGE
    ═══════════════════════════════════════════════════════════════════ */
 ['patient_name','phone_number','hospital_name','doctor_name',
- 'visit_date','follow_up_required','follow_up_date'].forEach(id => {
+ 'visit_date'].forEach(id => {
   const el = $(id); if (!el) return;
   el.addEventListener('input',  () => clearErr(id));
   el.addEventListener('change', () => clearErr(id));
@@ -988,8 +927,6 @@ form.addEventListener('submit', async function (e) {
   submitBtn.classList.add('loading');
   submitBtn.innerHTML = '<div class="spin"></div>Submitting…';
 
-  const fuReq = $('follow_up_required').value;
-
   const payload = {
     patient_name:       $('patient_name').value.trim(),
     phone_number:       $('phone_number').value.trim(),
@@ -998,8 +935,6 @@ form.addEventListener('submit', async function (e) {
     hospital_name:      $('hospital_name').value,
     doctor_name:        $('doctor_name').value,
     visit_date:         $('visit_date').value,
-    follow_up_required: fuReq,
-    follow_up_date:     fuReq === 'Yes' ? $('follow_up_date').value : '',
   };
   const body = new URLSearchParams(payload);
 

@@ -659,6 +659,7 @@ CREATE TABLE IF NOT EXISTS public.prescriptions (
   diagnosis             TEXT,
   clinical_remarks      TEXT,
   advice                TEXT,
+  follow_up_required    TEXT        NOT NULL DEFAULT 'No',
   follow_up_date        DATE,
   issued_at             TIMESTAMPTZ,
   doctor_snapshot       JSONB,
@@ -671,6 +672,8 @@ CREATE TABLE IF NOT EXISTS public.prescriptions (
   updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT prescriptions_status_check
     CHECK (status IN ('draft','issued','cancelled')),
+  CONSTRAINT prescriptions_follow_up_required_check
+    CHECK (follow_up_required IN ('Yes','No')),
   CONSTRAINT prescriptions_delivery_status_check
     CHECK (delivery_status IN ('not_sent','queued','sent','failed'))
 );
@@ -682,6 +685,7 @@ ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS status TEXT NOT NULL D
 ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS diagnosis TEXT;
 ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS clinical_remarks TEXT;
 ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS advice TEXT;
+ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS follow_up_required TEXT NOT NULL DEFAULT 'No';
 ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS follow_up_date DATE;
 ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS issued_at TIMESTAMPTZ;
 ALTER TABLE public.prescriptions ADD COLUMN IF NOT EXISTS doctor_snapshot JSONB;
@@ -700,6 +704,20 @@ CREATE INDEX IF NOT EXISTS idx_prescriptions_visit_id
 CREATE INDEX IF NOT EXISTS idx_prescriptions_doctor_status
   ON public.prescriptions (doctor_profile_id, status, created_at DESC);
 
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE n.nspname = 'public' AND t.relname = 'prescriptions' AND c.conname = 'prescriptions_follow_up_required_check'
+  ) THEN
+    ALTER TABLE public.prescriptions ADD CONSTRAINT prescriptions_follow_up_required_check
+      CHECK (follow_up_required IN ('Yes','No'));
+  END IF;
+END $$;
+
 DROP TRIGGER IF EXISTS trg_prescriptions_updated_at ON public.prescriptions;
 CREATE TRIGGER trg_prescriptions_updated_at
   BEFORE UPDATE ON public.prescriptions
@@ -716,6 +734,7 @@ BEGIN
     NEW.diagnosis IS DISTINCT FROM OLD.diagnosis OR
     NEW.clinical_remarks IS DISTINCT FROM OLD.clinical_remarks OR
     NEW.advice IS DISTINCT FROM OLD.advice OR
+    NEW.follow_up_required IS DISTINCT FROM OLD.follow_up_required OR
     NEW.follow_up_date IS DISTINCT FROM OLD.follow_up_date OR
     NEW.issued_at IS DISTINCT FROM OLD.issued_at OR
     NEW.doctor_snapshot IS DISTINCT FROM OLD.doctor_snapshot OR
@@ -731,6 +750,46 @@ DROP TRIGGER IF EXISTS trg_prescriptions_prevent_issued_mutation ON public.presc
 CREATE TRIGGER trg_prescriptions_prevent_issued_mutation
   BEFORE UPDATE ON public.prescriptions
   FOR EACH ROW EXECUTE FUNCTION public.prevent_issued_prescription_mutation();
+
+CREATE OR REPLACE FUNCTION public.sync_patient_follow_up_from_prescription()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  visit_day DATE;
+BEGIN
+  IF NEW.status <> 'issued' THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT pv.visit_date INTO visit_day
+  FROM public.patient_visits pv
+  WHERE pv.id = NEW.visit_id;
+
+  IF NEW.follow_up_required = 'Yes' THEN
+    IF NEW.follow_up_date IS NULL THEN
+      RAISE EXCEPTION 'Follow-up date is required when issuing a prescription with follow-up required';
+    END IF;
+    IF visit_day IS NOT NULL AND NEW.follow_up_date <= visit_day THEN
+      RAISE EXCEPTION 'Follow-up date must be after the visit date';
+    END IF;
+  END IF;
+
+  UPDATE public.patients
+     SET follow_up_required = CASE WHEN NEW.follow_up_required = 'Yes' THEN 'Yes' ELSE 'No' END,
+         follow_up_date = CASE WHEN NEW.follow_up_required = 'Yes' THEN NEW.follow_up_date ELSE NULL END,
+         status = CASE WHEN NEW.follow_up_required = 'Yes' THEN 'pending' ELSE 'completed' END,
+         updated_at = NOW()
+   WHERE id = NEW.patient_id;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_prescriptions_sync_patient_follow_up ON public.prescriptions;
+CREATE TRIGGER trg_prescriptions_sync_patient_follow_up
+  AFTER INSERT OR UPDATE OF status, follow_up_required, follow_up_date ON public.prescriptions
+  FOR EACH ROW
+  WHEN (NEW.status = 'issued')
+  EXECUTE FUNCTION public.sync_patient_follow_up_from_prescription();
 
 CREATE TABLE IF NOT EXISTS public.prescription_medicines (
   id                    UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
