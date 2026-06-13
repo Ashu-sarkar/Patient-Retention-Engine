@@ -280,6 +280,66 @@
     },
     {
       "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "system_logs",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "workflow_name": "workflow-7-new-patient",
+            "execution_id": "={{ $execution.id }}",
+            "log_level": "WARN",
+            "message": "Skipped welcome message — invalid intake payload",
+            "details": "={{ JSON.stringify({ patient_code: $('Build Welcome Message').item.json._patient_code || $('Build Welcome Message').item.json.patientCode, phone: $('Build Welcome Message').item.json._phone, reason: $('Build Welcome Message').item.json.reason }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "77777777-7777-7777-7777-000000000011",
+      "name": "Log Welcome Skip",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        900,
+        700
+      ],
+      "continueOnFail": true,
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_SUPABASE_POSTGRES",
+          "name": "Supabase DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"ok\", \"message\": \"Welcome message skipped — invalid payload\", \"reason\": $('Build Welcome Message').item.json.reason || 'validation failed' }",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "77777777-7777-7777-7777-000000000012",
+      "name": "Respond OK (Skipped)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        700
+      ]
+    },
+    {
+      "parameters": {
         "operation": "executeQuery",
         "query": "=INSERT INTO public.message_ledger (clinic_id, patient_id, message_type, scheduled_date, workflow_name, provider_message_id, twilio_message_sid, status) VALUES ( {{ $json.clinic_id ? \"'\" + $json.clinic_id + \"'\" : 'NULL' }},  {{ $json.patient_id ? \"'\" + $json.patient_id + \"'\" : 'NULL' }}, '{{ $json.message_type }}', '{{ $json.scheduled_date }}', '{{ $json.workflow_name }}', '{{ ($json.provider_message_id || '').replace(/'/g, \"''\") }}', '{{ ($json.twilio_message_sid || '').replace(/'/g, \"''\") }}', 'sent' ) ON CONFLICT (clinic_id, patient_id, message_type, scheduled_date) DO UPDATE SET provider_message_id = EXCLUDED.provider_message_id, twilio_message_sid = EXCLUDED.twilio_message_sid, status = EXCLUDED.status, updated_at = NOW();",
         "options": {}
@@ -325,7 +385,13 @@
     },
     "Skip if Invalid Data?": {
       "main": [
-        [],
+        [
+          {
+            "node": "Log Welcome Skip",
+            "type": "main",
+            "index": 0
+          }
+        ],
         [
           {
             "node": "Send Welcome Message",
@@ -379,6 +445,17 @@
         [
           {
             "node": "Record Message Ledger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Welcome Skip": {
+      "main": [
+        [
+          {
+            "node": "Respond OK (Skipped)",
             "type": "main",
             "index": 0
           }
