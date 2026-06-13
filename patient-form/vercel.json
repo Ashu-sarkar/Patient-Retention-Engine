@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/patient-form-intake",
+      "destination": "https://vaitalcare-production.up.railway.app/webhook/patient-form-intake"
+    }
+  ]
+}

@@ -48,3 +48,4 @@ where clinic_id = '<clinic uuid>'::uuid
 - Do not expose service-role keys in static files or browser config.
 - Prefer an authenticated admin-only onboarding flow before using hospital onboarding for production tenant creation.
 - Do not publish QR token values anywhere except the QR asset itself and trusted clinic operations records.
+- Make browser form origins and webhook origins compatible. A static form hosted on a different domain from n8n must use either a same-origin proxy/gateway or n8n/proxy CORS headers that allow the exact deployed form origin. A working `curl` request is not enough; browsers require `Access-Control-Allow-Origin` on the webhook response.

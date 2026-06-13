@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/hospital-boarding",
+      "destination": "https://vaitalcare-production.up.railway.app/webhook/hospital-boarding"
+    }
+  ]
+}

@@ -11,6 +11,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { execSync } = require('child_process');
 
 function parseEnv(filePath) {
@@ -37,6 +38,11 @@ const RAILWAY_HOST = new URL(PROD_BASE).hostname;
 const RAILWAY_IP = process.env.RAILWAY_RESOLVE_IP || '66.33.22.247';
 const SB_URL = env.SUPABASE_URL;
 const SB_KEY = env.SUPABASE_SERVICE_ROLE_KEY;
+const PATIENT_FORM_HTML = fs.readFileSync(path.join(__dirname, '..', 'patient-form', 'index.html'), 'utf8');
+const SB_ANON_KEY =
+  env.SUPABASE_ANON_KEY ||
+  (PATIENT_FORM_HTML.match(/SUPABASE_ANON_KEY\s*=\s*'([^']+)'/) || [])[1] ||
+  '';
 
 const PHONE_RAW = process.env.E2E_PHONE_RAW || '9685722570';
 const PHONE_E164 = `+91${PHONE_RAW}`;
@@ -47,6 +53,8 @@ const FACILITY = 'Pathology Lab';
 let passed = 0;
 let failed = 0;
 const failures = [];
+let clinicId = null;
+let intakeToken = null;
 
 function ok(msg) { console.log(`    ✅ ${msg}`); passed++; }
 function section(t) { console.log(`\n${'─'.repeat(62)}\n  ${t}\n${'─'.repeat(62)}`); }
@@ -84,6 +92,33 @@ const SB_HDR = {
 async function sbGet(table, qs = '') {
   const res = await fetch(`${SB_URL}/rest/v1/${table}?${qs}`, { headers: SB_HDR });
   return res.json().catch(() => []);
+}
+
+async function sbPost(table, body, qs = '') {
+  const res = await fetch(`${SB_URL}/rest/v1/${table}${qs ? `?${qs}` : ''}`, {
+    method: 'POST',
+    headers: SB_HDR,
+    body: JSON.stringify(body),
+  });
+  const json = await res.json().catch(() => ({ _raw: '' }));
+  if (!res.ok) {
+    throw new Error(`${table} insert failed (${res.status}): ${JSON.stringify(json).slice(0, 300)}`);
+  }
+  return json;
+}
+
+async function sbRpc(name, body, key = SB_KEY) {
+  const res = await fetch(`${SB_URL}/rest/v1/rpc/${name}`, {
+    method: 'POST',
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body || {}),
+  });
+  const json = await res.json().catch(() => ({ _raw: '' }));
+  return { ok: res.ok, status: res.status, json };
 }
 
 async function sbDelete(table, filter) {
@@ -163,8 +198,60 @@ async function getLatestVisit(patientId) {
 
 async function countVisitsForClinicDoctor(clinic, doctor, date) {
   const rows = await sbGet('patient_visits',
-    `clinic_name=eq.${encodeURIComponent(clinic)}&doctor_name=eq.${encodeURIComponent(doctor)}&visit_date=eq.${date}&visit_status=eq.waiting&select=id`);
+    `${clinicId ? `clinic_id=eq.${clinicId}&` : ''}clinic_name=eq.${encodeURIComponent(clinic)}&doctor_name=eq.${encodeURIComponent(doctor)}&visit_date=eq.${date}&visit_status=eq.waiting&select=id`);
   return Array.isArray(rows) ? rows.length : 0;
+}
+
+function newToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+function tokenHash(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+async function ensureQrClinicSeed() {
+  const existing = await getBoarding();
+  if (existing?.clinic_id) {
+    clinicId = existing.clinic_id;
+  } else {
+    const slug = HOSPITAL.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48);
+    const code = slug.replace(/-/g, '').toUpperCase().slice(0, 10) || 'E2E';
+    const clinics = await sbPost('clinics', {
+      name: HOSPITAL,
+      slug,
+      code,
+      status: 'active',
+    }, 'on_conflict=slug');
+    clinicId = clinics[0]?.id;
+    assert(clinicId, `could not seed clinic: ${JSON.stringify(clinics)}`);
+
+    await sbPost('hospital_boarding', {
+      clinic_id: clinicId,
+      hospital_name: HOSPITAL,
+      facility_type: FACILITY,
+      address: '42 E2E Test Lane, Bangalore',
+      city: 'Bangalore',
+      contact_phone: PHONE_RAW,
+      admin_contact_name: 'E2E Admin',
+      doctor_name: DOCTOR,
+      doctor_qualification: 'MBBS',
+      doctor_expertise: 'General Medicine',
+      doctor_registration_number: 'E2E-REG-96857',
+      doctor_phone: PHONE_E164,
+      consultation_hours: 'Mon-Sat 9am-5pm',
+    });
+  }
+
+  intakeToken = newToken();
+  await sbPost('clinic_intake_tokens', {
+    clinic_id: clinicId,
+    token_hash: tokenHash(intakeToken),
+    label: 'Production E2E QR',
+    status: 'active',
+  });
+
+  return { clinicId, intakeToken };
 }
 
 async function main() {
@@ -199,6 +286,14 @@ async function main() {
     assert(status === 400, `expected 400, got ${status}`);
     assert(json.status === 'error', JSON.stringify(json));
     assert(Array.isArray(json.errors) && json.errors.length > 0, 'missing errors[]');
+  });
+
+  await test('1.3  Supabase multitenant QR RPC is deployed', async () => {
+    assert(SB_ANON_KEY, 'SUPABASE_ANON_KEY required in .env or patient-form/index.html');
+    const res = await sbRpc('resolve_public_intake_token', { p_token: '0'.repeat(64) }, SB_ANON_KEY);
+    assert(res.status !== 404, `resolve_public_intake_token missing: ${JSON.stringify(res.json)}`);
+    assert(res.ok, `resolve_public_intake_token failed (${res.status}): ${JSON.stringify(res.json)}`);
+    assert(Array.isArray(res.json), `expected array response, got ${JSON.stringify(res.json)}`);
   });
 
   section('§2  WF12 — Hospital boarding (doctor WhatsApp login)');
@@ -238,6 +333,12 @@ async function main() {
     assert(row.doctor_name === DOCTOR, `doctor_name: ${row.doctor_name}`);
   });
 
+  await test('2.4  Seed/verify clinic QR token for patient intake', async () => {
+    await ensureQrClinicSeed();
+    assert(/^[0-9a-f-]{36}$/i.test(clinicId), `invalid clinic_id ${clinicId}`);
+    assert(/^[a-f0-9]{64}$/.test(intakeToken), 'invalid intake token');
+  });
+
   await test('2.3  Edge: invalid facility_type → 400', async () => {
     const { status, json } = curlForm('hospital-boarding', {
       ...boardingPayload,
@@ -254,7 +355,7 @@ async function main() {
     phone_number: PHONE_RAW,
     dob: '1990-01-15',
     sex: 'Male',
-    hospital_name: HOSPITAL,
+    intake_token: intakeToken,
     doctor_name: DOCTOR,
     visit_date: today(0),
     follow_up_required: 'No',
@@ -337,7 +438,7 @@ async function main() {
   });
 
   await test('4.3  get_public_hospital_list includes E2E hospital', async () => {
-    const anon = env.SUPABASE_ANON_KEY;
+    const anon = SB_ANON_KEY;
     assert(anon, 'SUPABASE_ANON_KEY required');
     const res = await fetch(`${SB_URL}/rest/v1/rpc/get_public_hospital_list`, {
       method: 'POST',

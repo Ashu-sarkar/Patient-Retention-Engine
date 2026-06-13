@@ -529,6 +529,7 @@ if (window.matchMedia) {
 }
 const DEFAULT_WEBHOOK_BASE = 'https://vaitalcare-production.up.railway.app';
 const HOSPITAL_WEBHOOK_PATH = '/webhook/hospital-boarding';
+const HOSPITAL_WEBHOOK_PROXY = '/api/hospital-boarding';
 
 function readRuntimeConfig() {
   const globalConfig = window.VAITALCARE_CONFIG || {};
@@ -536,21 +537,22 @@ function readRuntimeConfig() {
     try { return localStorage.getItem(key) || ''; } catch (_) { return ''; }
   };
   const cleanBase = value => String(value || '').trim().replace(/\/+$/, '');
-  const defaultWebhookBase = location.protocol === 'file:' || /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)
-    ? 'http://localhost:5678'
-    : DEFAULT_WEBHOOK_BASE;
+  const isLocal = location.protocol === 'file:' || /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+  const defaultWebhookBase = isLocal ? 'http://localhost:5678' : DEFAULT_WEBHOOK_BASE;
   const webhookUrl =
     globalConfig.hospitalWebhookUrl ||
     globalConfig.webhookUrl ||
     readStored('vaitalcare.hospitalWebhookUrl') ||
     readStored('vaitalcare.webhookUrl');
-  const webhookBase = cleanBase(
+  const webhookBaseOverride =
     globalConfig.webhookBase ||
-    readStored('vaitalcare.webhookBase') ||
+    readStored('vaitalcare.webhookBase');
+  const webhookBase = cleanBase(
+    webhookBaseOverride ||
     defaultWebhookBase
   );
   return {
-    webhookUrl: webhookUrl || `${webhookBase}${HOSPITAL_WEBHOOK_PATH}`,
+    webhookUrl: webhookUrl || (isLocal || webhookBaseOverride ? `${webhookBase}${HOSPITAL_WEBHOOK_PATH}` : HOSPITAL_WEBHOOK_PROXY),
   };
 }
 
@@ -765,6 +767,9 @@ form.addEventListener('submit', async function (e) {
 
     let data = {};
     try { data = await res.json(); } catch (_) {}
+    if (data.status !== 'success') {
+      throw new Error(data.message || 'The intake server returned an empty or unexpected response.');
+    }
 
     $('js-sum-hospital').textContent = data.hospital_name || payload.hospital_name;
     $('js-sum-facility-type').textContent = data.facility_type || payload.facility_type;
@@ -772,7 +777,10 @@ form.addEventListener('submit', async function (e) {
     successScr.classList.add('show');
   } catch (err) {
     console.error(err);
-    showToast('Something went wrong. Please try again.', true);
+    const message = err instanceof TypeError && /fetch/i.test(err.message)
+      ? 'Unable to reach the intake server from this browser. Check HTTPS, DNS, and CORS for the webhook host.'
+      : (err.message || 'Something went wrong. Please try again.');
+    showToast(message, true);
     submitBtn.disabled = false;
     submitBtn.textContent = 'Submit listing';
     busy = false;
