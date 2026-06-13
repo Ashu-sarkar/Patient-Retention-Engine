@@ -17,6 +17,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WF_DIR = ROOT / "workflows"
 TARGETS = {
+    "WF7 — New Patient Welcome": "workflow-7-new-patient.json",
     "WF11 — QR Form Intake": "workflow-11-form-intake.json",
     "WF12 — Hospital / Clinic Boarding": "workflow-12-hospital-boarding.json",
 }

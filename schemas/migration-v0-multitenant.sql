@@ -365,13 +365,18 @@ UPDATE public.patient_visits pv
    SET clinic_id = public.get_or_create_clinic_id(pv.clinic_name)
  WHERE pv.clinic_id IS NULL;
 
-UPDATE public.prescriptions pr
-   SET clinic_id = COALESCE(pv.clinic_id, p.clinic_id, dp.clinic_id)
-  FROM public.patients p
-  LEFT JOIN public.patient_visits pv ON pv.id = pr.visit_id
-  LEFT JOIN public.doctor_profiles dp ON dp.id = pr.doctor_profile_id
- WHERE p.id = pr.patient_id
-   AND pr.clinic_id IS NULL;
+UPDATE public.prescriptions AS pr
+   SET clinic_id = sub.clinic_id
+  FROM (
+    SELECT pr2.id,
+           COALESCE(pv.clinic_id, p.clinic_id, dp.clinic_id) AS clinic_id
+      FROM public.prescriptions pr2
+      JOIN public.patients p ON p.id = pr2.patient_id
+      LEFT JOIN public.patient_visits pv ON pv.id = pr2.visit_id
+      LEFT JOIN public.doctor_profiles dp ON dp.id = pr2.doctor_profile_id
+     WHERE pr2.clinic_id IS NULL
+  ) AS sub
+ WHERE pr.id = sub.id;
 
 UPDATE public.prescriptions
    SET clinic_id = public.get_or_create_clinic_id('Unassigned Clinic')
@@ -387,12 +392,17 @@ UPDATE public.prescription_medicines
    SET clinic_id = public.get_or_create_clinic_id('Unassigned Clinic')
  WHERE clinic_id IS NULL;
 
-UPDATE public.prescription_audit_logs pal
-   SET clinic_id = COALESCE(pr.clinic_id, pv.clinic_id)
-  FROM public.prescriptions pr
-  LEFT JOIN public.patient_visits pv ON pv.id = pal.visit_id
- WHERE pr.id = pal.prescription_id
-   AND pal.clinic_id IS NULL;
+UPDATE public.prescription_audit_logs AS pal
+   SET clinic_id = sub.clinic_id
+  FROM (
+    SELECT pal2.id,
+           COALESCE(pr.clinic_id, pv.clinic_id) AS clinic_id
+      FROM public.prescription_audit_logs pal2
+      JOIN public.prescriptions pr ON pr.id = pal2.prescription_id
+      LEFT JOIN public.patient_visits pv ON pv.id = pal2.visit_id
+     WHERE pal2.clinic_id IS NULL
+  ) AS sub
+ WHERE pal.id = sub.id;
 
 UPDATE public.prescription_audit_logs
    SET clinic_id = public.get_or_create_clinic_id('Unassigned Clinic')
@@ -844,6 +854,8 @@ CREATE POLICY "members insert clinic prescription audit logs"
     actor_user_id = auth.uid()
     AND public.current_user_has_clinic_role(clinic_id, ARRAY['clinic_admin','doctor','super_admin'])
   );
+
+DROP FUNCTION IF EXISTS public.get_public_hospital_list();
 
 CREATE OR REPLACE FUNCTION public.get_public_hospital_list()
 RETURNS TABLE(clinic_id UUID, hospital_name TEXT, doctor_name TEXT)
