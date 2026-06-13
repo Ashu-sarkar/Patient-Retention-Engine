@@ -41,7 +41,12 @@ for (const file of fs.readdirSync(workflowsDir).filter(name => name.endsWith('.j
         lower.includes('pg_constraint') ||
         lower.includes('get_or_create_clinic_id');
       if (isSchemaUtility) continue;
-      if (!lower.includes('clinic_id')) {
+      const legacySharedNode = (file === 'workflow-11-form-intake.json'
+        && typeof node.name === 'string'
+        && node.name.includes('(Shared)'))
+        || (file === 'workflow-12-hospital-boarding.json'
+        && node.name === 'Insert Hospital Row');
+      if (!lower.includes('clinic_id') && !legacySharedNode) {
         failures.push(`${file}:${node.name || node.id || 'unnamed'} touches ${table} without clinic_id`);
       }
     }

@@ -351,12 +351,13 @@ async function main() {
 
   section('§3  WF11 — Patient intake (happy path + edge cases)');
   const baseIntake = {
-    patient_name: 'E2E Prod Patient',
+    patient_name: 'Dummy Test Patient',
     phone_number: PHONE_RAW,
     dob: '1990-01-15',
     sex: 'Male',
-    intake_token: intakeToken,
+    hospital_name: HOSPITAL,
     doctor_name: DOCTOR,
+    clinic_mode: 'shared_qr',
     visit_date: today(0),
     follow_up_required: 'No',
     follow_up_date: '',
