@@ -39,7 +39,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT p.* FROM public.patients p WHERE p.health_check_sent = FALSE AND p.status <> 'inactive' AND p.visit_date BETWEEN CURRENT_DATE - INTERVAL '3 days' AND CURRENT_DATE - INTERVAL '2 days' AND NOT EXISTS (SELECT 1 FROM public.message_logs ml WHERE ml.patient_id = p.id AND ml.message_type = 'health_check' AND ml.scheduled_date = CURRENT_DATE)",
+        "query": "SELECT p.* FROM public.patients p WHERE p.clinic_id IS NOT NULL AND p.health_check_sent = FALSE AND p.status <> 'inactive' AND p.visit_date BETWEEN CURRENT_DATE - INTERVAL '3 days' AND CURRENT_DATE - INTERVAL '2 days' AND NOT EXISTS (SELECT 1 FROM public.message_logs ml WHERE ml.clinic_id = p.clinic_id AND ml.patient_id = p.id AND ml.message_type = 'health_check' AND ml.scheduled_date = CURRENT_DATE)",
         "options": {}
       },
       "id": "44444444-4444-4444-4444-000000000003",
@@ -59,7 +59,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Filter patients who visited 2-3 days ago and have not received a health check.\nconst items = $input.all();\nconst tz = $env.TIMEZONE || 'Asia/Kolkata';\nconst todayStr = new Date().toLocaleDateString('en-CA', { timeZone: tz });\nconst todayDate = new Date(todayStr);\nconst filtered = items.filter(item => {\n  const p = item.json;\n  if (!p.visit_date) return false;\n  const visitDate = new Date(p.visit_date);\n  if (isNaN(visitDate.getTime())) return false;\n  const daysSinceVisit = Math.floor((todayDate - visitDate) / (1000 * 60 * 60 * 24));\n  if (daysSinceVisit < 2 || daysSinceVisit > 3) return false;\n  if (p.health_check_sent === true || p.status === 'inactive') return false;\n  if (!p.phone || !/^\\+[1-9]\\d{6,14}$/.test(p.phone)) return false;\n  return true;\n});\nif (filtered.length === 0) return [{ json: { _skip: true, reason: 'No patients due for health check', todayStr } }];\nreturn filtered.map(item => {\n  const p = item.json;\n  const name = p.name || 'there';\n  const doctor = p.doctor_name || $env.DEFAULT_DOCTOR_NAME || 'your doctor';\n  const clinic = p.clinic_name || $env.DEFAULT_CLINIC_NAME || 'our clinic';\n  return { json: { ...p, _workflow: 'workflow-4-health-check', _message_type: 'health_check', _scheduled_date: todayStr, _to_phone: 'whatsapp:' + p.phone, _name: name, _doctor_name: doctor, _content_sid: $env.TWILIO_CONTENT_PATIENT_REMINDER || $env.TWILIO_CONTENT_HEALTH_CHECK || '', _content_variables: JSON.stringify({ '1': name, '2': doctor }), _message_body: `Hi ${name}, this is ${doctor}'s clinic checking in on you. How have you been feeling since your visit? Reply BETTER, SAME, or WORSE.` } };\n});"
+        "jsCode": "// Filter patients who visited 2-3 days ago and have not received a health check.\nconst items = $input.all();\nconst tz = $env.TIMEZONE || 'Asia/Kolkata';\nconst todayStr = new Date().toLocaleDateString('en-CA', { timeZone: tz });\nconst todayDate = new Date(todayStr);\nconst filtered = items.filter(item => {\n  const p = item.json;\n  if (!p.visit_date) return false;\n  const visitDate = new Date(p.visit_date);\n  if (isNaN(visitDate.getTime())) return false;\n  const daysSinceVisit = Math.floor((todayDate - visitDate) / (1000 * 60 * 60 * 24));\n  if (daysSinceVisit < 2 || daysSinceVisit > 3) return false;\n  if (p.health_check_sent === true || p.status === 'inactive') return false;\n  if (!p.phone || !/^\\+[1-9]\\d{6,14}$/.test(p.phone)) return false;\n  return true;\n});\nif (filtered.length === 0) return [{ json: { _skip: true, reason: 'No patients due for health check', todayStr } }];\nreturn filtered.map(item => {\n  const p = item.json;\n  const name = p.name || 'there';\n  const doctor = p.doctor_name || $env.DEFAULT_DOCTOR_NAME || 'your doctor';\n  const clinic = p.clinic_name || $env.DEFAULT_CLINIC_NAME || 'our clinic';\n  return { json: { ...p, _clinic_id: p.clinic_id, _workflow: 'workflow-4-health-check', _message_type: 'health_check', _scheduled_date: todayStr, _to_phone: 'whatsapp:' + p.phone, _name: name, _doctor_name: doctor, _content_sid: $env.TWILIO_CONTENT_PATIENT_REMINDER || $env.TWILIO_CONTENT_HEALTH_CHECK || '', _content_variables: JSON.stringify({ '1': name, '2': doctor }), _message_body: `Hi ${name}, this is ${doctor}'s clinic checking in on you. How have you been feeling since your visit? Reply BETTER, SAME, or WORSE.` } };\n});"
       },
       "id": "44444444-4444-4444-4444-000000000004",
       "name": "Filter Health Check Due",
@@ -160,7 +160,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=UPDATE public.patients SET health_check_sent = TRUE, last_message_sent = NOW(), message_count = message_count + 1, updated_at = NOW() WHERE id = '{{ $('Filter Health Check Due').item.json.id }}'",
+        "query": "=UPDATE public.patients SET health_check_sent = TRUE, last_message_sent = NOW(), message_count = message_count + 1, updated_at = NOW() WHERE id = '{{ $('Filter Health Check Due').item.json.id }}' AND clinic_id = '{{ $('Filter Health Check Due').item.json.clinic_id }}'",
         "options": {}
       },
       "id": "44444444-4444-4444-4444-000000000007",
@@ -204,7 +204,8 @@
             "delivery_status": "sent",
             "scheduled_date": "={{ $('Filter Health Check Due').item.json._scheduled_date }}",
             "provider_message_id": "={{ $json.sid || $json.Sid || \"\" }}",
-            "twilio_message_sid": "={{ $json.sid || $json.Sid || \"\" }}"
+            "twilio_message_sid": "={{ $json.sid || $json.Sid || \"\" }}",
+            "clinic_id": "={{ $('Filter Health Check Due').item.json.clinic_id }}"
           },
           "matchingColumns": [],
           "schema": []
@@ -271,7 +272,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=INSERT INTO public.message_ledger (patient_id, message_type, scheduled_date, workflow_name, provider_message_id, twilio_message_sid, status) VALUES ( {{ $json.patient_id ? \"'\" + $json.patient_id + \"'\" : 'NULL' }}, '{{ $json.message_type }}', '{{ $json.scheduled_date }}', '{{ $json.workflow_name }}', '{{ ($json.provider_message_id || '').replace(/'/g, \"''\") }}', '{{ ($json.twilio_message_sid || '').replace(/'/g, \"''\") }}', 'sent' ) ON CONFLICT (patient_id, message_type, scheduled_date) DO UPDATE SET provider_message_id = EXCLUDED.provider_message_id, twilio_message_sid = EXCLUDED.twilio_message_sid, status = EXCLUDED.status, updated_at = NOW();",
+        "query": "=INSERT INTO public.message_ledger (clinic_id, patient_id, message_type, scheduled_date, workflow_name, provider_message_id, twilio_message_sid, status) VALUES ( {{ $json.clinic_id ? \"'\" + $json.clinic_id + \"'\" : 'NULL' }},  {{ $json.patient_id ? \"'\" + $json.patient_id + \"'\" : 'NULL' }}, '{{ $json.message_type }}', '{{ $json.scheduled_date }}', '{{ $json.workflow_name }}', '{{ ($json.provider_message_id || '').replace(/'/g, \"''\") }}', '{{ ($json.twilio_message_sid || '').replace(/'/g, \"''\") }}', 'sent' ) ON CONFLICT (clinic_id, patient_id, message_type, scheduled_date) DO UPDATE SET provider_message_id = EXCLUDED.provider_message_id, twilio_message_sid = EXCLUDED.twilio_message_sid, status = EXCLUDED.status, updated_at = NOW();",
         "options": {}
       },
       "id": "ledger-04-000000000001",

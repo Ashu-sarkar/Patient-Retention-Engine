@@ -35,7 +35,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Payload sent by WF11: patient_code, name, phone (E.164), clinic_name, doctor_name, visit_date.\nconst data = $input.first().json.body || $input.first().json;\nconst name = String(data.name || data.patient_name || '').trim();\nconst phone = String(data.phone || '').trim();\nconst patientCode = String(data.patient_code || '').trim();\nconst clinic = String(data.clinic_name || 'our clinic').trim();\nconst doctor = String(data.doctor_name || 'your doctor').trim();\nif (!phone || !/^\\+[1-9]\\d{6,14}$/.test(phone)) return [{ json: { _skip: true, reason: 'Invalid phone: ' + phone, patientCode } }];\nif (!name) return [{ json: { _skip: true, reason: 'Empty patient name', patientCode } }];\nconst messageBody = 'Hi ' + name + ', a very warm welcome to ' + clinic + '. We are glad you chose our clinic today. ' + doctor + ' will be with you shortly. Your details are safe with ' + clinic + ', and we will send your prescription and care updates to this number when they are ready. Please keep this number handy. See you inside!';\nreturn [{ json: { _skip: false, _patient_name: name, _phone: phone, _patient_code: patientCode, _to_phone: 'whatsapp:' + phone, _clinic_name: clinic, _doctor_name: doctor, _message_type: 'patient_onboarding', _scheduled_date: new Date().toLocaleDateString('en-CA', { timeZone: $env.TIMEZONE || 'Asia/Kolkata' }), _content_sid: $env.TWILIO_CONTENT_PATIENT_ONBOARDING || $env.TWILIO_CONTENT_WELCOME || '', _content_variables: JSON.stringify({ '1': name, '2': clinic, '3': doctor }), _message_body: messageBody } }];"
+        "jsCode": "// Payload sent by WF11: patient_code, name, phone (E.164), clinic_name, doctor_name, visit_date.\nconst data = $input.first().json.body || $input.first().json;\nconst name = String(data.name || data.patient_name || '').trim();\nconst phone = String(data.phone || '').trim();\nconst patientCode = String(data.patient_code || '').trim();\nconst clinicId = String(data.clinic_id || '').trim();\nconst clinic = String(data.clinic_name || 'our clinic').trim();\nconst doctor = String(data.doctor_name || 'your doctor').trim();\nif (!clinicId || !/^[0-9a-f-]{36}$/i.test(clinicId)) return [{ json: { _skip: true, reason: 'Invalid clinic_id: ' + clinicId, patientCode } }];\nif (!phone || !/^\\+[1-9]\\d{6,14}$/.test(phone)) return [{ json: { _skip: true, reason: 'Invalid phone: ' + phone, patientCode } }];\nif (!name) return [{ json: { _skip: true, reason: 'Empty patient name', patientCode } }];\nconst messageBody = 'Hi ' + name + ', a very warm welcome to ' + clinic + '. We are glad you chose our clinic today. ' + doctor + ' will be with you shortly. Your details are safe with ' + clinic + ', and we will send your prescription and care updates to this number when they are ready. Please keep this number handy. See you inside!';\nreturn [{ json: { _skip: false, _patient_name: name, _phone: phone, _patient_code: patientCode, _clinic_id: clinicId, clinic_id: clinicId, _to_phone: 'whatsapp:' + phone, _clinic_name: clinic, _doctor_name: doctor, _message_type: 'patient_onboarding', _scheduled_date: new Date().toLocaleDateString('en-CA', { timeZone: $env.TIMEZONE || 'Asia/Kolkata' }), _content_sid: $env.TWILIO_CONTENT_PATIENT_ONBOARDING || $env.TWILIO_CONTENT_WELCOME || '', _content_variables: JSON.stringify({ '1': name, '2': clinic, '3': doctor }), _message_body: messageBody } }];"
       },
       "id": "77777777-7777-7777-7777-000000000003",
       "name": "Build Welcome Message",
@@ -136,7 +136,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=UPDATE public.patients SET last_message_sent = NOW(), message_count = 1, updated_at = NOW() WHERE phone = '{{ $('Build Welcome Message').item.json._phone }}'",
+        "query": "=UPDATE public.patients SET last_message_sent = NOW(), message_count = 1, updated_at = NOW() WHERE phone = '{{ $('Build Welcome Message').item.json._phone }}' AND clinic_id = '{{ $('Build Welcome Message').item.json._clinic_id }}'",
         "options": {}
       },
       "id": "77777777-7777-7777-7777-000000000006",
@@ -179,7 +179,8 @@
             "delivery_status": "sent",
             "scheduled_date": "={{ $('Build Welcome Message').item.json._scheduled_date }}",
             "provider_message_id": "={{ $json.sid || $json.Sid || \"\" }}",
-            "twilio_message_sid": "={{ $json.sid || $json.Sid || \"\" }}"
+            "twilio_message_sid": "={{ $json.sid || $json.Sid || \"\" }}",
+            "clinic_id": "={{ $('Build Welcome Message').item.json._clinic_id }}"
           },
           "matchingColumns": [],
           "schema": []
@@ -280,7 +281,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=INSERT INTO public.message_ledger (patient_id, message_type, scheduled_date, workflow_name, provider_message_id, twilio_message_sid, status) VALUES ( {{ $json.patient_id ? \"'\" + $json.patient_id + \"'\" : 'NULL' }}, '{{ $json.message_type }}', '{{ $json.scheduled_date }}', '{{ $json.workflow_name }}', '{{ ($json.provider_message_id || '').replace(/'/g, \"''\") }}', '{{ ($json.twilio_message_sid || '').replace(/'/g, \"''\") }}', 'sent' ) ON CONFLICT (patient_id, message_type, scheduled_date) DO UPDATE SET provider_message_id = EXCLUDED.provider_message_id, twilio_message_sid = EXCLUDED.twilio_message_sid, status = EXCLUDED.status, updated_at = NOW();",
+        "query": "=INSERT INTO public.message_ledger (clinic_id, patient_id, message_type, scheduled_date, workflow_name, provider_message_id, twilio_message_sid, status) VALUES ( {{ $json.clinic_id ? \"'\" + $json.clinic_id + \"'\" : 'NULL' }},  {{ $json.patient_id ? \"'\" + $json.patient_id + \"'\" : 'NULL' }}, '{{ $json.message_type }}', '{{ $json.scheduled_date }}', '{{ $json.workflow_name }}', '{{ ($json.provider_message_id || '').replace(/'/g, \"''\") }}', '{{ ($json.twilio_message_sid || '').replace(/'/g, \"''\") }}', 'sent' ) ON CONFLICT (clinic_id, patient_id, message_type, scheduled_date) DO UPDATE SET provider_message_id = EXCLUDED.provider_message_id, twilio_message_sid = EXCLUDED.twilio_message_sid, status = EXCLUDED.status, updated_at = NOW();",
         "options": {}
       },
       "id": "ledger-07-000000000001",

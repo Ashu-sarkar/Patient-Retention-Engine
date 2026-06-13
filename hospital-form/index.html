@@ -531,7 +531,6 @@ const DEFAULT_WEBHOOK_BASE = 'https://vaitalcare-production.up.railway.app';
 const HOSPITAL_WEBHOOK_PATH = '/webhook/hospital-boarding';
 
 function readRuntimeConfig() {
-  const params = new URLSearchParams(location.search);
   const globalConfig = window.VAITALCARE_CONFIG || {};
   const readStored = key => {
     try { return localStorage.getItem(key) || ''; } catch (_) { return ''; }
@@ -541,14 +540,11 @@ function readRuntimeConfig() {
     ? 'http://localhost:5678'
     : DEFAULT_WEBHOOK_BASE;
   const webhookUrl =
-    params.get('webhookUrl') ||
-    params.get('hospitalWebhookUrl') ||
     globalConfig.hospitalWebhookUrl ||
     globalConfig.webhookUrl ||
     readStored('vaitalcare.hospitalWebhookUrl') ||
     readStored('vaitalcare.webhookUrl');
   const webhookBase = cleanBase(
-    params.get('webhookBase') ||
     globalConfig.webhookBase ||
     readStored('vaitalcare.webhookBase') ||
     defaultWebhookBase

@@ -18,8 +18,8 @@ async function hmacSha256Hex(secret: string, data: string) {
     .join('');
 }
 
-function buildPdfToken(secret: string, prescriptionId: string) {
-  return hmacSha256Hex(secret, `pdf:${prescriptionId}`).then((hex) => hex.slice(0, 32));
+function buildPdfToken(secret: string, prescriptionId: string, clinicId: string, expiresAt: string) {
+  return hmacSha256Hex(secret, `pdf:${prescriptionId}:${clinicId}:${expiresAt}`).then((hex) => hex.slice(0, 32));
 }
 
 Deno.serve(async (req) => {
@@ -37,13 +37,19 @@ Deno.serve(async (req) => {
 
   const url = new URL(req.url);
   const prescriptionId = clean(url.searchParams.get('id'), 80);
+  const clinicId = clean(url.searchParams.get('c'), 80);
+  const expiresAt = clean(url.searchParams.get('exp'), 40);
   const token = clean(url.searchParams.get('t'), 80);
 
-  if (!/^[0-9a-f-]{36}$/i.test(prescriptionId) || !/^[a-f0-9]{32}$/i.test(token)) {
+  if (!/^[0-9a-f-]{36}$/i.test(prescriptionId) || !/^[0-9a-f-]{36}$/i.test(clinicId) || !/^\d{10,13}$/.test(expiresAt) || !/^[a-f0-9]{32}$/i.test(token)) {
     return new Response('Invalid prescription link', { status: 400 });
   }
 
-  const expected = (await buildPdfToken(internalSecret, prescriptionId)).slice(0, 32);
+  if (Number(expiresAt) < Math.floor(Date.now() / 1000)) {
+    return new Response('Prescription link expired', { status: 403 });
+  }
+
+  const expected = (await buildPdfToken(internalSecret, prescriptionId, clinicId, expiresAt)).slice(0, 32);
   if (token !== expected) {
     return new Response('Invalid or expired prescription link', { status: 403 });
   }
@@ -56,6 +62,7 @@ Deno.serve(async (req) => {
     .from('prescriptions')
     .select('pdf_url, status')
     .eq('id', prescriptionId)
+    .eq('clinic_id', clinicId)
     .single();
 
   if (error || !prescription?.pdf_url || prescription.status !== 'issued') {

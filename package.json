@@ -8,6 +8,8 @@
   },
   "scripts": {
     "validate-env": "node scripts/validate-env.js",
+    "validate-tenants": "node scripts/validate-tenant-isolation.js",
+    "lint:workflow-tenancy": "node scripts/lint-workflow-tenancy.js",
     "generate:whatsapp-cards": "node scripts/generate-whatsapp-cards.js",
     "push:twilio-templates": "node scripts/push-twilio-templates.js",
     "preflight": "node scripts/preflight-supabase.js",

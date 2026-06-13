@@ -39,7 +39,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT p.* FROM public.patients p WHERE p.status = 'pending' AND p.follow_up_date = CURRENT_DATE AND NOT EXISTS (SELECT 1 FROM public.message_logs ml WHERE ml.patient_id = p.id AND ml.message_type = 'same_day_reminder' AND ml.scheduled_date = p.follow_up_date)",
+        "query": "SELECT p.* FROM public.patients p WHERE p.clinic_id IS NOT NULL AND p.status = 'pending' AND p.follow_up_date = CURRENT_DATE AND NOT EXISTS (SELECT 1 FROM public.message_logs ml WHERE ml.clinic_id = p.clinic_id AND ml.patient_id = p.id AND ml.message_type = 'same_day_reminder' AND ml.scheduled_date = p.follow_up_date)",
         "options": {}
       },
       "id": "22222222-2222-2222-2222-000000000003",
@@ -59,7 +59,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Filter patients whose follow-up is today and have not been messaged recently.\nconst items = $input.all();\nconst tz = $env.TIMEZONE || 'Asia/Kolkata';\nconst maxMessages = parseInt($env.MAX_MESSAGE_COUNT) || 5;\nconst minHours = parseInt($env.MIN_HOURS_BETWEEN_MESSAGES) || 23;\nconst now = new Date();\nconst todayStr = now.toLocaleDateString('en-CA', { timeZone: tz });\nconst filtered = items.filter(item => {\n  const p = item.json;\n  const fuDate = p.follow_up_date ? new Date(p.follow_up_date).toLocaleDateString('en-CA', { timeZone: tz }) : null;\n  if (!fuDate || fuDate !== todayStr) return false;\n  if (p.status && p.status !== 'pending') return false;\n  if ((parseInt(p.message_count) || 0) >= maxMessages) return false;\n  if (!p.phone || !/^\\+[1-9]\\d{6,14}$/.test(p.phone)) return false;\n  if (p.last_message_sent) {\n    const hoursSince = (now - new Date(p.last_message_sent)) / (1000 * 60 * 60);\n    if (hoursSince < minHours) return false;\n  }\n  return true;\n});\nif (filtered.length === 0) return [{ json: { _skip: true, reason: 'No same-day appointments today', todayStr } }];\nreturn filtered.map(item => {\n  const p = item.json;\n  const name = p.name || 'there';\n  const doctor = p.doctor_name || $env.DEFAULT_DOCTOR_NAME || 'your doctor';\n  const clinic = p.clinic_name || $env.DEFAULT_CLINIC_NAME || 'our clinic';\n  return { json: { ...p, _workflow: 'workflow-2-sameday-reminder', _message_type: 'same_day_reminder', _scheduled_date: todayStr, _to_phone: 'whatsapp:' + p.phone, _name: name, _doctor_name: doctor, _clinic_name: clinic, _content_sid: $env.TWILIO_CONTENT_PATIENT_REMINDER || $env.TWILIO_CONTENT_SAME_DAY_REMINDER || '', _content_variables: JSON.stringify({ '1': name, '2': doctor, '3': clinic }), _message_body: `Good morning ${name}! Just a friendly reminder - your visit with ${doctor} at ${clinic} is today. We are ready for you whenever you arrive. See you soon, take care on your way!` } };\n});"
+        "jsCode": "// Filter patients whose follow-up is today and have not been messaged recently.\nconst items = $input.all();\nconst tz = $env.TIMEZONE || 'Asia/Kolkata';\nconst maxMessages = parseInt($env.MAX_MESSAGE_COUNT) || 5;\nconst minHours = parseInt($env.MIN_HOURS_BETWEEN_MESSAGES) || 23;\nconst now = new Date();\nconst todayStr = now.toLocaleDateString('en-CA', { timeZone: tz });\nconst filtered = items.filter(item => {\n  const p = item.json;\n  const fuDate = p.follow_up_date ? new Date(p.follow_up_date).toLocaleDateString('en-CA', { timeZone: tz }) : null;\n  if (!fuDate || fuDate !== todayStr) return false;\n  if (p.status && p.status !== 'pending') return false;\n  if ((parseInt(p.message_count) || 0) >= maxMessages) return false;\n  if (!p.phone || !/^\\+[1-9]\\d{6,14}$/.test(p.phone)) return false;\n  if (p.last_message_sent) {\n    const hoursSince = (now - new Date(p.last_message_sent)) / (1000 * 60 * 60);\n    if (hoursSince < minHours) return false;\n  }\n  return true;\n});\nif (filtered.length === 0) return [{ json: { _skip: true, reason: 'No same-day appointments today', todayStr } }];\nreturn filtered.map(item => {\n  const p = item.json;\n  const name = p.name || 'there';\n  const doctor = p.doctor_name || $env.DEFAULT_DOCTOR_NAME || 'your doctor';\n  const clinic = p.clinic_name || $env.DEFAULT_CLINIC_NAME || 'our clinic';\n  return { json: { ...p, _clinic_id: p.clinic_id, _workflow: 'workflow-2-sameday-reminder', _message_type: 'same_day_reminder', _scheduled_date: todayStr, _to_phone: 'whatsapp:' + p.phone, _name: name, _doctor_name: doctor, _clinic_name: clinic, _content_sid: $env.TWILIO_CONTENT_PATIENT_REMINDER || $env.TWILIO_CONTENT_SAME_DAY_REMINDER || '', _content_variables: JSON.stringify({ '1': name, '2': doctor, '3': clinic }), _message_body: `Good morning ${name}! Just a friendly reminder - your visit with ${doctor} at ${clinic} is today. We are ready for you whenever you arrive. See you soon, take care on your way!` } };\n});"
       },
       "id": "22222222-2222-2222-2222-000000000004",
       "name": "Filter Today's Appointments",
@@ -160,7 +160,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=UPDATE public.patients SET last_message_sent = NOW(), message_count = message_count + 1, updated_at = NOW() WHERE id = '{{ $('Filter Today\\'s Appointments').item.json.id }}'",
+        "query": "=UPDATE public.patients SET last_message_sent = NOW(), message_count = message_count + 1, updated_at = NOW() WHERE id = '{{ $('Filter Today\\'s Appointments').item.json.id }}' AND clinic_id = '{{ $('Filter Today\\'s Appointments').item.json.clinic_id }}'",
         "options": {}
       },
       "id": "22222222-2222-2222-2222-000000000007",
@@ -204,7 +204,8 @@
             "delivery_status": "sent",
             "scheduled_date": "={{ $('Filter Today\\'s Appointments').item.json._scheduled_date }}",
             "provider_message_id": "={{ $json.sid || $json.Sid || \"\" }}",
-            "twilio_message_sid": "={{ $json.sid || $json.Sid || \"\" }}"
+            "twilio_message_sid": "={{ $json.sid || $json.Sid || \"\" }}",
+            "clinic_id": "={{ $('Filter Today\\'s Appointments').item.json.clinic_id }}"
           },
           "matchingColumns": [],
           "schema": []
@@ -271,7 +272,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=INSERT INTO public.message_ledger (patient_id, message_type, scheduled_date, workflow_name, provider_message_id, twilio_message_sid, status) VALUES ( {{ $json.patient_id ? \"'\" + $json.patient_id + \"'\" : 'NULL' }}, '{{ $json.message_type }}', '{{ $json.scheduled_date }}', '{{ $json.workflow_name }}', '{{ ($json.provider_message_id || '').replace(/'/g, \"''\") }}', '{{ ($json.twilio_message_sid || '').replace(/'/g, \"''\") }}', 'sent' ) ON CONFLICT (patient_id, message_type, scheduled_date) DO UPDATE SET provider_message_id = EXCLUDED.provider_message_id, twilio_message_sid = EXCLUDED.twilio_message_sid, status = EXCLUDED.status, updated_at = NOW();",
+        "query": "=INSERT INTO public.message_ledger (clinic_id, patient_id, message_type, scheduled_date, workflow_name, provider_message_id, twilio_message_sid, status) VALUES ( {{ $json.clinic_id ? \"'\" + $json.clinic_id + \"'\" : 'NULL' }},  {{ $json.patient_id ? \"'\" + $json.patient_id + \"'\" : 'NULL' }}, '{{ $json.message_type }}', '{{ $json.scheduled_date }}', '{{ $json.workflow_name }}', '{{ ($json.provider_message_id || '').replace(/'/g, \"''\") }}', '{{ ($json.twilio_message_sid || '').replace(/'/g, \"''\") }}', 'sent' ) ON CONFLICT (clinic_id, patient_id, message_type, scheduled_date) DO UPDATE SET provider_message_id = EXCLUDED.provider_message_id, twilio_message_sid = EXCLUDED.twilio_message_sid, status = EXCLUDED.status, updated_at = NOW();",
         "options": {}
       },
       "id": "ledger-02-000000000001",

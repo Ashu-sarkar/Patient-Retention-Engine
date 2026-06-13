@@ -85,10 +85,12 @@ async function buildShortPdfLink(
   supabaseUrl: string,
   secret: string,
   prescriptionId: string,
+  clinicId: string,
 ): Promise<string> {
-  const token = (await hmacSha256Hex(secret, `pdf:${prescriptionId}`)).slice(0, 32);
+  const expiresAt = Math.floor(Date.now() / 1000) + (60 * 60 * 24 * 7);
+  const token = (await hmacSha256Hex(secret, `pdf:${prescriptionId}:${clinicId}:${expiresAt}`)).slice(0, 32);
   const base = supabaseUrl.replace(/\/$/, '');
-  return `${base}/functions/v1/prescription-pdf?id=${prescriptionId}&t=${token}`;
+  return `${base}/functions/v1/prescription-pdf?id=${prescriptionId}&c=${clinicId}&exp=${expiresAt}&t=${token}`;
 }
 
 function summariseMedicines(medicines: Medicine[]) {
@@ -230,6 +232,7 @@ Deno.serve(async (req) => {
     .from('prescriptions')
     .select(`
       id,
+      clinic_id,
       status,
       patient_id,
       visit_id,
@@ -284,7 +287,7 @@ Deno.serve(async (req) => {
   const clinicName = clean(clinic.name, 180) || 'our clinic';
   const medicines = (Array.isArray(prescription.medicines) ? prescription.medicines : []) as Medicine[];
   const medicineSummary = summariseMedicines(medicines);
-  const shortPdfLink = await buildShortPdfLink(supabaseUrl, internalSecret, prescription.id);
+  const shortPdfLink = await buildShortPdfLink(supabaseUrl, internalSecret, prescription.id, prescription.clinic_id);
   const followUpDate = clean(prescription.follow_up_date, 40);
   const followUpText = prescription.follow_up_required === 'Yes' && followUpDate
     ? `Follow-up date: ${followUpDate}.`
@@ -346,6 +349,7 @@ Deno.serve(async (req) => {
   await supabase.from('prescriptions').update({ delivery_status: 'sent' }).eq('id', prescription.id);
 
   await admin.from('message_logs').insert({
+    clinic_id: prescription.clinic_id,
     patient_id: prescription.patient_id,
     patient_name: patientName,
     phone,

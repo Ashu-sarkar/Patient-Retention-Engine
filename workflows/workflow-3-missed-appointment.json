@@ -39,7 +39,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT p.* FROM public.patients p WHERE p.follow_up_date < CURRENT_DATE AND p.status NOT IN ('completed','inactive')",
+        "query": "SELECT p.* FROM public.patients p WHERE p.clinic_id IS NOT NULL AND p.follow_up_date < CURRENT_DATE AND p.status NOT IN ('completed','inactive')",
         "options": {}
       },
       "id": "33333333-3333-3333-3333-000000000003",
@@ -191,7 +191,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=UPDATE public.patients SET status = 'missed', updated_at = NOW() WHERE id = '{{ $json.id }}'",
+        "query": "=UPDATE public.patients SET status = 'missed', updated_at = NOW() WHERE id = '{{ $json.id }}' AND clinic_id = '{{ $json.clinic_id }}'",
         "options": {}
       },
       "id": "33333333-3333-3333-3333-000000000007",
@@ -322,7 +322,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=UPDATE public.patients SET last_message_sent = NOW(), message_count = message_count + 1, updated_at = NOW() WHERE id = '{{ $('Filter Missed Appointments').item.json.id }}'",
+        "query": "=UPDATE public.patients SET last_message_sent = NOW(), message_count = message_count + 1, updated_at = NOW() WHERE id = '{{ $('Filter Missed Appointments').item.json.id }}' AND clinic_id = '{{ $('Filter Missed Appointments').item.json.clinic_id }}'",
         "options": {}
       },
       "id": "33333333-3333-3333-3333-000000000010",
@@ -366,7 +366,8 @@
             "delivery_status": "sent",
             "scheduled_date": "={{ $('Filter Missed Appointments').item.json._scheduled_date }}",
             "provider_message_id": "={{ $json.sid || $json.Sid || \"\" }}",
-            "twilio_message_sid": "={{ $json.sid || $json.Sid || \"\" }}"
+            "twilio_message_sid": "={{ $json.sid || $json.Sid || \"\" }}",
+            "clinic_id": "={{ $('Filter Missed Appointments').item.json.clinic_id }}"
           },
           "matchingColumns": [],
           "schema": []
@@ -433,7 +434,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=INSERT INTO public.message_ledger (patient_id, message_type, scheduled_date, workflow_name, provider_message_id, twilio_message_sid, status) VALUES ( {{ $json.patient_id ? \"'\" + $json.patient_id + \"'\" : 'NULL' }}, '{{ $json.message_type }}', '{{ $json.scheduled_date }}', '{{ $json.workflow_name }}', '{{ ($json.provider_message_id || '').replace(/'/g, \"''\") }}', '{{ ($json.twilio_message_sid || '').replace(/'/g, \"''\") }}', 'sent' ) ON CONFLICT (patient_id, message_type, scheduled_date) DO UPDATE SET provider_message_id = EXCLUDED.provider_message_id, twilio_message_sid = EXCLUDED.twilio_message_sid, status = EXCLUDED.status, updated_at = NOW();",
+        "query": "=INSERT INTO public.message_ledger (clinic_id, patient_id, message_type, scheduled_date, workflow_name, provider_message_id, twilio_message_sid, status) VALUES ( {{ $json.clinic_id ? \"'\" + $json.clinic_id + \"'\" : 'NULL' }},  {{ $json.patient_id ? \"'\" + $json.patient_id + \"'\" : 'NULL' }}, '{{ $json.message_type }}', '{{ $json.scheduled_date }}', '{{ $json.workflow_name }}', '{{ ($json.provider_message_id || '').replace(/'/g, \"''\") }}', '{{ ($json.twilio_message_sid || '').replace(/'/g, \"''\") }}', 'sent' ) ON CONFLICT (clinic_id, patient_id, message_type, scheduled_date) DO UPDATE SET provider_message_id = EXCLUDED.provider_message_id, twilio_message_sid = EXCLUDED.twilio_message_sid, status = EXCLUDED.status, updated_at = NOW();",
         "options": {}
       },
       "id": "ledger-03-000000000001",

@@ -917,19 +917,16 @@
     ];
 
     function readRuntimeConfig() {
-      const params = new URLSearchParams(location.search);
       const globalConfig = window.VAITALCARE_CONFIG || {};
       const readStored = key => {
         try { return localStorage.getItem(key) || ''; } catch (_) { return ''; }
       };
       return {
         supabaseUrl:
-          params.get('supabaseUrl') ||
           globalConfig.supabaseUrl ||
           readStored('vaitalcare.supabaseUrl') ||
           DEFAULT_SUPABASE_URL,
         supabaseAnonKey:
-          params.get('supabaseAnonKey') ||
           globalConfig.supabaseAnonKey ||
           readStored('vaitalcare.supabaseAnonKey') ||
           DEFAULT_SUPABASE_ANON_KEY,
@@ -952,6 +949,7 @@
     const state = {
       session: null,
       profile: null,
+      activeClinicId: '',
       visits: [],
       selected: null,
       currentDraft: null,
@@ -1224,6 +1222,7 @@
       state.session = { user: { id: 'demo-doctor' } };
       state.profile = {
         id: 'demo-profile',
+        clinic_id: 'demo-clinic',
         doctor_name: 'Dr. A. Sharma',
         clinic_name: 'VaitalCare Clinic',
         registration_number: 'MCI-DEMO-12345',
@@ -1240,6 +1239,7 @@
         signature_label: 'Dr. A. Sharma',
         stamp_label: 'Reg: MCI-DEMO-12345',
       };
+      state.activeClinicId = state.profile.clinic_id;
       state.visits = demoVisits();
       $('login-screen').classList.add('hidden');
       $('app').classList.remove('hidden');
@@ -1280,6 +1280,7 @@
         throw new Error('Doctor profile not found for verified WhatsApp number.');
       }
       state.profile = await enrichProfileFromBoarding(data);
+      state.activeClinicId = state.profile.clinic_id || '';
       $('doctor-subtitle').textContent = data.doctor_name;
       $('clinic-footer').textContent = state.profile.clinic_name || '';
     }
@@ -1326,11 +1327,13 @@
       state.loadingVisits = true;
       setButtonBusy($('refresh'), true, 'Refreshing...');
       renderSkeleton();
-      const { data, error } = await sb
+      let query = sb
         .from('patient_visits')
         .select('*, patient:patients(id, patient_code, name, phone, dob, sex, follow_up_required, follow_up_date, notes)')
         .order('checked_in_at', { ascending: false })
         .limit(200);
+      if (state.activeClinicId) query = query.eq('clinic_id', state.activeClinicId);
+      const { data, error } = await query;
       state.loadingVisits = false;
       setButtonBusy($('refresh'), false);
       if (error) {
@@ -1533,10 +1536,12 @@
         }
         return true;
       }
-      const { data, error } = await sb
+      let query = sb
         .from('patient_visits')
         .update(patch)
-        .eq('id', state.selected.id)
+        .eq('id', state.selected.id);
+      if (state.activeClinicId) query = query.eq('clinic_id', state.activeClinicId);
+      const { data, error } = await query
         .select('*, patient:patients(id, patient_code, name, phone, dob, sex, follow_up_required, follow_up_date, notes)')
         .single();
       if (error) {
@@ -1655,6 +1660,7 @@
         patient_id: state.selected.patient_id,
         visit_id: state.selected.id,
         doctor_profile_id: state.profile.id,
+        clinic_id: state.activeClinicId || state.selected.clinic_id,
         status: 'draft',
         diagnosis: payload.diagnosis,
         clinical_remarks: payload.clinical_remarks,
@@ -1666,17 +1672,25 @@
       };
       let prescription;
       if (state.currentDraft) {
-        const { data, error } = await sb.from('prescriptions').update(row).eq('id', state.currentDraft.id).select('*').single();
+        let updateQuery = sb.from('prescriptions').update(row).eq('id', state.currentDraft.id);
+        if (state.activeClinicId) updateQuery = updateQuery.eq('clinic_id', state.activeClinicId);
+        const { data, error } = await updateQuery.select('*').single();
         if (error) return showToast(error.message, true);
         prescription = data;
-        await sb.from('prescription_medicines').delete().eq('prescription_id', prescription.id);
+        let deleteQuery = sb.from('prescription_medicines').delete().eq('prescription_id', prescription.id);
+        if (state.activeClinicId) deleteQuery = deleteQuery.eq('clinic_id', state.activeClinicId);
+        await deleteQuery;
       } else {
         const { data, error } = await sb.from('prescriptions').insert(row).select('*').single();
         if (error) return showToast(error.message, true);
         prescription = data;
       }
       if (payload.medicines.length) {
-        const meds = payload.medicines.map(m => ({ ...m, prescription_id: prescription.id }));
+        const meds = payload.medicines.map(m => ({
+          ...m,
+          prescription_id: prescription.id,
+          clinic_id: prescription.clinic_id || state.activeClinicId || state.selected.clinic_id,
+        }));
         const { error } = await sb.from('prescription_medicines').insert(meds);
         if (error) return showToast(error.message, true);
       }
@@ -1685,6 +1699,7 @@
       await sb.from('prescription_audit_logs').insert({
         prescription_id: prescription.id,
         visit_id: state.selected.id,
+        clinic_id: prescription.clinic_id || state.activeClinicId || state.selected.clinic_id,
         action: 'draft_saved',
         details: { medicine_count: payload.medicines.length },
       });
@@ -1719,7 +1734,7 @@
           return;
         }
         const pdfBlob = await generatePdf(prescription, payload);
-        const path = `${state.session.user.id}/${prescription.id}.pdf`;
+        const path = `${state.activeClinicId || state.selected.clinic_id || 'clinic'}/${state.session.user.id}/${prescription.id}.pdf`;
         const upload = await sb.storage.from('prescriptions').upload(path, pdfBlob, {
           contentType: 'application/pdf',
           upsert: true,
@@ -1730,6 +1745,7 @@
         const { error } = await sb.from('prescriptions').update({
           status: 'issued',
           issued_at: new Date().toISOString(),
+          clinic_id: state.activeClinicId || state.selected.clinic_id,
           pdf_url: signed.data.signedUrl,
           pdf_storage_path: path,
           delivery_status: 'queued',
@@ -1739,6 +1755,7 @@
         await sb.from('prescription_audit_logs').insert({
           prescription_id: prescription.id,
           visit_id: state.selected.id,
+          clinic_id: state.activeClinicId || state.selected.clinic_id,
           action: 'issued',
           details: { pdf_storage_path: path },
         });
@@ -2027,7 +2044,9 @@
           ? ' Browser blocked the delivery request (CORS). Redeploy the prescription-delivery edge function or add this dashboard URL to DOCTOR_DASHBOARD_ORIGIN in Supabase secrets.'
           : '';
         showToast((msg || 'Prescription saved, but WhatsApp delivery failed.') + corsHint, true);
-        await sb.from('prescriptions').update({ delivery_status: 'failed' }).eq('id', prescriptionId);
+        let failQuery = sb.from('prescriptions').update({ delivery_status: 'failed' }).eq('id', prescriptionId);
+        if (state.activeClinicId) failQuery = failQuery.eq('clinic_id', state.activeClinicId);
+        await failQuery;
         await loadPrescriptionHistory();
       }
     }
@@ -2048,7 +2067,9 @@
         if (notify) showToast(`Visit marked ${status.replace('_', ' ')}.`);
         return;
       }
-      const { data, error } = await sb.from('patient_visits').update(patch).eq('id', state.selected.id).select('*, patient:patients(id, patient_code, name, phone, dob, sex, follow_up_required, follow_up_date, notes)').single();
+      let query = sb.from('patient_visits').update(patch).eq('id', state.selected.id);
+      if (state.activeClinicId) query = query.eq('clinic_id', state.activeClinicId);
+      const { data, error } = await query.select('*, patient:patients(id, patient_code, name, phone, dob, sex, follow_up_required, follow_up_date, notes)').single();
       if (error) return showToast(error.message, true);
       state.selected = data;
       state.visits = state.visits.map(v => v.id === data.id ? data : v);
@@ -2067,11 +2088,13 @@
         renderPrescriptionHistory(data);
         return;
       }
-      const { data, error } = await sb
+      let query = sb
         .from('prescriptions')
         .select('*, medicines:prescription_medicines(*)')
         .eq('patient_id', state.selected.patient_id)
         .order('created_at', { ascending: false });
+      if (state.activeClinicId) query = query.eq('clinic_id', state.activeClinicId);
+      const { data, error } = await query;
       if (error) return showToast(error.message, true);
       renderPrescriptionHistory(data || []);
     }
@@ -2099,11 +2122,13 @@
         renderVisitHistory(state.visits.filter(v => v.patient_id === state.selected.patient_id));
         return;
       }
-      const { data, error } = await sb
+      let query = sb
         .from('patient_visits')
         .select('id, patient_id, patient_code, clinic_name, doctor_name, visit_date, visit_status, chief_complaint, prescriptions(diagnosis, clinical_remarks, issued_at)')
         .eq('patient_id', state.selected.patient_id)
         .order('checked_in_at', { ascending: false });
+      if (state.activeClinicId) query = query.eq('clinic_id', state.activeClinicId);
+      const { data, error } = await query;
       if (error) return showToast(error.message, true);
       renderVisitHistory(data || []);
     }

@@ -677,9 +677,9 @@ if (window.matchMedia) {
 }
 /* ═══════════════════════════════════════════════════════════════════
    CONFIGURATION
-   Defaults are production-safe, but local/staging runs can override via:
-   ?webhookBase=http://localhost:5678, ?webhookUrl=..., window.VAITALCARE_CONFIG,
-   or localStorage keys vaitalcare.webhookBase / vaitalcare.patientWebhookUrl.
+   Defaults are production-safe. Local/staging runs can override webhook
+   endpoints through window.VAITALCARE_CONFIG or localStorage. Clinic identity
+   must come from a QR intake token in the URL fragment: #/i/<token>.
    ═══════════════════════════════════════════════════════════════════ */
 const DEFAULT_WEBHOOK_BASE  = 'https://vaitalcare-production.up.railway.app';
 const PATIENT_WEBHOOK_PATH  = '/webhook/patient-form-intake';
@@ -687,7 +687,6 @@ const SUPABASE_URL          = 'https://crsdccqseuhnimoxxeky.supabase.co';
 const SUPABASE_ANON_KEY     = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNyc2RjY3FzZXVobmltb3h4ZWt5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMjc1NzQsImV4cCI6MjA5MTkwMzU3NH0.3iz7x2JQj3qn6KI8JS3tjxV9vaBsN-mL6xDTvmJMDxA';
 
 function readRuntimeConfig() {
-  const params = new URLSearchParams(location.search);
   const globalConfig = window.VAITALCARE_CONFIG || {};
   const readStored = key => {
     try { return localStorage.getItem(key) || ''; } catch (_) { return ''; }
@@ -697,14 +696,11 @@ function readRuntimeConfig() {
     ? 'http://localhost:5678'
     : DEFAULT_WEBHOOK_BASE;
   const webhookUrl =
-    params.get('webhookUrl') ||
-    params.get('patientWebhookUrl') ||
     globalConfig.patientWebhookUrl ||
     globalConfig.webhookUrl ||
     readStored('vaitalcare.patientWebhookUrl') ||
     readStored('vaitalcare.webhookUrl');
   const webhookBase = cleanBase(
-    params.get('webhookBase') ||
     globalConfig.webhookBase ||
     readStored('vaitalcare.webhookBase') ||
     defaultWebhookBase
@@ -717,44 +713,68 @@ function readRuntimeConfig() {
 const RUNTIME_CONFIG = readRuntimeConfig();
 const WEBHOOK_URL = RUNTIME_CONFIG.webhookUrl;
 
-// Seed list shown instantly while DB loads; replaced once live data arrives
-let HOSPITALS = {
-  'City Hospital':    ['Dr. Sharma', 'Dr. Mehta', 'Dr. Patel'],
-  'General Hospital': ['Dr. Kumar', 'Dr. Patel', 'Dr. Sharma'],
-  'Metro Clinic':     ['Dr. Mehta', 'Dr. Kumar'],
-};
+let HOSPITALS = {};
 
-async function loadHospitalsFromDB() {
+function extractIntakeToken() {
+  const hash = String(location.hash || '').trim();
+  const match = hash.match(/^#\/?i\/([a-f0-9]{64})$/i) || hash.match(/^#token=([a-f0-9]{64})$/i);
+  if (match) return match[1].toLowerCase();
+  const configured = String((window.VAITALCARE_CONFIG || {}).intakeToken || '').trim();
+  return /^[a-f0-9]{64}$/i.test(configured) ? configured.toLowerCase() : '';
+}
+
+const INTAKE_TOKEN = extractIntakeToken();
+
+function setFormLocked(message) {
+  $('js-clinic-badge').textContent = message;
+  $('js-clinic-badge').style.display = 'inline-block';
+  $('hospital_name').disabled = true;
+  $('doctor_name').disabled = true;
+  submitBtn.disabled = true;
+  showToast(message, true);
+}
+
+async function loadClinicFromToken() {
+  if (!INTAKE_TOKEN) {
+    setFormLocked('Invalid clinic QR. Please scan the QR displayed at the clinic.');
+    return;
+  }
   try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_public_hospital_list`, {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/resolve_public_intake_token`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
-      body:    '{}',
+      body:    JSON.stringify({ p_token: INTAKE_TOKEN }),
     });
-    if (!res.ok) return;
+    if (!res.ok) throw new Error('Unable to verify clinic QR.');
     const rows = await res.json();
-    if (!Array.isArray(rows) || rows.length === 0) return;
+    if (!Array.isArray(rows) || rows.length === 0) throw new Error('This clinic QR is inactive or expired.');
 
     const map = {};
     rows.forEach(({ hospital_name, doctor_name }) => {
       if (!map[hospital_name]) map[hospital_name] = [];
-      map[hospital_name].push(doctor_name);
+      map[hospital_name].push({ doctor_name });
     });
 
     HOSPITALS = map;
 
-    // Rebuild hospital dropdown with live data
     const hSel = $('hospital_name');
-    const prev = hSel.value;
     Array.from(hSel.options).forEach(o => { if (o.value) o.remove(); });
     Object.keys(HOSPITALS).forEach(h => {
       const o = document.createElement('option');
       o.value = o.textContent = h;
       hSel.appendChild(o);
     });
-    if (prev && HOSPITALS[prev]) { hSel.value = prev; updateDoctors(prev); }
-    else { hSel.value = ''; updateDoctors(''); }
-  } catch (_) { /* silently keep seed data on network failure */ }
+    const onlyHospital = Object.keys(HOSPITALS)[0] || '';
+    hSel.value = onlyHospital;
+    hSel.disabled = Object.keys(HOSPITALS).length === 1;
+    updateDoctors(onlyHospital);
+
+    const badge = $('js-clinic-badge');
+    badge.textContent = onlyHospital;
+    badge.style.display = 'inline-block';
+  } catch (error) {
+    setFormLocked(error.message || 'Unable to verify clinic QR.');
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -770,42 +790,13 @@ const toast      = $('js-toast');
    INIT
    ═══════════════════════════════════════════════════════════════════ */
 (function init () {
-  const p          = new URLSearchParams(location.search);
-  const preHospital = decodeURIComponent(p.get('hospital') || p.get('clinic') || '');
-  const titleParam  = decodeURIComponent(p.get('title') || '');
-
-  // Header clinic badge
-  const badge = $('js-clinic-badge');
-  const label = titleParam || preHospital;
-  if (label) { badge.textContent = label; badge.style.display = 'inline-block'; }
-
   // Date defaults
   const today = localDateISO();
   $('visit_date').value = today;
   $('visit_date').max   = today;
   $('dob').max          = today;
 
-  // Populate hospital dropdown with seed data immediately
-  const hSel = $('hospital_name');
-  Object.keys(HOSPITALS).forEach(h => {
-    const o = document.createElement('option');
-    o.value = o.textContent = h;
-    hSel.appendChild(o);
-  });
-
-  // Pre-fill hospital from URL param
-  if (preHospital) {
-    const match = Object.keys(HOSPITALS).find(
-      h => h.toLowerCase() === preHospital.toLowerCase()
-    );
-    if (match) {
-      hSel.value = match;
-      updateDoctors(match);
-    }
-  }
-
-  // Refresh dropdown with live DB data in the background
-  loadHospitalsFromDB();
+  loadClinicFromToken();
 })();
 
 /* ─── helpers ──────────────────────────────────────────────────── */
@@ -824,7 +815,7 @@ function updateDoctors (hospital) {
   sel.innerHTML = `<option value="">${hospital ? 'Select doctor' : 'Select hospital first'}</option>`;
   docs.forEach(d => {
     const o = document.createElement('option');
-    o.value = o.textContent = d;
+    o.value = o.textContent = d.doctor_name || d;
     sel.appendChild(o);
   });
   sel.disabled = !hospital;
@@ -934,6 +925,7 @@ form.addEventListener('submit', async function (e) {
     sex:                $('sex').value   || '',
     hospital_name:      $('hospital_name').value,
     doctor_name:        $('doctor_name').value,
+    intake_token:       INTAKE_TOKEN,
     visit_date:         $('visit_date').value,
   };
   const body = new URLSearchParams(payload);

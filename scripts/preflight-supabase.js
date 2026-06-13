@@ -229,14 +229,13 @@ async function main() {
     }
   }
 
-  const sqlFile = path.join(repoRoot, 'schemas', 'preflight-migrations.sql');
-  if (!fs.existsSync(sqlFile)) die(`Missing ${sqlFile}`);
-
-  const sqlRaw = fs.readFileSync(sqlFile, 'utf8');
-  const chunks = splitSqlStatements(sqlRaw).filter(s => {
-    const t = s.trim();
-    return t.length > 0 && !t.startsWith('--');
-  });
+  const sqlFiles = [
+    path.join(repoRoot, 'schemas', 'preflight-migrations.sql'),
+    path.join(repoRoot, 'schemas', 'migration-v0-multitenant.sql'),
+  ];
+  for (const sqlFile of sqlFiles) {
+    if (!fs.existsSync(sqlFile)) die(`Missing ${sqlFile}`);
+  }
 
   const client = new Client({
     host                 : host,
@@ -264,14 +263,22 @@ async function main() {
   let n = 0;
   await client.query('BEGIN');
   try {
-    for (const stmt of chunks) {
-      try {
-        await client.query(stmt);
-        n++;
-      } catch (e) {
-        console.error('[preflight] Statement failed:\n', stmt.slice(0, 200) + (stmt.length > 200 ? '…' : ''));
-        throw e;
+    for (const sqlFile of sqlFiles) {
+      const sqlRaw = fs.readFileSync(sqlFile, 'utf8');
+      const chunks = splitSqlStatements(sqlRaw).filter(s => {
+        const t = s.trim();
+        return t.length > 0 && !t.startsWith('--');
+      });
+      for (const stmt of chunks) {
+        try {
+          await client.query(stmt);
+          n++;
+        } catch (e) {
+          console.error(`[preflight] Statement failed in ${path.basename(sqlFile)}:\n`, stmt.slice(0, 200) + (stmt.length > 200 ? '...' : ''));
+          throw e;
+        }
       }
+      ok(`${path.basename(sqlFile)} applied.`);
     }
     await client.query('COMMIT');
   } catch (e) {
@@ -286,6 +293,8 @@ async function main() {
   if (!skipRest) {
     await sleep(1500);
     const tables = [
+      { name: 'clinics',            select: 'id' },
+      { name: 'clinic_memberships', select: 'id' },
       { name: 'patients',           select: 'id' },
       { name: 'hospital_boarding',  select: 'id' },
       { name: 'system_logs',        select: 'log_id' },

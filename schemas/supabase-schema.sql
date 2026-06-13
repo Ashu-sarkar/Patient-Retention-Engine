@@ -6,6 +6,8 @@
 --   npm run preflight   or   ./launch.sh
 -- which applies schemas/preflight-migrations.sql (schema drift + PostgREST reload).
 -- Use this file for a full reference or greenfield manual install in SQL Editor.
+-- For v0 multi-clinic production, also apply schemas/migration-v0-multitenant.sql
+-- (npm run preflight applies it automatically after this baseline alignment).
 -- =============================================================================
 
 -- -------------------------
