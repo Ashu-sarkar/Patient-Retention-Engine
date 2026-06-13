@@ -1110,12 +1110,14 @@
           if (!isValidE164(phone)) return showToast('Enter the registered WhatsApp number in international format.', true);
           const button = $('login-submit');
           setButtonBusy(button, true, 'Sending...');
-          const { error } = await sb.auth.signInWithOtp({
-            phone,
-            options: { channel: 'whatsapp' },
-          });
+          const { error } = await sb.auth.signInWithOtp({ phone });
           setButtonBusy(button, false);
-          if (error) return showToast(error.message, true);
+          if (error) {
+            const hint = /sms|otp|hook|provider/i.test(error.message)
+              ? ' OTP delivery is not configured yet. Run npm run sync:doctor-otp-secrets.'
+              : '';
+            return showToast(`${error.message}${hint}`, true);
+          }
           state.loginPhone = phone;
           state.otpSent = true;
           $('doctor-phone').value = phone;

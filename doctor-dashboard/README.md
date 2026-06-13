@@ -25,7 +25,14 @@ For local preview, open `doctor-dashboard/index.html?demo=1`.
 ## WhatsApp OTP Login
 
 1. Enable phone OTP in Supabase Auth.
-2. Configure the Supabase Auth SMS provider to deliver OTPs through WhatsApp where supported by your provider setup.
+2. Deploy the `send-sms-hook` edge function and push auth hook config:
+
+```bash
+npm run sync:doctor-otp-secrets
+```
+
+This routes Supabase Auth OTP delivery through the same Twilio WhatsApp sender used by n8n workflows. Add `SEND_SMS_HOOK_SECRETS=v1,whsec_<base64-secret>` to `.env` (the sync script generates one if missing).
+
 3. Ensure the hospital onboarding form captures each doctor's WhatsApp number in international format, for example `+919876543210`.
 4. Run `npm run preflight` so Supabase has the phone-matching RPC and RLS policies.
 

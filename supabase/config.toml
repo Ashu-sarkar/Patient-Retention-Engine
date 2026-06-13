@@ -1,0 +1,21 @@
+# Supabase project config — push with: npm run sync:doctor-otp-secrets
+project_id = "crsdccqseuhnimoxxeky"
+
+[auth]
+enabled = true
+site_url = "https://vaitalcare-doctor.vercel.app"
+additional_redirect_urls = [
+  "https://vaitalcare-doctor.vercel.app",
+  "https://vaitalcare-doctor.vercel.app/",
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+]
+
+[auth.sms]
+enable_signup = true
+enable_confirmations = true
+
+[auth.hook.send_sms]
+enabled = true
+uri = "https://crsdccqseuhnimoxxeky.supabase.co/functions/v1/send-sms-hook"
+secrets = "env(SEND_SMS_HOOK_SECRETS)"

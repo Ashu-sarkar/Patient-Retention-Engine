@@ -103,7 +103,7 @@ Update:
 
 Replace `YOUR_N8N_WEBHOOK_URL` with your public n8n URL. Deploy the static forms through Vercel, Netlify, or another HTTPS static host.
 
-For the doctor dashboard, also replace `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `PRESCRIPTION_DELIVERY_FUNCTION`. Enable Supabase phone OTP and configure the OTP provider to deliver codes over WhatsApp where supported. Doctors should use the deployed `doctor-dashboard/` URL and sign in with the same WhatsApp number captured in hospital onboarding.
+For the doctor dashboard, also replace `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `PRESCRIPTION_DELIVERY_FUNCTION`. Enable Supabase phone OTP, then run `npm run sync:doctor-otp-secrets` so OTP delivery uses the `send-sms-hook` edge function and your existing Twilio WhatsApp sender. Doctors should use the deployed `doctor-dashboard/` URL and sign in with the same WhatsApp number captured in hospital onboarding.
 
 The dashboard resolves doctors in this order: existing `doctor_profiles.user_id`, then matching `doctor_profiles.doctor_phone`, then latest matching `hospital_boarding.doctor_phone`. If it uses hospital onboarding, it creates the `doctor_profiles` row automatically after the OTP session is verified. You can still pre-create `doctor_profiles` rows manually; include `doctor_phone` in international format and leave `user_id` empty until the doctor first logs in.
 

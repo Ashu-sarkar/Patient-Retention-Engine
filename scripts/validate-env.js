@@ -165,6 +165,10 @@ if (String(env.TWILIO_VALIDATE_WEBHOOK_SIGNATURE || '').toLowerCase() === 'true'
   }
 }
 
+if (isMissing(env.SEND_SMS_HOOK_SECRETS)) {
+  warnings.push('SEND_SMS_HOOK_SECRETS is empty. Run npm run sync:doctor-otp-secrets to enable doctor dashboard WhatsApp OTP delivery.');
+}
+
 for (const formPath of ['patient-form/index.html', 'hospital-form/index.html']) {
   const abs = path.join(repoRoot, formPath);
   if (!fs.existsSync(abs)) continue;
