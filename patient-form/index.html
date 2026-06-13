@@ -996,7 +996,16 @@ form.addEventListener('submit', async function (e) {
 
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(`HTTP ${res.status}${text ? `: ${text.slice(0, 180)}` : ''}`);
+      let errorMessage = '';
+      try {
+        const errorData = JSON.parse(text);
+        errorMessage = Array.isArray(errorData.errors) && errorData.errors.length
+          ? errorData.errors.join(', ')
+          : (errorData.message || '');
+      } catch (_) {
+        errorMessage = text;
+      }
+      throw new Error(errorMessage || `HTTP ${res.status}`);
     }
 
     let data = {};
