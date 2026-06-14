@@ -26,6 +26,29 @@
       "twilio_content_sid": "HX7c6441160af55e9b14de41eb73f79fb9"
     },
     {
+      "id": "doctor_dashboard_otp",
+      "workflow": "supabase-send-sms-hook",
+      "trigger": "Doctor requests WhatsApp OTP on dashboard login",
+      "category": "AUTHENTICATION",
+      "twilio_friendly_name": "doctor_dashboard_otp_auth_v1",
+      "message": "WhatsApp preset authentication body with {{otp_code}} variable",
+      "placeholders": [
+        "otp_code"
+      ],
+      "component_parameters": [
+        "otp_code"
+      ],
+      "actions": [
+        {
+          "type": "COPY_CODE",
+          "copy_code_text": "Copy code"
+        }
+      ],
+      "notes": "Use whatsapp/authentication content type (not whatsapp/card). UTILITY category is rejected (INCORRECT_CATEGORY) for OTP. Free-form Body fails with Twilio 63016.",
+      "twilio_content_env": "TWILIO_CONTENT_DOCTOR_OTP",
+      "twilio_content_sid": "HX6829422b285f03ba1889b61760c72cfa"
+    },
+    {
       "id": "hospital_onboarding",
       "workflow": "workflow-12-hospital-boarding",
       "trigger": "Hospital / clinic boarding form submitted",

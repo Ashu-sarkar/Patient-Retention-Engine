@@ -20,6 +20,38 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 ENV_PATH = ROOT / ".env"
 TEST_PHONE = "+919685722570"
+MGMT_BASE = "https://api.supabase.com/v1"
+MGMT_UA = "supabase-cli/2.106.0 (vaitalcare-doctor-otp)"
+
+
+def mgmt_patch_auth(token: str, ref: str, hook_secrets: str, fn_url: str) -> bool:
+    """Force-update auth hook secret via Management API (config push may not rotate secrets)."""
+    body = {
+        "external_phone_enabled": True,
+        "hook_send_sms_enabled": True,
+        "hook_send_sms_uri": fn_url,
+        "hook_send_sms_secrets": hook_secrets,
+    }
+    payload = json.dumps(body).encode()
+    req = urllib.request.Request(
+        f"{MGMT_BASE}/projects/{ref}/config/auth",
+        data=payload,
+        method="PATCH",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": MGMT_UA,
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            print(f"  Management API auth PATCH HTTP {resp.status}")
+            return True
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode(errors="replace")
+        print(f"  Management API auth PATCH failed HTTP {exc.code}: {detail[:300]}")
+        return False
 
 
 def load_env() -> dict[str, str]:
@@ -41,8 +73,8 @@ def append_env(key: str, value: str) -> None:
     print(f"  Saved {key} to .env")
 
 
-def cli_env(token: str) -> dict[str, str]:
-    deploy_env = {**os.environ, "SUPABASE_ACCESS_TOKEN": token}
+def cli_env(token: str, env: dict[str, str]) -> dict[str, str]:
+    deploy_env = {**os.environ, **env, "SUPABASE_ACCESS_TOKEN": token}
     nvm_node = Path.home() / ".nvm"
     node_bins = sorted(nvm_node.glob("versions/node/*/bin"), reverse=True)
     if node_bins:
@@ -50,10 +82,17 @@ def cli_env(token: str) -> dict[str, str]:
     return deploy_env
 
 
-def run_cli(token: str, args: list[str]) -> int:
+def write_functions_env(hook_secrets: str) -> None:
+    """Supabase config push resolves env(SEND_SMS_HOOK_SECRETS) from supabase/functions/.env."""
+    fn_env = ROOT / "supabase" / "functions" / ".env"
+    fn_env.write_text(f"SEND_SMS_HOOK_SECRETS={hook_secrets}\n")
+    print(f"  Wrote {fn_env.relative_to(ROOT)} for config push")
+
+
+def run_cli(token: str, env: dict[str, str], args: list[str]) -> int:
     return subprocess.run(
         ["npx", "supabase", *args],
-        env=cli_env(token),
+        env=cli_env(token, env),
         cwd=str(ROOT),
     ).returncode
 
@@ -133,6 +172,8 @@ def main() -> None:
     else:
         print("  Already set.")
 
+    write_functions_env(hook_secrets)
+
     print("\n=== Step 3: Uploading edge function secrets (CLI) ===")
     secret_args = [
         "secrets", "set", "--project-ref", ref,
@@ -141,16 +182,21 @@ def main() -> None:
         f"TWILIO_AUTH_TOKEN={env['TWILIO_AUTH_TOKEN']}",
         f"TWILIO_WHATSAPP_FROM={env['TWILIO_WHATSAPP_FROM']}",
     ]
+    doctor_otp_sid = env.get("TWILIO_CONTENT_DOCTOR_OTP", "").strip()
+    if doctor_otp_sid:
+        secret_args.append(f"TWILIO_CONTENT_DOCTOR_OTP={doctor_otp_sid}")
+    else:
+        print("  Warning: TWILIO_CONTENT_DOCTOR_OTP missing — run: npm run push:twilio-templates -- --only=doctor_dashboard_otp --submit-approval")
     status_cb = env.get("TWILIO_STATUS_CALLBACK_URL", "")
     if status_cb:
         secret_args.append(f"TWILIO_STATUS_CALLBACK_URL={status_cb}")
-    code = run_cli(token, secret_args)
+    code = run_cli(token, env, secret_args)
     if code != 0:
         sys.exit("  secrets set failed")
     print("  Secrets uploaded.")
 
     print("\n=== Step 4: Deploying send-sms-hook edge function ===")
-    code = run_cli(token, [
+    code = run_cli(token, env, [
         "functions", "deploy", "send-sms-hook",
         "--project-ref", ref, "--no-verify-jwt", "--use-api",
     ])
@@ -159,10 +205,15 @@ def main() -> None:
     print("  send-sms-hook deployed.")
 
     print("\n=== Step 5: Pushing auth hook config (config.toml) ===")
-    code = run_cli(token, ["config", "push", "--project-ref", ref])
+    code = run_cli(token, env, ["config", "push", "--project-ref", ref])
     if code != 0:
         sys.exit("  config push failed")
     print("  Auth hook enabled via config.toml")
+
+    print("\n=== Step 5b: Force auth hook secret via Management API ===")
+    fn_url = f"https://{ref}.supabase.co/functions/v1/send-sms-hook"
+    if not mgmt_patch_auth(token, ref, hook_secrets, fn_url):
+        print("  Warning: Management API patch failed; hook secret may still be mismatched.")
 
     ok = test_otp_request(env["SUPABASE_URL"], anon_key(env))
 

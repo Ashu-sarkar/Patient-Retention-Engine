@@ -6,8 +6,10 @@ type HookPayload = {
 };
 
 function hookSecret(): string {
-  const raw = Deno.env.get('SEND_SMS_HOOK_SECRETS') || Deno.env.get('SEND_SMS_HOOK_SECRET') || '';
-  return raw.replace(/^v\d+,whsec_/, '');
+  const raw = (Deno.env.get('SEND_SMS_HOOK_SECRETS') || Deno.env.get('SEND_SMS_HOOK_SECRET') || '').trim();
+  if (!raw) return '';
+  // standardwebhooks expects whsec_<base64> or raw base64 after stripping version prefix.
+  return raw.replace(/^v\d+,whsec_/, '').replace(/^whsec_/, '');
 }
 
 function twilioBasicAuth(): string | null {
@@ -31,14 +33,19 @@ function whatsappTo(phone: string): string {
 async function sendWhatsAppOtp(phone: string, otp: string) {
   const auth = twilioBasicAuth();
   const from = whatsappFrom();
+  const contentSid = (Deno.env.get('TWILIO_CONTENT_DOCTOR_OTP') || '').trim();
   if (!auth || !from) {
     throw new Error('Twilio WhatsApp credentials are not configured for send-sms-hook');
+  }
+  if (!contentSid) {
+    throw new Error('TWILIO_CONTENT_DOCTOR_OTP is not configured — required for WhatsApp OTP outside 24h window');
   }
 
   const body = new URLSearchParams({
     To: whatsappTo(phone),
     From: from,
-    Body: `Your VaitalCare doctor dashboard login code is ${otp}. It expires in 10 minutes.`,
+    ContentSid: contentSid,
+    ContentVariables: JSON.stringify({ '1': otp }),
   });
 
   const statusCallback = (Deno.env.get('TWILIO_STATUS_CALLBACK_URL') || '').trim();
@@ -59,8 +66,9 @@ async function sendWhatsAppOtp(phone: string, otp: string) {
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
+    const code = payload.code ? ` (${payload.code})` : '';
     const message = typeof payload.message === 'string'
-      ? payload.message
+      ? `${payload.message}${code}`
       : `Twilio returned HTTP ${response.status}`;
     throw new Error(message);
   }
@@ -78,6 +86,29 @@ function jsonError(status: number, message: string) {
     JSON.stringify({ error: { http_code: status, message } }),
     { status, headers: { 'Content-Type': 'application/json' } },
   );
+}
+
+function normalizePhone(raw: string): string | null {
+  const digits = raw.replace(/\D/g, '');
+  if (!digits) return null;
+  if (raw.trim().startsWith('+')) return `+${digits}`;
+  if (digits.length === 10) return `+91${digits}`;
+  return `+${digits}`;
+}
+
+function extractOtp(event: HookPayload): string {
+  const sms = event.sms as Record<string, unknown> | undefined;
+  const candidates = [
+    sms?.otp,
+    sms?.code,
+    sms?.token,
+    (event as Record<string, unknown>).otp,
+  ];
+  for (const value of candidates) {
+    const token = String(value || '').trim();
+    if (/^\d{4,8}$/.test(token)) return token;
+  }
+  return '';
 }
 
 Deno.serve(async (req) => {
@@ -98,16 +129,19 @@ Deno.serve(async (req) => {
     event = new Webhook(secret).verify(payload, headers) as HookPayload;
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Invalid hook signature';
-    return jsonError(400, message);
+    console.error('send-sms-hook signature verification failed:', message);
+    return jsonError(500, message);
   }
 
-  const phone = String(event.user?.phone || '').trim();
-  const otp = String(event.sms?.otp || '').trim();
+  const phone = normalizePhone(String(event.user?.phone || ''));
+  const otp = extractOtp(event);
   if (!phone || !/^\+\d{8,15}$/.test(phone)) {
-    return jsonError(400, 'A valid E.164 phone number is required');
+    console.error('send-sms-hook invalid phone payload:', JSON.stringify(event.user));
+    return jsonError(500, `Invalid phone in hook payload: ${String(event.user?.phone || '')}`);
   }
-  if (!/^\d{4,8}$/.test(otp)) {
-    return jsonError(400, 'A valid OTP is required');
+  if (!otp) {
+    console.error('send-sms-hook missing otp payload:', JSON.stringify(event.sms));
+    return jsonError(500, 'OTP missing in hook payload');
   }
 
   try {
