@@ -81,6 +81,17 @@ If a profile is missing optional prescription header fields, the dashboard falls
 
 Deploy the `doctor-dashboard/` folder as a static site through Vercel, Netlify, or any HTTPS static host.
 
+### Vercel
+
+In the `vaitalcare-doctor` Vercel project, set **Root Directory** to `doctor-dashboard` (Project Settings → General). Then deploy from that folder:
+
+```bash
+cd doctor-dashboard
+npx vercel --prod
+```
+
+If the project is still linked to the monorepo root, a root-level `vercel.json` rewrite serves the dashboard at `/` until Root Directory is corrected.
+
 ## Workflow
 
 1. Patient scans the QR and submits `patient-form`.

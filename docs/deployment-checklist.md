@@ -5,7 +5,7 @@ This is the minimum data needed to launch the current stack:
 - Frontend:
   - Patient form URL: `https://vaitalcare-patient.vercel.app/`
   - Hospital form URL: `https://vaitalcare-hospital.vercel.app/`
-  - Doctor dashboard URL: `https://vaitalcare-doctor-lcsidnmox-ashu-sarkars-projects.vercel.app/` (or your latest Vercel production alias)
+  - Doctor dashboard URL: `https://vaitalcare-doctor.vercel.app/` (Vercel Root Directory must be `doctor-dashboard`)
 
 - Backend:
   - Railway URL: `https://vaitalcare-production.up.railway.app`
