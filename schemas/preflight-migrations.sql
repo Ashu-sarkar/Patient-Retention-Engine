@@ -1064,6 +1064,9 @@ CREATE POLICY "doctors manage prescription pdfs"
   WITH CHECK (bucket_id = 'prescriptions' AND (storage.foldername(name))[1] = auth.uid()::text);
 
 -- ── Public hospital list (used by patient intake form without auth) ──────────
+-- Return type changed when clinic_id was added; DROP required before CREATE OR REPLACE.
+DROP FUNCTION IF EXISTS public.get_public_hospital_list();
+
 CREATE OR REPLACE FUNCTION public.get_public_hospital_list()
 RETURNS TABLE(hospital_name TEXT, doctor_name TEXT)
 LANGUAGE SQL

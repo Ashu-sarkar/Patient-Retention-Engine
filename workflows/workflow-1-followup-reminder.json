@@ -375,7 +375,8 @@
   "active": false,
   "settings": {
     "executionOrder": "v1",
-    "timezone": "Asia/Kolkata"
+    "timezone": "Asia/Kolkata",
+    "errorWorkflow": "workflow-8-error-handler"
   },
   "versionId": "11111111-1111-1111-1111-111111111101",
   "id": "wf1-followup-reminder",

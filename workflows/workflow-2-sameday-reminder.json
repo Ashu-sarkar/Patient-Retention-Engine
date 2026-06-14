@@ -374,7 +374,8 @@
   },
   "active": false,
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "errorWorkflow": "workflow-8-error-handler"
   },
   "versionId": "22222222-2222-2222-2222-222222222202",
   "id": "wf2-sameday-reminder",

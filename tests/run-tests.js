@@ -18,6 +18,8 @@
 
 const fs   = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+const { Client } = require('pg');
 
 // ── Config ────────────────────────────────────────────────────────────────────
 function parseEnv(filePath) {
@@ -54,6 +56,62 @@ let n8nSessionCookie = '';
 const SB_URL       = env.SUPABASE_URL;
 const SB_KEY       = env.SUPABASE_SERVICE_ROLE_KEY;
 
+function getDbConfig() {
+  const raw = (env.SUPABASE_DATABASE_URL || env.DATABASE_URL || env.SUPABASE_DB_URL || '').trim();
+  if (raw && /^postgres(ql)?:\/\//i.test(raw)) {
+    const u = new URL(raw.replace(/^postgresql:/i, 'postgres:'));
+    return {
+      host    : u.hostname,
+      port    : parseInt(u.port || '5432', 10),
+      user    : decodeURIComponent(u.username),
+      password: decodeURIComponent(u.password),
+      database: (u.pathname || '/postgres').replace(/^\//, '') || 'postgres',
+    };
+  }
+  return {
+    host    : env.SUPABASE_DB_HOST,
+    port    : parseInt(env.SUPABASE_DB_PORT || '5432', 10),
+    user    : env.SUPABASE_DB_USER,
+    password: env.SUPABASE_DB_PASSWORD,
+    database: env.SUPABASE_DB_NAME || 'postgres',
+  };
+}
+
+let pgClient = null;
+let testClinicId = null;
+
+async function pgConnect() {
+  if (pgClient) return pgClient;
+  const cfg = getDbConfig();
+  if (!cfg.host || !cfg.user || !cfg.password) {
+    throw new Error('Missing SUPABASE_DB_* (or SUPABASE_DATABASE_URL) — required for DB verification in tests');
+  }
+  pgClient = new Client({ ...cfg, ssl: { rejectUnauthorized: false } });
+  await pgClient.connect();
+  return pgClient;
+}
+
+async function pgQuery(sql, params = []) {
+  const client = await pgConnect();
+  const res = await client.query(sql, params);
+  return res.rows;
+}
+
+async function pgEnd() {
+  if (pgClient) {
+    await pgClient.end().catch(() => {});
+    pgClient = null;
+  }
+}
+
+async function ensureTestClinicId(clinicName = 'Test Clinic') {
+  if (testClinicId) return testClinicId;
+  const rows = await pgQuery('SELECT public.get_or_create_clinic_id($1)::text AS id', [clinicName]);
+  testClinicId = rows[0]?.id;
+  if (!testClinicId) throw new Error(`Failed to resolve clinic id for "${clinicName}"`);
+  return testClinicId;
+}
+
 // Dedicated test phone numbers (10-digit raw; WF11 prepends +91)
 // Using 900000XXXX range to avoid collision with real patients
 const TP = {
@@ -74,6 +132,31 @@ const HF = {
   secondaryHospital: 'Test Boarding Hospital Beta',
   doctor: 'Dr Boarding',
 };
+
+const TWILIO_VALIDATE_SIG = String(env.TWILIO_VALIDATE_WEBHOOK_SIGNATURE || '').toLowerCase() === 'true';
+const TWILIO_AUTH_TOKEN   = (env.TWILIO_AUTH_TOKEN || '').trim();
+const PATIENT_CODE_RE     = /^[A-Z0-9]+-PAT-\d{4}$/i;
+
+function twilioSignature(webhookPath, params) {
+  const baseUrl = N8N_URL.replace(/\/$/, '');
+  const url = `${baseUrl}/webhook/${webhookPath}`;
+  const signedData = Object.keys(params)
+    .filter(k => params[k] !== undefined && params[k] !== null && typeof params[k] !== 'object')
+    .sort()
+    .reduce((acc, key) => acc + key + String(params[key]), url);
+  return crypto.createHmac('sha1', TWILIO_AUTH_TOKEN).update(signedData).digest('base64');
+}
+
+function formatDateValue(value) {
+  if (!value) return '';
+  if (value instanceof Date) {
+    const y = value.getFullYear();
+    const m = String(value.getMonth() + 1).padStart(2, '0');
+    const d = String(value.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  return String(value).slice(0, 10);
+}
 
 const FACILITY_TYPE = 'Pathology Lab';
 
@@ -179,66 +262,112 @@ async function wh(webhookPath, method = 'POST', body = null, extraHeaders = {}) 
   return { status: res.status, ok: res.ok, json, text };
 }
 
-// ── Supabase REST helpers ─────────────────────────────────────────────────────
-const SB_HDR = {
-  apikey        : SB_KEY,
-  Authorization : `Bearer ${SB_KEY}`,
-  'Content-Type': 'application/json',
-  Prefer        : 'return=representation',
-};
+/** Twilio sends form-urlencoded; sign when TWILIO_VALIDATE_WEBHOOK_SIGNATURE=true. */
+async function whTwilio(webhookPath, params = {}) {
+  const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
+  // Always sign when auth token is available — production n8n may validate even if local .env flag is false.
+  if (TWILIO_AUTH_TOKEN) {
+    headers['X-Twilio-Signature'] = twilioSignature(webhookPath, params);
+  } else if (TWILIO_VALIDATE_SIG) {
+    throw new Error('TWILIO_VALIDATE_WEBHOOK_SIGNATURE=true but TWILIO_AUTH_TOKEN is missing in .env');
+  }
+  const res = await fetch(`${N8N_URL}/webhook/${webhookPath}`, {
+    method : 'POST',
+    headers,
+    body   : new URLSearchParams(params).toString(),
+    signal : AbortSignal.timeout(15000),
+  });
+  const text = await res.text();
+  let json; try { json = JSON.parse(text); } catch { json = { _raw: text }; }
+  return { status: res.status, ok: res.ok, json, text };
+}
 
-async function sbGet(table, qs = '') {
-  const res = await fetch(`${SB_URL}/rest/v1/${table}?${qs}`, { headers: SB_HDR });
+// ── Supabase DB helpers (Postgres — same path n8n workflows use) ─────────────
+
+async function sbGet(table, _qs = '') {
+  // Legacy REST helper kept for table-existence smoke checks when REST key works.
+  const SB_HDR = {
+    apikey        : SB_KEY,
+    Authorization : `Bearer ${SB_KEY}`,
+    'Content-Type': 'application/json',
+  };
+  const res = await fetch(`${SB_URL}/rest/v1/${table}?select=id&limit=1`, { headers: SB_HDR });
+  if (!res.ok) {
+    const rows = await pgQuery(`SELECT 1 FROM public.${table.replace(/[^a-z_]/gi, '')} LIMIT 1`).catch(() => null);
+    if (rows) return rows;
+    return { message: `table probe failed (${res.status})` };
+  }
   return res.json().catch(() => []);
 }
 
 async function sbInsert(table, row) {
-  const res = await fetch(`${SB_URL}/rest/v1/${table}`, {
-    method : 'POST',
-    headers: SB_HDR,
-    body   : JSON.stringify(row),
-  });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`Supabase insert failed: ${JSON.stringify(json)}`);
-  return json;
+  const cols = Object.keys(row);
+  const vals = Object.values(row);
+  const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ');
+  const sql = `INSERT INTO public.${table} (${cols.join(', ')}) VALUES (${placeholders}) RETURNING *`;
+  const rows = await pgQuery(sql, vals);
+  return rows[0] || rows;
 }
 
 async function sbDelete(table, filter) {
-  await fetch(`${SB_URL}/rest/v1/${table}?${filter}`, { method: 'DELETE', headers: SB_HDR });
+  // filter format: phone=eq.+919000000001 or twilio_message_sid=eq.SM...
+  const m = filter.match(/^([a-z_]+)=eq\.(.+)$/i);
+  if (!m) return;
+  await pgQuery(`DELETE FROM public.${table} WHERE ${m[1]} = $1`, [decodeURIComponent(m[2])]);
 }
 
 // Convenience wrappers
-async function getPatient(phone) {
-  const rows = await sbGet('patients', `phone=eq.${encodeURIComponent(phone)}&select=*`);
-  return Array.isArray(rows) ? rows[0] || null : null;
+async function getPatient(phone, clinicId = null) {
+  if (clinicId) {
+    const rows = await pgQuery(
+      'SELECT * FROM public.patients WHERE phone = $1 AND clinic_id = $2::uuid LIMIT 1',
+      [phone, clinicId]
+    );
+    return rows[0] || null;
+  }
+  const rows = await pgQuery(
+    'SELECT * FROM public.patients WHERE phone = $1 ORDER BY updated_at DESC LIMIT 1',
+    [phone]
+  );
+  return rows[0] || null;
 }
 
 async function getHospitalBoarding(hospitalName) {
-  const rows = await sbGet('hospital_boarding',
-    `hospital_name=eq.${encodeURIComponent(hospitalName)}&order=created_at.desc&select=*`);
-  return Array.isArray(rows) ? rows[0] || null : null;
+  const rows = await pgQuery(
+    'SELECT * FROM public.hospital_boarding WHERE hospital_name = $1 ORDER BY created_at DESC LIMIT 1',
+    [hospitalName]
+  );
+  return rows[0] || null;
 }
 
 async function getLatestVisitByPatient(patientId) {
-  const rows = await sbGet('patient_visits',
-    `patient_id=eq.${encodeURIComponent(patientId)}&order=checked_in_at.desc&select=*`);
-  return Array.isArray(rows) ? rows[0] || null : null;
+  const rows = await pgQuery(
+    'SELECT * FROM public.patient_visits WHERE patient_id = $1::uuid ORDER BY checked_in_at DESC LIMIT 1',
+    [patientId]
+  );
+  return rows[0] || null;
 }
 
 async function recentSystemLogs(workflowName, windowSec = 45) {
-  const since = new Date(Date.now() - windowSec * 1000).toISOString();
-  const rows  = await sbGet('system_logs',
-    `workflow_name=eq.${workflowName}&timestamp=gte.${since}&order=timestamp.desc`);
-  return Array.isArray(rows) ? rows : [];
+  const rows = await pgQuery(
+    `SELECT * FROM public.system_logs
+     WHERE workflow_name = $1
+       AND timestamp >= NOW() - ($2::text || ' seconds')::interval
+     ORDER BY timestamp DESC`,
+    [workflowName, String(windowSec)]
+  );
+  return rows;
 }
 
 async function seedPatient(phone, extra = {}) {
-  // Upsert: delete first to avoid conflict, then insert
-  await sbDelete('patients', `phone=eq.${encodeURIComponent(phone)}`);
-  return sbInsert('patients', {
+  const clinicName = extra.clinic_name || 'Test Clinic';
+  const clinicId = extra.clinic_id || await ensureTestClinicId(clinicName);
+  await pgQuery('DELETE FROM public.patients WHERE phone = $1 AND clinic_id = $2::uuid', [phone, clinicId]);
+  const row = {
+    clinic_id         : clinicId,
     name              : extra.name       || `Test ${phone}`,
     phone,
-    clinic_name       : extra.clinic_name || 'Test Clinic',
+    clinic_name       : clinicName,
     doctor_name       : extra.doctor_name || 'Dr Test',
     visit_date        : extra.visit_date  || date(-1),
     follow_up_required: extra.follow_up_required || 'No',
@@ -248,7 +377,8 @@ async function seedPatient(phone, extra = {}) {
     health_check_sent : extra.health_check_sent  ?? false,
     reactivation_sent : extra.reactivation_sent  ?? false,
     last_message_sent : extra.last_message_sent  || null,
-  });
+  };
+  return sbInsert('patients', row);
 }
 
 async function cleanup() {
@@ -258,10 +388,10 @@ async function cleanup() {
     `+91${TP.e2e}`,
   ];
   for (const phone of phones) {
-    await sbDelete('patients', `phone=eq.${encodeURIComponent(phone)}`).catch(() => {});
+    await pgQuery('DELETE FROM public.patients WHERE phone = $1', [phone]).catch(() => {});
   }
   for (const hospitalName of [HF.primaryHospital, HF.secondaryHospital]) {
-    await sbDelete('hospital_boarding', `hospital_name=eq.${encodeURIComponent(hospitalName)}`).catch(() => {});
+    await pgQuery('DELETE FROM public.hospital_boarding WHERE hospital_name = $1', [hospitalName]).catch(() => {});
   }
 }
 
@@ -306,9 +436,9 @@ async function main() {
   // ── §1 Infrastructure ────────────────────────────────────────────────────
   section('§1  Infrastructure');
 
-  await test('1.1  Supabase REST API reachable', async () => {
-    const rows = await sbGet('patients', 'select=id&limit=1');
-    assert(Array.isArray(rows), `Unexpected response: ${JSON.stringify(rows)}`);
+  await test('1.1  Supabase Postgres reachable', async () => {
+    const rows = await pgQuery('SELECT id FROM public.patients LIMIT 1');
+    assert(Array.isArray(rows), 'Postgres query failed — check SUPABASE_DB_* in .env');
   });
 
   await test('1.2  n8n health endpoint reachable', async () => {
@@ -344,29 +474,15 @@ async function main() {
   });
 
   await test('1.5  Supabase tables exist for retention + doctor dashboard', async () => {
-    const [p, m, s, h, l, dp, pv, pr, pm, al] = await Promise.all([
-      sbGet('patients',     'select=id&limit=1'),
-      sbGet('message_logs', 'select=log_id&limit=1'),
-      sbGet('system_logs',  'select=log_id&limit=1'),
-      sbGet('hospital_boarding', 'select=id&limit=1'),
-      sbGet('message_ledger', 'select=id&limit=1'),
-      sbGet('doctor_profiles', 'select=id&limit=1'),
-      sbGet('patient_visits', 'select=id&limit=1'),
-      sbGet('prescriptions', 'select=id&limit=1'),
-      sbGet('prescription_medicines', 'select=id&limit=1'),
-      sbGet('prescription_audit_logs', 'select=id&limit=1'),
-    ]);
-    assert(Array.isArray(p), 'patients table missing or inaccessible');
-    assert(Array.isArray(m), 'message_logs table missing or inaccessible');
-    assert(Array.isArray(s), 'system_logs table missing or inaccessible');
-    assert(Array.isArray(h),
-      'hospital_boarding missing or PostgREST cache stale. Run schemas/migration-align-legacy-schema.sql (or migration-add-hospital-boarding.sql) in Supabase SQL Editor, then reload schema.');
-    assert(Array.isArray(l), 'message_ledger table missing or inaccessible');
-    assert(Array.isArray(dp), 'doctor_profiles table missing or inaccessible');
-    assert(Array.isArray(pv), 'patient_visits table missing or inaccessible');
-    assert(Array.isArray(pr), 'prescriptions table missing or inaccessible');
-    assert(Array.isArray(pm), 'prescription_medicines table missing or inaccessible');
-    assert(Array.isArray(al), 'prescription_audit_logs table missing or inaccessible');
+    const tables = [
+      'patients', 'message_logs', 'system_logs', 'hospital_boarding', 'message_ledger',
+      'doctor_profiles', 'patient_visits', 'prescriptions', 'prescription_medicines',
+      'prescription_audit_logs',
+    ];
+    for (const table of tables) {
+      const rows = await pgQuery(`SELECT 1 FROM public.${table} LIMIT 1`);
+      assert(Array.isArray(rows), `${table} table missing or inaccessible`);
+    }
   });
 
   // ── §2  WF12 — Hospital Boarding ─────────────────────────────────────────
@@ -451,14 +567,14 @@ async function main() {
   // ── §3  WF11 — QR Form Intake ────────────────────────────────────────────
   section('§3  WF11 — QR Form Intake  (POST /webhook/patient-form-intake)');
 
-  // Base valid payload
+  // Base valid payload — must match a boarded hospital/doctor from §2 (shared_qr mode)
   const BASE = {
     patient_name     : 'Test Patient Alpha',
     phone_number     : TP.wf11_new,          // 10 digits, no +91
     dob              : '1990-05-20',
     sex              : 'Male',
-    hospital_name    : 'Test Hospital',
-    doctor_name      : 'Dr Alpha',
+    hospital_name    : HF.primaryHospital,
+    doctor_name      : HF.doctor,
     visit_date       : date(-1),             // yesterday
   };
 
@@ -475,7 +591,7 @@ async function main() {
     const pat = await getPatient(`+91${TP.wf11_new}`);
     assert(pat, `Patient +91${TP.wf11_new} not found in Supabase`);
     assert(pat.name === 'Test Patient Alpha', `Name mismatch: "${pat.name}"`);
-    assert(pat.patient_code?.startsWith('PAT-'), `patient_code looks wrong: ${pat.patient_code}`);
+    assert(pat.patient_code?.match(PATIENT_CODE_RE), `patient_code looks wrong: ${pat.patient_code}`);
     assert(pat.status === 'pending', `Expected status=pending, got ${pat.status}`);
     assert(pat.follow_up_required === 'No', 'follow_up_required should default to No until prescription issue');
     assert(!pat.follow_up_date, `follow_up_date should be empty until prescription issue, got ${pat.follow_up_date}`);
@@ -499,16 +615,28 @@ async function main() {
       'No system_log from WF11 — check Supabase credentials are set in n8n');
   });
 
-  await test('2.4  Validation: missing required fields → 400 + errors[]', async () => {
+  await test('2.5  Validation: unknown hospital/doctor → 400 with clinic resolution error', async () => {
     const { status, json } = await wh('patient-form-intake', 'POST', {
-      patient_name: 'AB',          // too short, other fields missing
+      ...BASE,
+      phone_number: '9000099990',
+      hospital_name: 'Nonexistent Hospital XYZ',
+      doctor_name: 'Dr Nobody',
     });
     assert(status === 400, `Expected 400, got ${status}`);
+    assert(Array.isArray(json.errors) && json.errors.length > 0,
+      `Expected clinic resolution error: ${JSON.stringify(json)}`);
+  });
+
+  await test('2.6  Validation: missing required fields → 400 + errors[]', async () => {
+    const { status, json } = await wh('patient-form-intake', 'POST', {
+      patient_name: 'A',          // too short, other fields missing
+    });
+    assert(status === 400, `Expected 400, got ${status}: ${JSON.stringify(json)}`);
     assert(Array.isArray(json.errors) && json.errors.length > 0,
       `Expected non-empty errors[]: ${JSON.stringify(json)}`);
   });
 
-  await test('2.5  Validation: phone not 10 digits → 400', async () => {
+  await test('2.7  Validation: phone not 10 digits → 400', async () => {
     const { status, json } = await wh('patient-form-intake', 'POST', {
       ...BASE, phone_number: '12345',
     });
@@ -516,7 +644,7 @@ async function main() {
     assert(JSON.stringify(json.errors).includes('phone'), `Expected phone error: ${JSON.stringify(json)}`);
   });
 
-  await test('2.6  Validation: future visit_date → 400', async () => {
+  await test('2.8  Validation: future visit_date → 400', async () => {
     const { status, json } = await wh('patient-form-intake', 'POST', {
       ...BASE, phone_number: '9000099991', visit_date: date(2),
     });
@@ -524,7 +652,7 @@ async function main() {
     assert(JSON.stringify(json.errors).includes('visit_date'), `Expected visit_date error`);
   });
 
-  await test('2.7  Intake ignores stray follow-up fields from old clients', async () => {
+  await test('2.9  Intake ignores stray follow-up fields from old clients', async () => {
     const { status, json } = await wh('patient-form-intake', 'POST', {
       ...BASE, phone_number: '9000099992', follow_up_required: 'Yes', follow_up_date: '',
     });
@@ -535,23 +663,23 @@ async function main() {
     assert(!pat?.follow_up_date, `follow_up_date should remain empty, got ${pat?.follow_up_date}`);
   });
 
-  await test('2.8  Validation: invalid sex value → 400', async () => {
+  await test('2.10 Validation: invalid sex value → 400', async () => {
     const { status, json } = await wh('patient-form-intake', 'POST', {
       ...BASE, phone_number: '9000099993', sex: 'Robot',
     });
     assert(status === 400, `Expected 400, got ${status}`);
   });
 
-  await test('2.9  Duplicate phone → 200 (upsert updates existing record)', async () => {
-    const updated = { ...BASE, patient_name: 'Test Patient Alpha Updated', doctor_name: 'Dr Beta' };
+  await test('2.11 Duplicate phone → 200 (upsert updates existing record)', async () => {
+    const updated = { ...BASE, patient_name: 'Test Patient Alpha Updated' };
     const { status, json } = await wh('patient-form-intake', 'POST', updated);
     assert(status === 200, `Expected 200, got ${status}: ${JSON.stringify(json)}`);
     await sleep(1200);
     const pat = await getPatient(`+91${TP.wf11_new}`);
-    assert(pat?.doctor_name === 'Dr Beta', `Expected Dr Beta, got "${pat?.doctor_name}"`);
+    assert(pat?.name === 'Test Patient Alpha Updated', `Expected updated name, got "${pat?.name}"`);
   });
 
-  await test('2.10 SQL injection in name handled safely', async () => {
+  await test('2.12 SQL injection in name handled safely', async () => {
     const { status } = await wh('patient-form-intake', 'POST', {
       ...BASE, phone_number: TP.wf11_sql,
       patient_name: "Robert'); DROP TABLE patients; --",
@@ -559,7 +687,7 @@ async function main() {
     // 400 (name too risky) OR 200 (SQL escaped) — either is acceptable
     // but the table must still exist
     await sleep(500);
-    const rows = await sbGet('patients', 'select=id&limit=1');
+    const rows = await pgQuery('SELECT id FROM public.patients LIMIT 1');
     assert(Array.isArray(rows), '🚨 patients table gone — SQL injection succeeded!');
     assert([200, 400].includes(status), `Unexpected status ${status}`);
   });
@@ -617,6 +745,11 @@ async function main() {
   // ── §5  WF6 — Feedback Listener ──────────────────────────────────────────
   section('§5  WF6 — Feedback Listener  (POST /webhook/feedback-listener)');
 
+  if (TWILIO_VALIDATE_SIG) {
+    console.log('  Note: TWILIO_VALIDATE_WEBHOOK_SIGNATURE=true — tests sign callbacks with local TWILIO_AUTH_TOKEN.');
+    console.log('        It must match the token configured on production n8n (Railway) or WF6/WF9 tests will no-op.\n');
+  }
+
   // Seed a known patient for WF6 tests
   await seedPatient(TP.wf6, {
     name              : 'WF6 Test Patient',
@@ -634,7 +767,7 @@ async function main() {
     await seedPatient(TP.wf6, { name: 'WF6 Test Patient', message_count: 1, status: 'pending' });
     await sleep(300);
 
-    const { status } = await wh('feedback-listener', 'POST', twilioMsg(TP.wf6, 'Yes, I will come'));
+    const { status } = await whTwilio('feedback-listener', twilioMsg(TP.wf6, 'Yes, I will come'));
     assert([200, 202].includes(status), `Expected 200, got ${status}`);
     await sleep(2500);
     const pat = await getPatient(TP.wf6);
@@ -645,7 +778,7 @@ async function main() {
   });
 
   await test('4.2  POST cancelled Twilio message → response_status = cancelled in DB', async () => {
-    const { status } = await wh('feedback-listener', 'POST',
+    const { status } = await whTwilio('feedback-listener',
       twilioMsg(TP.wf6, 'No, please cancel my appointment'));
     assert([200, 202].includes(status), `Expected 200, got ${status}`);
     await sleep(2000);
@@ -656,7 +789,7 @@ async function main() {
 
   await test('4.3  POST from unknown number → WARN logged in system_logs', async () => {
     const before = await recentSystemLogs('workflow-6-feedback-listener');
-    const { status } = await wh('feedback-listener', 'POST',
+    const { status } = await whTwilio('feedback-listener',
       twilioMsg('+919999999999', 'Hello there'));
     assert([200, 202].includes(status), `Expected 200, got ${status}`);
     await sleep(2000);
@@ -666,7 +799,7 @@ async function main() {
   });
 
   await test('4.4  POST blank Twilio message → skipped gracefully', async () => {
-    const { status } = await wh('feedback-listener', 'POST', twilioMsg(TP.wf6, '', { NumMedia: '0' }));
+    const { status } = await whTwilio('feedback-listener', twilioMsg(TP.wf6, '', { NumMedia: '0' }));
     assert([200, 202].includes(status), `Expected graceful 200, got ${status}`);
   });
 
@@ -676,7 +809,7 @@ async function main() {
     await seedPatient(TP.wf6, { name: 'WF6 Test Patient', message_count: 1, status: 'pending' });
     await sleep(300);
 
-    await wh('feedback-listener', 'POST', twilioMsg(TP.wf6, 'I need urgent help'));
+    await whTwilio('feedback-listener', twilioMsg(TP.wf6, 'I need urgent help'));
     await sleep(2000);
     const pat = await getPatient(TP.wf6);
     // "help" maps to response_status = 'responded' (the generic fallback in WF6)
@@ -690,6 +823,7 @@ async function main() {
     const sid = 'SM99999999999999999999999999999999';
     await sbDelete('message_logs', `twilio_message_sid=eq.${encodeURIComponent(sid)}`).catch(() => {});
     await sbInsert('message_logs', {
+      clinic_id: pat.clinic_id,
       patient_id: pat.id,
       patient_name: pat.name,
       phone: pat.phone,
@@ -701,10 +835,13 @@ async function main() {
       provider_message_id: sid,
       twilio_message_sid: sid,
     });
-    const { status } = await wh('twilio-status-callback', 'POST', twilioStatus(sid, 'delivered'));
+    const { status } = await whTwilio('twilio-status-callback', twilioStatus(sid, 'delivered'));
     assert([200, 202].includes(status), `Expected 200/202, got ${status}`);
     await sleep(1200);
-    const rows = await sbGet('message_logs', `twilio_message_sid=eq.${encodeURIComponent(sid)}&select=delivery_status`);
+    const rows = await pgQuery(
+      'SELECT delivery_status FROM public.message_logs WHERE twilio_message_sid = $1 LIMIT 1',
+      [sid]
+    );
     assert(rows[0]?.delivery_status === 'delivered',
       `Expected delivery_status=delivered, got ${rows[0]?.delivery_status}`);
   });
@@ -713,66 +850,63 @@ async function main() {
   section('§6  Cron Workflow Filtering Logic (Supabase query simulation)');
   console.log('  Seeding test patients for each cron scenario …');
 
-  // Seed all cron test patients (parallel for speed)
-  await Promise.all([
-    // WF1: follow_up = tomorrow, pending, message_count < 5
-    seedPatient(TP.wf1, { name: 'WF1 Patient', follow_up_required: 'Yes',
-      follow_up_date: date(1), status: 'pending', message_count: 0 }),
-
-    // WF2: follow_up = today, pending, message_count < 5
-    seedPatient(TP.wf2, { name: 'WF2 Patient', follow_up_required: 'Yes',
-      follow_up_date: date(0), status: 'pending', message_count: 0 }),
-
-    // WF3: follow_up_date in past, status != completed/inactive
-    seedPatient(TP.wf3, { name: 'WF3 Patient', follow_up_required: 'Yes',
-      follow_up_date: date(-5), status: 'pending', message_count: 0 }),
-
-    // WF4: visit_date 2 days ago, health_check_sent = false, status != inactive
-    seedPatient(TP.wf4, { name: 'WF4 Patient', visit_date: date(-2),
-      health_check_sent: false, status: 'pending', message_count: 1 }),
-
-    // WF5: last_message_sent > 30 days ago, reactivation_sent = false
-    seedPatient(TP.wf5, { name: 'WF5 Patient',
-      last_message_sent: new Date(Date.now() - 35 * 86400000).toISOString(),
-      reactivation_sent: false, status: 'pending', message_count: 2 }),
-  ]);
+  // Seed all cron test patients sequentially (single pg client)
+  for (const [phone, extra] of [
+    [TP.wf1, { name: 'WF1 Patient', follow_up_required: 'Yes', follow_up_date: date(1), status: 'pending', message_count: 0 }],
+    [TP.wf2, { name: 'WF2 Patient', follow_up_required: 'Yes', follow_up_date: date(0), status: 'pending', message_count: 0 }],
+    [TP.wf3, { name: 'WF3 Patient', follow_up_required: 'Yes', follow_up_date: date(-5), status: 'pending', message_count: 0 }],
+    [TP.wf4, { name: 'WF4 Patient', visit_date: date(-2), health_check_sent: false, status: 'pending', message_count: 1 }],
+    [TP.wf5, { name: 'WF5 Patient', last_message_sent: new Date(Date.now() - 35 * 86400000).toISOString(), reactivation_sent: false, status: 'pending', message_count: 2 }],
+  ]) {
+    await seedPatient(phone, extra);
+  }
   await sleep(800);
   console.log('  Seed complete.\n');
 
   await test('5.1  WF1 — patient with follow_up_date=tomorrow & status=pending is queryable', async () => {
-    const rows = await sbGet('patients',
-      `phone=eq.${encodeURIComponent(TP.wf1)}&status=eq.pending&follow_up_date=eq.${date(1)}&select=id,name,follow_up_date`
+    const rows = await pgQuery(
+      `SELECT id, name, follow_up_date FROM public.patients
+       WHERE phone = $1 AND status = 'pending' AND follow_up_date = $2::date`,
+      [TP.wf1, date(1)]
     );
     assert(rows.length > 0, `WF1 SQL would find 0 patients. Check seed or DB timezone.`);
-    assert(rows[0].follow_up_date?.startsWith(date(1)), `follow_up_date mismatch: ${rows[0].follow_up_date}`);
+    assert(formatDateValue(rows[0].follow_up_date) === date(1), `follow_up_date mismatch: ${rows[0].follow_up_date}`);
   });
 
   await test('5.2  WF2 — patient with follow_up_date=today & status=pending is queryable', async () => {
-    const rows = await sbGet('patients',
-      `phone=eq.${encodeURIComponent(TP.wf2)}&status=eq.pending&follow_up_date=eq.${date(0)}&select=id,name,follow_up_date`
+    const rows = await pgQuery(
+      `SELECT id, name, follow_up_date FROM public.patients
+       WHERE phone = $1 AND status = 'pending' AND follow_up_date = $2::date`,
+      [TP.wf2, date(0)]
     );
     assert(rows.length > 0, 'WF2 SQL would find 0 patients');
   });
 
   await test('5.3  WF3 — patient with past follow_up_date (not completed/inactive) is queryable', async () => {
-    const rows = await sbGet('patients',
-      `phone=eq.${encodeURIComponent(TP.wf3)}&status=neq.completed&status=neq.inactive&follow_up_date=lt.${date(0)}&select=id,name,follow_up_date,status`
+    const rows = await pgQuery(
+      `SELECT id, name, follow_up_date, status FROM public.patients
+       WHERE phone = $1 AND status NOT IN ('completed', 'inactive') AND follow_up_date < $2::date`,
+      [TP.wf3, date(0)]
     );
     assert(rows.length > 0, 'WF3 SQL would find 0 patients');
     assert(rows[0].status === 'pending', `Expected pending, got ${rows[0].status}`);
   });
 
   await test('5.4  WF4 — patient who visited 2 days ago with health_check_sent=false is queryable', async () => {
-    const rows = await sbGet('patients',
-      `phone=eq.${encodeURIComponent(TP.wf4)}&health_check_sent=eq.false&status=neq.inactive&select=id,name,visit_date,health_check_sent`
+    const rows = await pgQuery(
+      `SELECT id, name, visit_date, health_check_sent FROM public.patients
+       WHERE phone = $1 AND health_check_sent = false AND status <> 'inactive'`,
+      [TP.wf4]
     );
     assert(rows.length > 0, 'WF4 SQL would find 0 patients');
     assert(rows[0].health_check_sent === false, 'health_check_sent should be false');
   });
 
   await test('5.5  WF5 — patient with last_message > 30 days & reactivation_sent=false is queryable', async () => {
-    const rows = await sbGet('patients',
-      `phone=eq.${encodeURIComponent(TP.wf5)}&reactivation_sent=eq.false&status=neq.inactive&status=neq.completed&select=id,name,last_message_sent,reactivation_sent`
+    const rows = await pgQuery(
+      `SELECT id, name, last_message_sent, reactivation_sent FROM public.patients
+       WHERE phone = $1 AND reactivation_sent = false AND status NOT IN ('inactive', 'completed')`,
+      [TP.wf5]
     );
     assert(rows.length > 0, 'WF5 SQL would find 0 patients');
     const lastSent = new Date(rows[0].last_message_sent);
@@ -781,27 +915,27 @@ async function main() {
   });
 
   await test('5.6  WF1 skips patient already at message_count=5', async () => {
-    // Temporarily bump message_count to 5 and verify query excludes them
     await seedPatient(TP.wf1, { name: 'WF1 Max Msg', follow_up_required: 'Yes',
       follow_up_date: date(1), status: 'pending', message_count: 5 });
     await sleep(300);
-    const rows = await sbGet('patients',
-      `phone=eq.${encodeURIComponent(TP.wf1)}&message_count=lt.5&select=id`
+    const rows = await pgQuery(
+      'SELECT id FROM public.patients WHERE phone = $1 AND message_count < 5',
+      [TP.wf1]
     );
     assert(rows.length === 0, 'Patient with message_count=5 should be EXCLUDED by WF1 filter');
-    // Restore to message_count=0 for cleanup
     await seedPatient(TP.wf1, { name: 'WF1 Patient', follow_up_required: 'Yes',
       follow_up_date: date(1), status: 'pending', message_count: 0 });
   });
 
   await test('5.7  WF3 marks patient as "missed" after 7+ days past follow_up_date', async () => {
-    // Seed a patient 7+ days past follow_up_date to test the day+7 logic
     const phone = TP.wf3;
     await seedPatient(phone, { name: 'WF3 7day Patient', follow_up_required: 'Yes',
       follow_up_date: date(-8), status: 'pending', message_count: 2 });
     await sleep(300);
-    const rows = await sbGet('patients',
-      `phone=eq.${encodeURIComponent(phone)}&follow_up_date=lt.${date(-6)}&status=eq.pending&select=id,name,follow_up_date`
+    const rows = await pgQuery(
+      `SELECT id, name, follow_up_date FROM public.patients
+       WHERE phone = $1 AND follow_up_date < $2::date AND status = 'pending'`,
+      [phone, date(-6)]
     );
     assert(rows.length > 0, 'WF3 7-day patient should be found by the missed-7-day query');
   });
@@ -855,14 +989,14 @@ async function main() {
       phone_number      : TP.e2e,
       dob               : '1985-03-10',
       sex               : 'Female',
-      hospital_name     : 'E2E Hospital',
-      doctor_name       : 'Dr E2E',
+      hospital_name     : HF.primaryHospital,
+      doctor_name       : HF.doctor,
       visit_date        : date(-1),
     });
     assert(status === 200, `Form submit failed: ${status} ${JSON.stringify(json)}`);
     assert(json.status === 'success', `Expected success: ${JSON.stringify(json)}`);
     e2ePatientCode = json.patient_code;
-    assert(e2ePatientCode?.match(/^PAT-\d{4}$/), `Bad patient_code format: ${e2ePatientCode}`);
+    assert(e2ePatientCode?.match(PATIENT_CODE_RE), `Bad patient_code format: ${e2ePatientCode}`);
     assert(json.visit_id, `Missing visit_id: ${JSON.stringify(json)}`);
     console.log(`\n       Patient code: ${e2ePatientCode}`);
   });
@@ -897,7 +1031,7 @@ async function main() {
     const pat = await getPatient(`+91${TP.e2e}`);
     assert(pat, 'Patient not found');
 
-    const { status } = await wh('feedback-listener', 'POST',
+    const { status } = await whTwilio('feedback-listener',
       twilioMsg(`+91${TP.e2e}`, 'Yes I will come'));
     assert([200, 202].includes(status), `WF6 returned ${status}`);
 
@@ -912,8 +1046,8 @@ async function main() {
     const { status, json } = await wh('patient-form-intake', 'POST', {
       patient_name      : 'E2E Test Patient Re-reg',
       phone_number      : TP.e2e,
-      hospital_name     : 'E2E Hospital 2',
-      doctor_name       : 'Dr New',
+      hospital_name     : HF.primaryHospital,
+      doctor_name       : HF.doctor,
       visit_date        : date(0),
     });
     assert(status === 200, `Re-reg failed: ${status} ${JSON.stringify(json)}`);
@@ -922,7 +1056,7 @@ async function main() {
     assert(pat?.status === 'pending', `Re-reg should reset status to pending, got ${pat?.status}`);
     assert(pat?.follow_up_required === 'No', `Re-reg should reset follow_up_required to No, got ${pat?.follow_up_required}`);
     assert(!pat?.follow_up_date, `Re-reg should clear follow_up_date, got ${pat?.follow_up_date}`);
-    assert(pat?.doctor_name === 'Dr New', `doctor_name not updated: ${pat?.doctor_name}`);
+    assert(pat?.doctor_name === HF.doctor, `doctor_name not preserved: ${pat?.doctor_name}`);
     assert(pat?.health_check_sent === false, 'health_check_sent should reset to false');
   });
 
@@ -945,11 +1079,13 @@ async function main() {
     failures.forEach((f, i) => console.log(`  ${i + 1}. ${f.msg}\n     ${f.detail}`));
   }
   console.log('');
+  await pgEnd();
   process.exit(failed > 0 ? 1 : 0);
 }
 
-main().catch(e => {
+main().catch(async e => {
   console.error('\n❌ Unexpected error:', e.message);
   console.error(e.stack);
+  await pgEnd();
   process.exit(1);
 });

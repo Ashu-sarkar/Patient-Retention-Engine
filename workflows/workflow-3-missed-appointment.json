@@ -582,7 +582,8 @@
   },
   "active": false,
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "errorWorkflow": "workflow-8-error-handler"
   },
   "versionId": "33333333-3333-3333-3333-333333333303",
   "id": "wf3-missed-appointment",

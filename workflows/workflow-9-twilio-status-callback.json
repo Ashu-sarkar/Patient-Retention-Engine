@@ -36,7 +36,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const input = $input.first().json;\nconst body = input.body || input;\nconst headers = input.headers || {};\nconst header = name => headers[name] || headers[name.toLowerCase()] || headers[name.toUpperCase()] || '';\n\nasync function hmacSha1Base64(secret, data) {\n  if (typeof require === 'function') {\n    try {\n      return require('crypto').createHmac('sha1', secret).update(data).digest('base64');\n    } catch (_) {}\n  }\n  if (globalThis.crypto?.subtle) {\n    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);\n    const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));\n    return btoa(String.fromCharCode(...new Uint8Array(signature)));\n  }\n  throw new Error('No HMAC implementation available for Twilio signature validation');\n}\n\nasync function validateTwilioSignature(webhookPath) {\n  if (String($env.TWILIO_VALIDATE_WEBHOOK_SIGNATURE || '').toLowerCase() !== 'true') return true;\n  const signature = String(header('x-twilio-signature') || '').trim();\n  const authToken = String($env.TWILIO_AUTH_TOKEN || '').trim();\n  const baseUrl = String($env.WEBHOOK_URL || '').replace(/\\/$/, '');\n  if (!signature || !authToken || !baseUrl) return false;\n  const url = baseUrl + '/webhook/' + webhookPath;\n  const signedData = Object.keys(body)\n    .filter(key => body[key] !== undefined && body[key] !== null && typeof body[key] !== 'object')\n    .sort()\n    .reduce((acc, key) => acc + key + String(body[key]), url);\n  const expected = await hmacSha1Base64(authToken, signedData);\n  if (expected.length !== signature.length) return false;\n  let diff = 0;\n  for (let i = 0; i < expected.length; i += 1) diff |= expected.charCodeAt(i) ^ signature.charCodeAt(i);\n  return diff === 0;\n}\n\nif (!(await validateTwilioSignature('twilio-status-callback'))) {\n  return [{ json: { _skip: true, reason: 'Invalid Twilio webhook signature' } }];\n}\n\nconst sid = String(body.MessageSid || body.SmsSid || body.SmsMessageSid || '').trim();\nconst rawStatus = String(body.MessageStatus || body.SmsStatus || body.status || '').toLowerCase().trim();\nconst errorCode = String(body.ErrorCode || '').trim();\nconst errorMessage = String(body.ErrorMessage || '').trim();\nconst map = {\n  queued: 'queued', accepted: 'queued', scheduled: 'queued', sending: 'queued',\n  sent: 'sent', delivered: 'delivered', read: 'read',\n  failed: 'failed', undelivered: 'undelivered', canceled: 'failed'\n};\nconst status = map[rawStatus] || 'sent';\nreturn [{ json: { _message_sid: sid, _status: status, _raw_status: rawStatus, _error_code: errorCode, _error_message: errorMessage, _received_at: new Date().toISOString(), _skip: !sid } }];"
+        "jsCode": "const input = $input.first().json;\nfunction getTwilioBody(raw) {\n  if (raw.body && typeof raw.body === 'object' && !Array.isArray(raw.body)) return raw.body;\n  const skip = new Set(['headers', 'params', 'query', 'body', 'webhookUrl', 'executionMode']);\n  const extracted = {};\n  for (const [key, value] of Object.entries(raw)) {\n    if (skip.has(key)) continue;\n    if (value === undefined || value === null || typeof value === 'object') continue;\n    extracted[key] = value;\n  }\n  return Object.keys(extracted).length ? extracted : raw;\n}\nconst body = getTwilioBody(input);\nconst headers = input.headers || {};\nconst header = name => headers[name] || headers[name.toLowerCase()] || headers[name.toUpperCase()] || '';\n\nasync function hmacSha1Base64(secret, data) {\n  if (typeof require === 'function') {\n    try {\n      return require('crypto').createHmac('sha1', secret).update(data).digest('base64');\n    } catch (_) {}\n  }\n  if (globalThis.crypto?.subtle) {\n    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);\n    const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));\n    return btoa(String.fromCharCode(...new Uint8Array(signature)));\n  }\n  throw new Error('No HMAC implementation available for Twilio signature validation');\n}\n\nasync function validateTwilioSignature(webhookPath) {\n  if (String($env.TWILIO_VALIDATE_WEBHOOK_SIGNATURE || '').toLowerCase() !== 'true') return true;\n  const signature = String(header('x-twilio-signature') || '').trim();\n  const authToken = String($env.TWILIO_AUTH_TOKEN || '').trim();\n  const baseUrl = String($env.WEBHOOK_URL || '').replace(/\\/$/, '');\n  if (!signature || !authToken || !baseUrl) return false;\n  const url = baseUrl + '/webhook/' + webhookPath;\n  const signedData = Object.keys(body)\n    .filter(key => body[key] !== undefined && body[key] !== null && typeof body[key] !== 'object')\n    .sort()\n    .reduce((acc, key) => acc + key + String(body[key]), url);\n  const expected = await hmacSha1Base64(authToken, signedData);\n  if (expected.length !== signature.length) return false;\n  let diff = 0;\n  for (let i = 0; i < expected.length; i += 1) diff |= expected.charCodeAt(i) ^ signature.charCodeAt(i);\n  return diff === 0;\n}\n\nif (!(await validateTwilioSignature('twilio-status-callback'))) {\n  return [{ json: { _skip: true, reason: 'Invalid Twilio webhook signature' } }];\n}\n\nconst sid = String(body.MessageSid || body.SmsSid || body.SmsMessageSid || '').trim();\nconst rawStatus = String(body.MessageStatus || body.SmsStatus || body.status || '').toLowerCase().trim();\nconst errorCode = String(body.ErrorCode || '').trim();\nconst errorMessage = String(body.ErrorMessage || '').trim();\nconst map = {\n  queued: 'queued', accepted: 'queued', scheduled: 'queued', sending: 'queued',\n  sent: 'sent', delivered: 'delivered', read: 'read',\n  failed: 'failed', undelivered: 'undelivered', canceled: 'failed'\n};\nconst status = map[rawStatus] || 'sent';\nreturn [{ json: { _message_sid: sid, _status: status, _raw_status: rawStatus, _error_code: errorCode, _error_message: errorMessage, _received_at: new Date().toISOString(), _skip: !sid } }];"
       },
       "id": "99999999-9999-9999-9999-000000000003",
       "name": "Normalise Status",
@@ -44,6 +44,38 @@
       "typeVersion": 2,
       "position": [
         460,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "should-process-status",
+              "leftValue": "={{ $json._skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "99999999-9999-9999-9999-000000000007",
+      "name": "Skip Invalid Callback?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        680,
         440
       ]
     },
@@ -58,7 +90,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
       "position": [
-        680,
+        900,
         360
       ],
       "credentials": {
@@ -123,6 +155,24 @@
       "main": [
         [
           {
+            "node": "Skip Invalid Callback?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip Invalid Callback?": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 OK",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
             "node": "Update Message Log",
             "type": "main",
             "index": 0
@@ -155,6 +205,7 @@
   },
   "settings": {
     "executionOrder": "v1",
-    "timezone": "={{ $env.TIMEZONE || 'Asia/Kolkata' }}"
+    "timezone": "={{ $env.TIMEZONE || 'Asia/Kolkata' }}",
+    "errorWorkflow": "workflow-8-error-handler"
   }
 }

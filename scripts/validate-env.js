@@ -158,6 +158,10 @@ for (const key of ['WEBHOOK_URL', 'TWILIO_STATUS_CALLBACK_URL', 'N8N_PRESCRIPTIO
   }
 }
 
+if (!isMissing(env.SUPABASE_SERVICE_ROLE_KEY) && !String(env.SUPABASE_SERVICE_ROLE_KEY).trim().startsWith('eyJ')) {
+  warnings.push('SUPABASE_SERVICE_ROLE_KEY does not look like a JWT — PostgREST calls from scripts may fail. Regenerate it in Supabase Dashboard → Settings → API.');
+}
+
 if (String(env.TWILIO_VALIDATE_WEBHOOK_SIGNATURE || '').toLowerCase() === 'true') {
   const webhookUrl = env.WEBHOOK_URL || '';
   if (!webhookUrl.startsWith('https://')) {

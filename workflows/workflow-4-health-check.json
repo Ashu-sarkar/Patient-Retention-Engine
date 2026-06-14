@@ -374,7 +374,8 @@
   },
   "active": false,
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "errorWorkflow": "workflow-8-error-handler"
   },
   "versionId": "44444444-4444-4444-4444-444444444404",
   "id": "wf4-health-check",

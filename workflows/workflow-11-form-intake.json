@@ -328,7 +328,7 @@
             "execution_id": "={{ $execution.id }}",
             "log_level": "WARN",
             "message": "Form submission rejected \u2014 validation failed",
-            "details": "={{ JSON.stringify({ errors: $json._errors || $('Validate and Normalise').first().json._errors || [] }) }}"
+            "details": "={{ JSON.stringify({ errors: [...($('Validate and Normalise').first().json._errors || []), ...($('Assign Patient Code').all()[0]?.json._errors || [])].filter(Boolean) }) }}"
           },
           "matchingColumns": [],
           "schema": []
@@ -353,8 +353,21 @@
     },
     {
       "parameters": {
+        "jsCode": "const validateErrors = $('Validate and Normalise').first().json._errors || [];\nlet clinicErrors = [];\ntry {\n  const assignRows = $('Assign Patient Code').all();\n  if (assignRows.length && assignRows[0].json && assignRows[0].json._errors) {\n    clinicErrors = assignRows[0].json._errors;\n  }\n} catch (_) {}\nconst errors = (Array.isArray(clinicErrors) && clinicErrors.length)\n  ? clinicErrors\n  : (Array.isArray(validateErrors) ? validateErrors : []);\nreturn [{ json: { status: 'error', message: 'Validation failed', errors } }];"
+      },
+      "id": "11111111-1111-1111-1111-000000000015",
+      "name": "Build Error Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        580
+      ]
+    },
+    {
+      "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ status: 'error', message: 'Validation failed', errors: $json._errors || $('Validate and Normalise').first().json._errors || [] }) }}",
+        "responseBody": "={{ JSON.stringify($json) }}",
         "options": {
           "responseCode": 400
         }
@@ -364,8 +377,8 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        1120,
-        460
+        1340,
+        580
       ]
     }
   ],
@@ -478,6 +491,17 @@
       ]
     },
     "Log Validation Failure": {
+      "main": [
+        [
+          {
+            "node": "Build Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Error Response": {
       "main": [
         [
           {
