@@ -124,6 +124,12 @@ const TP = {
   wf3       : '+919000000013',// WF3 missed appointment seed
   wf4       : '+919000000014',// WF4 health-check seed
   wf5       : '+919000000015',// WF5 reactivation seed
+  wf6_multi : '+919000000016',// WF6 same phone across clinics
+  wf6_ambig : '+919000000018',// WF6 ambiguous same phone without message history
+  wf7       : '+919000000099',// WF7 direct welcome test
+  wf9_multi : '+919000000017',// WF9 duplicate SID across clinics
+  wf1_multi : '+919000000019',// Cron same phone across clinics
+  wf11_multi: '9000000004',   // WF11 same phone across clinics
   e2e       : '9000000020',   // E2E full-flow test
 };
 
@@ -348,6 +354,13 @@ async function getLatestVisitByPatient(patientId) {
   return rows[0] || null;
 }
 
+async function getVisitsByPatient(patientId) {
+  return pgQuery(
+    'SELECT * FROM public.patient_visits WHERE patient_id = $1::uuid ORDER BY checked_in_at DESC',
+    [patientId]
+  );
+}
+
 async function recentSystemLogs(workflowName, windowSec = 45) {
   const rows = await pgQuery(
     `SELECT * FROM public.system_logs
@@ -384,7 +397,9 @@ async function seedPatient(phone, extra = {}) {
 async function cleanup() {
   const phones = [
     `+91${TP.wf11_new}`, `+91${TP.wf11_sql}`,
-    TP.wf6, TP.wf1, TP.wf2, TP.wf3, TP.wf4, TP.wf5,
+    `+91${TP.wf11_multi}`,
+    TP.wf6, TP.wf6_multi, TP.wf6_ambig, TP.wf7, TP.wf9_multi, TP.wf1_multi,
+    TP.wf1, TP.wf2, TP.wf3, TP.wf4, TP.wf5,
     `+91${TP.e2e}`,
   ];
   for (const phone of phones) {
@@ -535,6 +550,25 @@ async function main() {
     assert(row.consultation_hours === HOSPITAL_BASE.consultation_hours, `consultation_hours mismatch: "${row.consultation_hours}"`);
   });
 
+  await test('2.2b Secondary hospital boarding row persisted for multi-clinic tests', async () => {
+    await sbDelete('hospital_boarding', `hospital_name=eq.${encodeURIComponent(HF.secondaryHospital)}`).catch(() => {});
+    const { status, json } = await wh('hospital-boarding', 'POST', {
+      ...HOSPITAL_BASE,
+      hospital_name: HF.secondaryHospital,
+      address: '34 Parallel Care Road, Chennai, Tamil Nadu 600002',
+      contact_phone: '+919876543211',
+      clinic_email: 'frontdesk-beta@example.com',
+      clinic_website: 'https://beta.example.com',
+      doctor_registration_number: 'TNMC-54321',
+      doctor_phone: '+919900002222',
+    });
+    assert(status === 200, `Expected 200, got ${status}: ${JSON.stringify(json)}`);
+    await sleep(1200);
+    const row = await getHospitalBoarding(HF.secondaryHospital);
+    assert(row, `Hospital row "${HF.secondaryHospital}" not found in Supabase`);
+    assert(row.clinic_id, 'Secondary hospital should have clinic_id');
+  });
+
   await test('2.3  WF12 system_log INFO entry recorded', async () => {
     await sleep(1200);
     const logs = await recentSystemLogs('workflow-12-hospital-boarding');
@@ -679,6 +713,51 @@ async function main() {
     assert(pat?.name === 'Test Patient Alpha Updated', `Expected updated name, got "${pat?.name}"`);
   });
 
+  await test('2.11b Same phone can register independently at two clinics', async () => {
+    const phone = `+91${TP.wf11_multi}`;
+    await pgQuery('DELETE FROM public.patients WHERE phone = $1', [phone]);
+
+    const alpha = {
+      ...BASE,
+      patient_name: 'Multi Clinic Alpha Patient',
+      phone_number: TP.wf11_multi,
+      hospital_name: HF.primaryHospital,
+    };
+    const beta = {
+      ...BASE,
+      patient_name: 'Multi Clinic Beta Patient',
+      phone_number: TP.wf11_multi,
+      hospital_name: HF.secondaryHospital,
+    };
+
+    const first = await wh('patient-form-intake', 'POST', alpha);
+    assert(first.status === 200, `Primary clinic registration failed: ${first.status} ${JSON.stringify(first.json)}`);
+    const second = await wh('patient-form-intake', 'POST', beta);
+    assert(second.status === 200, `Secondary clinic registration failed: ${second.status} ${JSON.stringify(second.json)}`);
+
+    await sleep(1800);
+    const rows = await pgQuery(
+      `SELECT id::text, clinic_id::text, patient_code, name, clinic_name, doctor_name
+       FROM public.patients
+       WHERE phone = $1
+       ORDER BY clinic_name`,
+      [phone]
+    );
+    assert(rows.length === 2, `Expected two patient rows for ${phone}, got ${rows.length}: ${JSON.stringify(rows)}`);
+    assert(new Set(rows.map(row => row.clinic_id)).size === 2, `Expected distinct clinic_id values: ${JSON.stringify(rows)}`);
+    assert(rows.some(row => row.name === alpha.patient_name && row.clinic_name === HF.primaryHospital),
+      `Primary clinic row missing or overwritten: ${JSON.stringify(rows)}`);
+    assert(rows.some(row => row.name === beta.patient_name && row.clinic_name === HF.secondaryHospital),
+      `Secondary clinic row missing or overwritten: ${JSON.stringify(rows)}`);
+
+    for (const row of rows) {
+      const visits = await getVisitsByPatient(row.id);
+      assert(visits.length >= 1, `Expected at least one visit for ${row.name}`);
+      assert(visits.every(visit => String(visit.clinic_id) === row.clinic_id),
+        `Visit clinic mismatch for ${row.name}: ${JSON.stringify(visits)}`);
+    }
+  });
+
   await test('2.12 SQL injection in name handled safely', async () => {
     const { status } = await wh('patient-form-intake', 'POST', {
       ...BASE, phone_number: TP.wf11_sql,
@@ -696,13 +775,22 @@ async function main() {
   section('§4  WF7 — New Patient Welcome  (POST /webhook/new-patient-intake)');
 
   await test('3.1  Valid payload → 200 (WA attempt made, error logged if creds placeholder)', async () => {
+    await sbDelete('patients', `phone=eq.${encodeURIComponent(TP.wf7)}`).catch(() => {});
+    const wf7Pat = await seedPatient(TP.wf7, {
+      name: 'WF7 Test Patient',
+      clinic_name: 'Test Clinic',
+      doctor_name: 'Dr WF7',
+      visit_date: date(-1),
+    });
     const { status, json } = await wh('new-patient-intake', 'POST', {
-      patient_code      : 'PAT-TEST',
-      name              : 'WF7 Test Patient',
-      phone             : '+919000000099',
-      clinic_name       : 'Test Clinic',
-      doctor_name       : 'Dr WF7',
-      visit_date        : date(-1),
+      patient_code: wf7Pat.patient_code || 'PAT-TEST',
+      patient_id  : wf7Pat.id,
+      clinic_id   : wf7Pat.clinic_id,
+      name        : wf7Pat.name,
+      phone       : TP.wf7,
+      clinic_name : wf7Pat.clinic_name,
+      doctor_name : wf7Pat.doctor_name,
+      visit_date  : date(-1),
     });
     assert([200, 202].includes(status), `Expected 200/202, got ${status}: ${JSON.stringify(json)}`);
     // After ~2s, WF7 should have logged an ERROR (Twilio creds invalid) or INFO (Twilio succeeded)
@@ -717,6 +805,8 @@ async function main() {
     const before = await recentSystemLogs('workflow-7-new-patient');
     const { status } = await wh('new-patient-intake', 'POST', {
       patient_code: 'PAT-SKIP',
+      patient_id  : '00000000-0000-4000-8000-000000000001',
+      clinic_id   : '00000000-0000-4000-8000-000000000002',
       name        : 'Skip Test',
       phone       : 'not-a-phone',
       clinic_name : 'X',
@@ -733,6 +823,8 @@ async function main() {
   await test('3.3  Empty name → skipped gracefully', async () => {
     const { status } = await wh('new-patient-intake', 'POST', {
       patient_code: 'PAT-SKIP2',
+      patient_id  : '00000000-0000-4000-8000-000000000003',
+      clinic_id   : '00000000-0000-4000-8000-000000000004',
       name        : '',
       phone       : '+919000000098',
       clinic_name : 'X',
@@ -817,6 +909,96 @@ async function main() {
       `Expected responded for help keyword, got "${pat?.response_status}"`);
   });
 
+  await test('4.5a Same phone in two clinics without message history → inbound reply is not guessed', async () => {
+    const clinicAlpha = await ensureTestClinicId('WF6 Ambiguous Clinic Alpha');
+    const clinicBeta = await ensureTestClinicId('WF6 Ambiguous Clinic Beta');
+    await pgQuery('DELETE FROM public.patients WHERE phone = $1', [TP.wf6_ambig]);
+
+    const alpha = await seedPatient(TP.wf6_ambig, {
+      clinic_id: clinicAlpha,
+      clinic_name: 'WF6 Ambiguous Clinic Alpha',
+      name: 'WF6 Ambiguous Alpha Patient',
+      status: 'pending',
+    });
+    const beta = await seedPatient(TP.wf6_ambig, {
+      clinic_id: clinicBeta,
+      clinic_name: 'WF6 Ambiguous Clinic Beta',
+      name: 'WF6 Ambiguous Beta Patient',
+      status: 'pending',
+    });
+    await pgQuery('DELETE FROM public.message_logs WHERE phone = $1', [TP.wf6_ambig]);
+
+    const { status } = await whTwilio('feedback-listener', twilioMsg(TP.wf6_ambig, 'Yes, I will come'));
+    assert([200, 202].includes(status), `Expected 200/202, got ${status}`);
+    await sleep(2200);
+
+    const alphaAfter = await getPatient(TP.wf6_ambig, alpha.clinic_id);
+    const betaAfter = await getPatient(TP.wf6_ambig, beta.clinic_id);
+    assert(alphaAfter?.response_status === 'none',
+      `Ambiguous alpha patient should remain untouched, got ${alphaAfter?.response_status}`);
+    assert(betaAfter?.response_status === 'none',
+      `Ambiguous beta patient should remain untouched, got ${betaAfter?.response_status}`);
+  });
+
+  await test('4.5b Same phone in two clinics → inbound reply updates most recently messaged clinic only', async () => {
+    const clinicAlpha = await ensureTestClinicId('WF6 Multi Clinic Alpha');
+    const clinicBeta = await ensureTestClinicId('WF6 Multi Clinic Beta');
+    await pgQuery('DELETE FROM public.patients WHERE phone = $1', [TP.wf6_multi]);
+
+    const alpha = await seedPatient(TP.wf6_multi, {
+      clinic_id: clinicAlpha,
+      clinic_name: 'WF6 Multi Clinic Alpha',
+      name: 'WF6 Multi Alpha Patient',
+      status: 'pending',
+    });
+    const beta = await seedPatient(TP.wf6_multi, {
+      clinic_id: clinicBeta,
+      clinic_name: 'WF6 Multi Clinic Beta',
+      name: 'WF6 Multi Beta Patient',
+      status: 'pending',
+    });
+
+    await sbInsert('message_logs', {
+      clinic_id: alpha.clinic_id,
+      patient_id: alpha.id,
+      patient_name: alpha.name,
+      phone: alpha.phone,
+      workflow_name: 'workflow-test',
+      message_type: 'same_phone_routing_old',
+      message_sent: 'older clinic message',
+      sent_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      scheduled_date: date(0),
+      delivery_status: 'sent',
+      provider_message_id: 'SMWF6MULTIOLD000000000000000000001',
+      twilio_message_sid: 'SMWF6MULTIOLD000000000000000000001',
+    });
+    await sbInsert('message_logs', {
+      clinic_id: beta.clinic_id,
+      patient_id: beta.id,
+      patient_name: beta.name,
+      phone: beta.phone,
+      workflow_name: 'workflow-test',
+      message_type: 'same_phone_routing_new',
+      message_sent: 'newer clinic message',
+      sent_at: new Date().toISOString(),
+      scheduled_date: date(0),
+      delivery_status: 'sent',
+      provider_message_id: 'SMWF6MULTINEW000000000000000000001',
+      twilio_message_sid: 'SMWF6MULTINEW000000000000000000001',
+    });
+
+    const { status } = await whTwilio('feedback-listener', twilioMsg(TP.wf6_multi, 'No, please reschedule'));
+    assert([200, 202].includes(status), `Expected 200/202, got ${status}`);
+    await sleep(2200);
+
+    const alphaAfter = await getPatient(TP.wf6_multi, alpha.clinic_id);
+    const betaAfter = await getPatient(TP.wf6_multi, beta.clinic_id);
+    assert(betaAfter?.response_status === 'cancelled',
+      `Expected newer clinic patient to be cancelled, got ${betaAfter?.response_status}`);
+    assert(alphaAfter?.response_status === 'none',
+      `Older clinic patient should remain untouched, got ${alphaAfter?.response_status}`);
+  });
+
   await test('4.6  WF9 Twilio status callback → message_logs delivery_status updates', async () => {
     const pat = await getPatient(TP.wf6);
     assert(pat?.id, 'Seed patient missing for status callback test');
@@ -846,6 +1028,106 @@ async function main() {
       `Expected delivery_status=delivered, got ${rows[0]?.delivery_status}`);
   });
 
+  await test('4.7  WF9 duplicate SID across clinics updates one latest matching tenant row only', async () => {
+    const clinicAlpha = await ensureTestClinicId('WF9 Multi Clinic Alpha');
+    const clinicBeta = await ensureTestClinicId('WF9 Multi Clinic Beta');
+    const sid = 'SMWF9MULTIDUP000000000000000000001';
+
+    await pgQuery('DELETE FROM public.message_logs WHERE twilio_message_sid = $1 OR provider_message_id = $1', [sid]);
+    await pgQuery('DELETE FROM public.message_ledger WHERE twilio_message_sid = $1 OR provider_message_id = $1', [sid]);
+    await pgQuery('DELETE FROM public.patients WHERE phone = $1', [TP.wf9_multi]);
+
+    const alpha = await seedPatient(TP.wf9_multi, {
+      clinic_id: clinicAlpha,
+      clinic_name: 'WF9 Multi Clinic Alpha',
+      name: 'WF9 Multi Alpha Patient',
+    });
+    const beta = await seedPatient(TP.wf9_multi, {
+      clinic_id: clinicBeta,
+      clinic_name: 'WF9 Multi Clinic Beta',
+      name: 'WF9 Multi Beta Patient',
+    });
+
+    await sbInsert('message_logs', {
+      clinic_id: alpha.clinic_id,
+      patient_id: alpha.id,
+      patient_name: alpha.name,
+      phone: alpha.phone,
+      workflow_name: 'workflow-test',
+      message_type: 'duplicate_sid_old',
+      message_sent: 'older duplicate sid',
+      sent_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      scheduled_date: date(-1),
+      delivery_status: 'sent',
+      provider_message_id: sid,
+      twilio_message_sid: sid,
+    });
+    await sbInsert('message_logs', {
+      clinic_id: beta.clinic_id,
+      patient_id: beta.id,
+      patient_name: beta.name,
+      phone: beta.phone,
+      workflow_name: 'workflow-test',
+      message_type: 'duplicate_sid_new',
+      message_sent: 'newer duplicate sid',
+      sent_at: new Date().toISOString(),
+      scheduled_date: date(0),
+      delivery_status: 'sent',
+      provider_message_id: sid,
+      twilio_message_sid: sid,
+    });
+    await sbInsert('message_ledger', {
+      clinic_id: alpha.clinic_id,
+      patient_id: alpha.id,
+      message_type: 'duplicate_sid_old',
+      scheduled_date: date(-1),
+      workflow_name: 'workflow-test',
+      provider_message_id: sid,
+      twilio_message_sid: sid,
+      status: 'sent',
+    });
+    await sleep(20);
+    await sbInsert('message_ledger', {
+      clinic_id: beta.clinic_id,
+      patient_id: beta.id,
+      message_type: 'duplicate_sid_new',
+      scheduled_date: date(0),
+      workflow_name: 'workflow-test',
+      provider_message_id: sid,
+      twilio_message_sid: sid,
+      status: 'sent',
+    });
+
+    const { status } = await whTwilio('twilio-status-callback', twilioStatus(sid, 'delivered'));
+    assert([200, 202].includes(status), `Expected 200/202, got ${status}`);
+    await sleep(1200);
+
+    const logRows = await pgQuery(
+      `SELECT clinic_id::text, delivery_status
+       FROM public.message_logs
+       WHERE twilio_message_sid = $1
+       ORDER BY sent_at ASC`,
+      [sid]
+    );
+    const ledgerRows = await pgQuery(
+      `SELECT clinic_id::text, status
+       FROM public.message_ledger
+       WHERE twilio_message_sid = $1
+       ORDER BY created_at ASC`,
+      [sid]
+    );
+    assert(logRows.length === 2, `Expected two duplicate message_logs rows, got ${logRows.length}`);
+    assert(ledgerRows.length === 2, `Expected two duplicate message_ledger rows, got ${ledgerRows.length}`);
+    assert(logRows[0].delivery_status === 'sent',
+      `Older clinic message_log should remain sent, got ${logRows[0].delivery_status}`);
+    assert(logRows[1].delivery_status === 'delivered',
+      `Newest clinic message_log should be delivered, got ${logRows[1].delivery_status}`);
+    assert(ledgerRows[0].status === 'sent',
+      `Older clinic ledger should remain sent, got ${ledgerRows[0].status}`);
+    assert(ledgerRows[1].status === 'delivered',
+      `Newest clinic ledger should be delivered, got ${ledgerRows[1].status}`);
+  });
+
   // ── §6  Cron Workflow DB Query Validation ────────────────────────────────
   section('§6  Cron Workflow Filtering Logic (Supabase query simulation)');
   console.log('  Seeding test patients for each cron scenario …');
@@ -862,6 +1144,68 @@ async function main() {
   }
   await sleep(800);
   console.log('  Seed complete.\n');
+
+  await test('5.0b Scheduled reminder dedupe is scoped by clinic_id + patient_id, not phone', async () => {
+    const clinicAlpha = await ensureTestClinicId('WF1 Multi Clinic Alpha');
+    const clinicBeta = await ensureTestClinicId('WF1 Multi Clinic Beta');
+    await pgQuery('DELETE FROM public.patients WHERE phone = $1', [TP.wf1_multi]);
+
+    const alpha = await seedPatient(TP.wf1_multi, {
+      clinic_id: clinicAlpha,
+      clinic_name: 'WF1 Multi Clinic Alpha',
+      name: 'WF1 Multi Alpha Patient',
+      follow_up_required: 'Yes',
+      follow_up_date: date(1),
+      status: 'pending',
+      message_count: 0,
+    });
+    const beta = await seedPatient(TP.wf1_multi, {
+      clinic_id: clinicBeta,
+      clinic_name: 'WF1 Multi Clinic Beta',
+      name: 'WF1 Multi Beta Patient',
+      follow_up_required: 'Yes',
+      follow_up_date: date(1),
+      status: 'pending',
+      message_count: 0,
+    });
+
+    await sbInsert('message_logs', {
+      clinic_id: alpha.clinic_id,
+      patient_id: alpha.id,
+      patient_name: alpha.name,
+      phone: alpha.phone,
+      workflow_name: 'workflow-test',
+      message_type: 'follow_up_reminder',
+      message_sent: 'alpha already reminded',
+      scheduled_date: date(1),
+      delivery_status: 'sent',
+      provider_message_id: 'SMWF1MULTIALPHA0000000000000000001',
+      twilio_message_sid: 'SMWF1MULTIALPHA0000000000000000001',
+    });
+
+    const rows = await pgQuery(
+      `SELECT p.id::text, p.clinic_id::text, p.name
+       FROM public.patients p
+       WHERE p.phone = $1
+         AND p.clinic_id IS NOT NULL
+         AND p.status = 'pending'
+         AND p.follow_up_date IS NOT NULL
+         AND p.follow_up_date >= CURRENT_DATE
+         AND NOT EXISTS (
+           SELECT 1
+           FROM public.message_logs ml
+           WHERE ml.clinic_id = p.clinic_id
+             AND ml.patient_id = p.id
+             AND ml.message_type = 'follow_up_reminder'
+             AND ml.scheduled_date = p.follow_up_date
+         )
+       ORDER BY p.name`,
+      [TP.wf1_multi]
+    );
+    assert(rows.length === 1, `Expected only beta clinic to remain queryable, got ${JSON.stringify(rows)}`);
+    assert(rows[0].id === beta.id, `Expected beta patient queryable, got ${JSON.stringify(rows[0])}`);
+    assert(rows[0].clinic_id === beta.clinic_id, `Expected beta clinic_id, got ${rows[0].clinic_id}`);
+  });
 
   await test('5.1  WF1 — patient with follow_up_date=tomorrow & status=pending is queryable', async () => {
     const rows = await pgQuery(

@@ -98,7 +98,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=SELECT p.*\nFROM public.patients p\nLEFT JOIN public.message_logs ml\n  ON ml.clinic_id = p.clinic_id\n AND ml.patient_id = p.id\nWHERE p.phone = '{{ $('Parse and Classify Message').first().json._from_phone }}'\nORDER BY ml.sent_at DESC NULLS LAST, p.updated_at DESC\nLIMIT 1",
+        "query": "=WITH candidates AS (\n  SELECT p.*\n  FROM public.patients p\n  WHERE p.phone = '{{ $('Parse and Classify Message').first().json._from_phone }}'\n), latest_messaged AS (\n  SELECT p.*\n  FROM candidates p\n  JOIN public.message_logs ml\n    ON ml.clinic_id = p.clinic_id\n   AND ml.patient_id = p.id\n  ORDER BY ml.sent_at DESC NULLS LAST, p.updated_at DESC\n  LIMIT 1\n), single_candidate AS (\n  SELECT *\n  FROM candidates\n  WHERE (SELECT COUNT(*) FROM candidates) = 1\n)\nSELECT * FROM latest_messaged\nUNION ALL\nSELECT * FROM single_candidate\nWHERE NOT EXISTS (SELECT 1 FROM latest_messaged)\nLIMIT 1",
         "options": {}
       },
       "id": "66666666-6666-6666-6666-000000000006",

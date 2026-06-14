@@ -203,6 +203,10 @@
               "value": "={{ $('Upsert Patient').first().json.clinic_id }}"
             },
             {
+              "name": "patient_id",
+              "value": "={{ $('Upsert Patient').first().json.id }}"
+            },
+            {
               "name": "name",
               "value": "={{ $('Assign Patient Code').first().json.name }}"
             },

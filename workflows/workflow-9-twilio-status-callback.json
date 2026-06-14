@@ -82,7 +82,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=UPDATE public.message_logs\nSET delivery_status = '{{ $json._status }}',\n    error_message = {{ $json._error_code || $json._error_message ? \"'\" + ($json._error_code + ' ' + $json._error_message).trim().replace(/'/g, \"''\") + \"'\" : 'error_message' }}\nWHERE clinic_id IS NOT NULL\n  AND (twilio_message_sid = '{{ $json._message_sid.replace(/'/g, \"''\") }}'\n   OR provider_message_id = '{{ $json._message_sid.replace(/'/g, \"''\") }}');",
+        "query": "=UPDATE public.message_logs\nSET delivery_status = '{{ $json._status }}',\n    error_message = {{ $json._error_code || $json._error_message ? \"'\" + ($json._error_code + ' ' + $json._error_message).trim().replace(/'/g, \"''\") + \"'\" : 'error_message' }}\nWHERE log_id = (\n  SELECT log_id\n  FROM public.message_logs\n  WHERE clinic_id IS NOT NULL\n    AND (twilio_message_sid = '{{ $json._message_sid.replace(/'/g, \"''\") }}'\n     OR provider_message_id = '{{ $json._message_sid.replace(/'/g, \"''\") }}')\n  ORDER BY sent_at DESC NULLS LAST, log_id DESC\n  LIMIT 1\n);",
         "options": {}
       },
       "id": "99999999-9999-9999-9999-000000000004",
@@ -103,7 +103,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=UPDATE public.message_ledger\nSET status = '{{ $json._status }}',\n    error_message = {{ $json._error_code || $json._error_message ? \"'\" + ($json._error_code + ' ' + $json._error_message).trim().replace(/'/g, \"''\") + \"'\" : 'error_message' }}\nWHERE clinic_id IS NOT NULL\n  AND (twilio_message_sid = '{{ $json._message_sid.replace(/'/g, \"''\") }}'\n   OR provider_message_id = '{{ $json._message_sid.replace(/'/g, \"''\") }}');",
+        "query": "=UPDATE public.message_ledger\nSET status = '{{ $json._status }}',\n    error_message = {{ $json._error_code || $json._error_message ? \"'\" + ($json._error_code + ' ' + $json._error_message).trim().replace(/'/g, \"''\") + \"'\" : 'error_message' }}\nWHERE id = (\n  SELECT id\n  FROM public.message_ledger\n  WHERE clinic_id IS NOT NULL\n    AND (twilio_message_sid = '{{ $json._message_sid.replace(/'/g, \"''\") }}'\n     OR provider_message_id = '{{ $json._message_sid.replace(/'/g, \"''\") }}')\n  ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST, id DESC\n  LIMIT 1\n);",
         "options": {}
       },
       "id": "99999999-9999-9999-9999-000000000005",
