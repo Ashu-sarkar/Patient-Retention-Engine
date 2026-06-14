@@ -21,7 +21,7 @@
     "deploy:workflows:production": "python3 scripts/deploy-workflows-production.py",
     "test:production-browser": "node tests/browser-production-e2e.mjs",
     "sync:prescription-secrets": "bash scripts/sync-prescription-delivery-secrets.sh",
-    "sync:doctor-otp-secrets": "bash scripts/sync-doctor-otp-secrets.sh",
+    "sync:doctor-otp-secrets": "python3 scripts/configure-supabase-auth.py",
     "setup:dev-tools": "bash scripts/setup-dev-tools.sh",
     "test:playbook": "node production-test-playbook/verify.js",
     "smoke": "node tests/run-tests.js"
