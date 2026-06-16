@@ -497,6 +497,9 @@ BEGIN
     IF visit_day IS NOT NULL AND NEW.follow_up_date <= visit_day THEN
       RAISE EXCEPTION 'Follow-up date must be after the visit date';
     END IF;
+    IF NEW.follow_up_date < CURRENT_DATE THEN
+      RAISE EXCEPTION 'Follow-up date cannot be in the past';
+    END IF;
   END IF;
 
   UPDATE public.patients

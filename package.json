@@ -17,6 +17,7 @@
     "test": "node tests/run-tests.js",
     "test:setup-and-run": "node scripts/preflight-supabase.js && node tests/setup-n8n.js && node tests/run-tests.js",
     "test:production-e2e": "node tests/run-production-e2e.js",
+    "test:dashboard": "node tests/doctor-dashboard-static.test.js",
     "test:production-cleanup-e2e": "python3 scripts/cleanup-and-production-e2e.py",
     "deploy:workflows:production": "python3 scripts/deploy-workflows-production.py",
     "test:production-browser": "node tests/browser-production-e2e.mjs",
