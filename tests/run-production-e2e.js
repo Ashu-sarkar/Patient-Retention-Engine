@@ -296,7 +296,7 @@ async function main() {
     assert(Array.isArray(res.json), `expected array response, got ${JSON.stringify(res.json)}`);
   });
 
-  section('§2  WF12 — Hospital boarding (doctor WhatsApp login)');
+  section('§2  WF12 — Hospital boarding (doctor username/password login)');
   const boardingPayload = {
     hospital_name: HOSPITAL,
     facility_type: FACILITY,
@@ -315,6 +315,18 @@ async function main() {
     doctor_signature_url: '',
     consultation_hours: 'Mon-Sat 9am-5pm',
   };
+  boardingPayload.doctor_count = '1';
+  boardingPayload.login_username = 'e2e.doctor';
+  boardingPayload.doctors_json = JSON.stringify([{
+    doctor_name: boardingPayload.doctor_name,
+    doctor_qualification: boardingPayload.doctor_qualification,
+    doctor_expertise: boardingPayload.doctor_expertise,
+    doctor_registration_number: boardingPayload.doctor_registration_number,
+    doctor_phone: boardingPayload.doctor_phone,
+    doctor_signature_url: boardingPayload.doctor_signature_url,
+    login_username: boardingPayload.login_username,
+    password: 'E2ePass123',
+  }]);
 
   await test('2.1  Valid hospital boarding (form-encoded like UI)', async () => {
     await sbDelete('hospital_boarding', `hospital_name=eq.${encodeURIComponent(HOSPITAL)}`).catch(() => {});
@@ -460,8 +472,7 @@ async function main() {
     console.log('\n  Failures:');
     failures.forEach((f, i) => console.log(`    ${i + 1}. ${f.label}\n       ${f.detail}`));
   }
-  console.log('\n  Doctor dashboard: open deployed URL, sign in with', PHONE_E164);
-  console.log('  Enter OTP manually when prompted.\n');
+  console.log('\n  Doctor dashboard: open deployed URL, sign in with username e2e.doctor and the configured E2E password.\n');
   process.exit(failed > 0 ? 1 : 0);
 }
 

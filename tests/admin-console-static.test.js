@@ -9,13 +9,18 @@ const root = path.join(__dirname, '..');
 const admin = fs.readFileSync(path.join(root, 'admin-console', 'index.html'), 'utf8');
 const migration = fs.readFileSync(path.join(root, 'schemas', 'migration-admin-console.sql'), 'utf8');
 const patientForm = fs.readFileSync(path.join(root, 'patient-form', 'index.html'), 'utf8');
+const hospitalForm = fs.readFileSync(path.join(root, 'hospital-form', 'index.html'), 'utf8');
+const hospitalWorkflow = fs.readFileSync(path.join(root, 'workflows', 'workflow-12-hospital-boarding.json'), 'utf8');
+const hospitalWorkflowJson = JSON.parse(hospitalWorkflow);
 
 function includes(haystack, needle, label) {
   assert(haystack.includes(needle), `${label || 'Expected content'} missing: ${needle}`);
 }
 
 // ── Admin console page ──────────────────────────────────────────────────────
-includes(admin, 'signInWithPassword', 'admin uses email/password auth');
+includes(admin, 'signInWithPassword', 'admin uses username/password auth');
+includes(admin, 'function usernameToInternalEmail(username)', 'admin maps username to internal auth email');
+includes(admin, "const AUTH_USERNAME_EMAIL_DOMAIN = 'auth.vaitalcare.local';", 'admin internal auth email domain');
 includes(admin, "rpc('current_user_is_platform_admin')", 'admin verifies platform-admin server-side');
 includes(admin, 'This account is not a platform administrator.', 'non-admin sign-in is rejected');
 includes(admin, "sb.auth.signOut()", 'non-admin session is signed out');
@@ -67,5 +72,18 @@ for (const [file, label] of [
 
 // ── Patient form supports path-based intake token in addition to hash ───────
 includes(patientForm, "location.pathname || '').match(/\\/i\\/([a-f0-9]{64})", 'patient form parses path-based token');
+
+// ── Hospital onboarding supports multiple doctors + secure password handling ──
+includes(hospitalForm, 'id="doctor_count"', 'hospital form collects doctor count');
+includes(hospitalForm, 'doctors_json: JSON.stringify(doctors)', 'hospital form posts doctors_json');
+includes(hospitalForm, 'login_username', 'hospital form collects dashboard usernames');
+includes(hospitalForm, 'password.length < 8', 'hospital form enforces minimum password length');
+includes(hospitalWorkflow, 'Create Doctor Auth Users', 'workflow creates doctor auth users server-side');
+includes(hospitalWorkflow, '/auth/v1/admin/users', 'workflow calls Supabase Auth Admin API');
+includes(hospitalWorkflow, 'SUPABASE_SERVICE_ROLE_KEY', 'workflow uses service role only server-side');
+includes(hospitalWorkflow, 'login_username, auth_user_id', 'workflow stores safe auth metadata');
+const insertHospitalNode = hospitalWorkflowJson.nodes.find(node => node.name === 'Insert Hospital Row');
+assert(insertHospitalNode, 'workflow must have Insert Hospital Row node');
+assert(!/password|_password/i.test(insertHospitalNode.parameters.query), 'workflow must not insert password into hospital_boarding');
 
 console.log('[admin-console-static] Passed.');

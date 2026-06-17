@@ -360,6 +360,8 @@ CREATE TABLE IF NOT EXISTS public.hospital_boarding (
   doctor_registration_number TEXT,
   doctor_phone       TEXT,
   doctor_signature_url TEXT,
+  login_username     TEXT,
+  auth_user_id       UUID        REFERENCES auth.users (id) ON DELETE SET NULL,
   consultation_hours TEXT,
   created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -380,6 +382,8 @@ ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS doctor_expertise T
 ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS doctor_registration_number TEXT;
 ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS doctor_phone TEXT;
 ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS doctor_signature_url TEXT;
+ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS login_username TEXT;
+ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS auth_user_id UUID;
 ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS consultation_hours TEXT;
 ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 ALTER TABLE public.hospital_boarding ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
@@ -392,6 +396,12 @@ CREATE INDEX IF NOT EXISTS idx_hospital_boarding_city
   ON public.hospital_boarding (lower(trim(city)));
 CREATE INDEX IF NOT EXISTS idx_hospital_boarding_doctor_name
   ON public.hospital_boarding (lower(trim(doctor_name)));
+CREATE UNIQUE INDEX IF NOT EXISTS idx_hospital_boarding_login_username
+  ON public.hospital_boarding (login_username)
+  WHERE login_username IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_hospital_boarding_auth_user_id
+  ON public.hospital_boarding (auth_user_id)
+  WHERE auth_user_id IS NOT NULL;
 
 DROP TRIGGER IF EXISTS trg_hospital_boarding_updated_at ON public.hospital_boarding;
 CREATE TRIGGER trg_hospital_boarding_updated_at
@@ -414,6 +424,7 @@ CREATE TABLE IF NOT EXISTS public.doctor_profiles (
   clinic_website        TEXT,
   clinic_logo_url       TEXT,
   doctor_phone          TEXT,
+  login_username        TEXT,
   signature_image_url   TEXT,
   signature_label       TEXT,
   stamp_label           TEXT,
@@ -435,6 +446,7 @@ ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS clinic_email TEXT;
 ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS clinic_website TEXT;
 ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS clinic_logo_url TEXT;
 ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS doctor_phone TEXT;
+ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS login_username TEXT;
 ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS signature_image_url TEXT;
 ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS signature_label TEXT;
 ALTER TABLE public.doctor_profiles ADD COLUMN IF NOT EXISTS stamp_label TEXT;
@@ -449,6 +461,9 @@ CREATE INDEX IF NOT EXISTS idx_doctor_profiles_doctor_phone
   ON public.doctor_profiles ((regexp_replace(coalesce(doctor_phone, ''), '[\s\-().]', '', 'g')));
 CREATE INDEX IF NOT EXISTS idx_doctor_profiles_clinic_doctor
   ON public.doctor_profiles (lower(trim(clinic_name)), lower(trim(doctor_name)));
+CREATE UNIQUE INDEX IF NOT EXISTS idx_doctor_profiles_login_username
+  ON public.doctor_profiles (login_username)
+  WHERE login_username IS NOT NULL;
 
 DROP TRIGGER IF EXISTS trg_doctor_profiles_updated_at ON public.doctor_profiles;
 CREATE TRIGGER trg_doctor_profiles_updated_at
@@ -485,18 +500,13 @@ STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.doctor_profiles dp
-    WHERE dp.id = profile_id
-      AND (
-        dp.user_id = auth.uid()
-        OR (
-          public.current_auth_phone() IS NOT NULL
-          AND public.normalized_whatsapp_phone(dp.doctor_phone) = public.current_auth_phone()
-        )
-      )
-  )
+  SELECT auth.uid() IS NOT NULL
+     AND EXISTS (
+       SELECT 1
+       FROM public.doctor_profiles dp
+       WHERE dp.id = profile_id
+         AND dp.user_id = auth.uid()
+     )
 $$;
 
 CREATE OR REPLACE FUNCTION public.get_or_create_doctor_profile_for_current_user()
@@ -1190,7 +1200,6 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  verified_phone TEXT := public.current_auth_phone();
   profile public.doctor_profiles;
   boarding public.hospital_boarding;
 BEGIN
@@ -1202,37 +1211,28 @@ BEGIN
     INTO profile
     FROM public.doctor_profiles dp
    WHERE dp.user_id = auth.uid()
-      OR (verified_phone IS NOT NULL AND public.normalized_whatsapp_phone(dp.doctor_phone) = verified_phone)
-   ORDER BY (dp.user_id = auth.uid()) DESC, dp.updated_at DESC
+   ORDER BY dp.updated_at DESC
    LIMIT 1;
 
   IF FOUND THEN
-    IF profile.user_id IS NULL THEN
-      UPDATE public.doctor_profiles
-         SET user_id = auth.uid(),
-             doctor_phone = COALESCE(doctor_phone, verified_phone),
-             updated_at = NOW()
-       WHERE id = profile.id
-       RETURNING * INTO profile;
-    END IF;
-    RETURN profile;
-  END IF;
+    INSERT INTO public.clinic_memberships (clinic_id, user_id, doctor_profile_id, role, status)
+    VALUES (profile.clinic_id, auth.uid(), profile.id, 'doctor', 'active')
+    ON CONFLICT (clinic_id, user_id, role) DO NOTHING;
 
-  IF verified_phone IS NULL THEN
-    RETURN NULL;
+    IF profile.is_clinic_admin THEN
+      INSERT INTO public.clinic_memberships (clinic_id, user_id, doctor_profile_id, role, status)
+      VALUES (profile.clinic_id, auth.uid(), profile.id, 'clinic_admin', 'active')
+      ON CONFLICT (clinic_id, user_id, role) DO NOTHING;
+    END IF;
+
+    RETURN profile;
   END IF;
 
   SELECT hb.*
     INTO boarding
     FROM public.hospital_boarding hb
-   WHERE public.normalized_whatsapp_phone(hb.doctor_phone) = verified_phone
-   ORDER BY (
-      SELECT MAX(pv.checked_in_at)
-      FROM public.patient_visits pv
-      WHERE lower(trim(pv.clinic_name)) = lower(trim(hb.hospital_name))
-        AND lower(trim(pv.doctor_name)) = lower(trim(hb.doctor_name))
-    ) DESC NULLS LAST,
-    hb.created_at DESC
+   WHERE hb.auth_user_id = auth.uid()
+   ORDER BY hb.created_at DESC
    LIMIT 1;
 
   IF NOT FOUND THEN
@@ -1240,6 +1240,7 @@ BEGIN
   END IF;
 
   INSERT INTO public.doctor_profiles (
+    clinic_id,
     user_id,
     doctor_name,
     clinic_name,
@@ -1253,11 +1254,13 @@ BEGIN
     clinic_website,
     clinic_logo_url,
     doctor_phone,
+    login_username,
     signature_image_url,
     signature_label,
     stamp_label
   )
   VALUES (
+    boarding.clinic_id,
     auth.uid(),
     boarding.doctor_name,
     boarding.hospital_name,
@@ -1270,12 +1273,17 @@ BEGIN
     boarding.clinic_email,
     boarding.clinic_website,
     boarding.clinic_logo_url,
-    verified_phone,
+    boarding.doctor_phone,
+    boarding.login_username,
     boarding.doctor_signature_url,
     boarding.doctor_name,
     COALESCE(NULLIF(boarding.doctor_registration_number, ''), 'Registration pending')
   )
   RETURNING * INTO profile;
+
+  INSERT INTO public.clinic_memberships (clinic_id, user_id, doctor_profile_id, role, status)
+  VALUES (profile.clinic_id, auth.uid(), profile.id, 'doctor', 'active')
+  ON CONFLICT (clinic_id, user_id, role) DO NOTHING;
 
   RETURN profile;
 END;

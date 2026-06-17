@@ -21,10 +21,13 @@ includes(dashboard, 'function minFollowUpDate()', 'dashboard follow-up minimum h
 includes(dashboard, 'const visitNext = state.selected?.visit_date ? addDaysISO(state.selected.visit_date, 1) : today;', 'visit+today minimum calculation');
 includes(dashboard, 'return visitNext > today ? visitNext : today;', 'follow-up min must never be before today');
 includes(dashboard, 'function validateFollowUp(payload)', 'shared follow-up validation');
-includes(dashboard, "const ADMIN_PREVIEW_PHONE = '+919685722570';", 'admin preview phone constant');
-includes(dashboard, "const ADMIN_PREVIEW_OTP = '412869';", 'admin preview otp constant');
+includes(dashboard, "const AUTH_USERNAME_EMAIL_DOMAIN = 'auth.vaitalcare.local';", 'username auth email domain');
+includes(dashboard, 'function usernameToInternalEmail(username)', 'username maps to internal auth email');
+includes(dashboard, 'signInWithPassword', 'doctor dashboard uses username/password auth');
+assert(!dashboard.includes('signInWithOtp'), 'doctor dashboard must not request WhatsApp OTP login');
+assert(!dashboard.includes('verifyOtp'), 'doctor dashboard must not verify WhatsApp OTP login');
 includes(dashboard, 'function isPreviewMode()', 'shared preview mode helper');
-includes(dashboard, 'function enterAdminPreviewApp(phone)', 'admin preview bootstrap');
+includes(dashboard, 'function enterAdminPreviewApp(username)', 'admin preview bootstrap');
 includes(dashboard, 'Admin preview opened with sample patients.', 'admin preview success toast');
 includes(dashboard, 'state.demo = true;', 'admin preview runs in local sandbox mode');
 includes(dashboard, 'function isMedicineComplete(med = {})', 'medicine completion helper');

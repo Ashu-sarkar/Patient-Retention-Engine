@@ -136,12 +136,12 @@
       <div class="brand-dot">V</div>
       <h1>Admin Console</h1>
     </div>
-    <p class="login-sub">Platform administrators only. Sign in with your admin email and password.</p>
+    <p class="login-sub">Platform administrators only. Sign in with your admin username and password.</p>
     <div id="login-alert" class="alert err hidden"></div>
     <form id="login-form">
       <div class="field">
-        <label for="email">Email</label>
-        <input id="email" type="email" autocomplete="username" placeholder="admin@vaitalcare.example" required />
+        <label for="username">Username</label>
+        <input id="username" type="text" autocomplete="username" placeholder="admin.username" required />
       </div>
       <div class="field">
         <label for="password">Password</label>
@@ -296,6 +296,7 @@ const sb = (window.supabase?.createClient && CFG.supabaseUrl.startsWith('https:/
   ? window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey)
   : null;
 
+const AUTH_USERNAME_EMAIL_DOMAIN = 'auth.vaitalcare.local';
 const state = { clinics: [], activeQrClinic: null, lastTokenUrl: '' };
 
 /* ═══ UI helpers ═══ */
@@ -311,6 +312,17 @@ function loginAlert(msg) {
   const el = $('login-alert');
   el.textContent = msg || '';
   el.classList.toggle('hidden', !msg);
+}
+function normalizeUsername(value) {
+  return String(value || '').trim().toLowerCase();
+}
+function isValidUsername(username) {
+  return /^[a-z0-9._-]{3,80}$/.test(username);
+}
+function usernameToInternalEmail(username) {
+  const clean = normalizeUsername(username);
+  if (!isValidUsername(clean)) return '';
+  return `${clean}@${AUTH_USERNAME_EMAIL_DOMAIN}`;
 }
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -330,7 +342,7 @@ async function verifyAdmin() {
 async function enterApp(user) {
   $('login-screen').classList.add('hidden');
   $('app').classList.remove('hidden');
-  $('who').textContent = user?.email || '';
+  $('who').textContent = (user?.email || '').replace(`@${AUTH_USERNAME_EMAIL_DOMAIN}`, '');
   $('form-base').value = CFG.patientFormBaseUrl || location.origin;
   await loadClinics();
 }
@@ -339,12 +351,13 @@ $('login-form').addEventListener('submit', async e => {
   e.preventDefault();
   loginAlert('');
   if (!sb) return loginAlert('Supabase is not configured for this page.');
-  const email = $('email').value.trim();
+  const username = normalizeUsername($('username').value);
   const password = $('password').value;
+  if (!isValidUsername(username)) return loginAlert('Enter a valid username.');
   const btn = $('login-btn');
   btn.disabled = true; btn.textContent = 'Signing in…';
   try {
-    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    const { data, error } = await sb.auth.signInWithPassword({ email: usernameToInternalEmail(username), password });
     if (error) throw error;
     if (!(await verifyAdmin())) {
       await sb.auth.signOut();

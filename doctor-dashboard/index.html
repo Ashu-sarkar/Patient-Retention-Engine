@@ -625,7 +625,7 @@
       font-size: 12px;
       font-weight: 800;
     }
-    .otp-actions {
+    .login-actions {
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -701,20 +701,19 @@
   <section id="login-screen" class="login">
     <div class="panel">
       <h1>Doctor Dashboard</h1>
-      <p class="login-copy">Use the WhatsApp number registered through hospital onboarding. We will send a one-time code to confirm access.</p>
-      <span id="login-step" class="login-step">WhatsApp verification</span>
+      <p class="login-copy">Use the username and password created during hospital onboarding.</p>
+      <span id="login-step" class="login-step">Username/password sign in</span>
       <form id="login-form" class="filters" style="margin-top: 18px;">
         <div class="field">
-          <label for="doctor-phone">Registered WhatsApp Number</label>
-          <input id="doctor-phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+91 98765 43210" required />
+          <label for="doctor-username">Username</label>
+          <input id="doctor-username" type="text" inputmode="text" autocomplete="username" placeholder="doctor.username" required />
         </div>
-        <div id="otp-field" class="field hidden">
-          <label for="otp-code">One-Time Code</label>
-          <input id="otp-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="6-digit OTP" />
+        <div class="field">
+          <label for="doctor-password">Password</label>
+          <input id="doctor-password" type="password" autocomplete="current-password" placeholder="Minimum 8 characters" required />
         </div>
-        <div class="otp-actions">
-          <button id="login-submit" class="btn primary" type="submit">Send WhatsApp OTP</button>
-          <button id="change-phone" class="link-button hidden" type="button">Change number</button>
+        <div class="login-actions">
+          <button id="login-submit" class="btn primary" type="submit">Sign In</button>
         </div>
       </form>
     </div>
@@ -986,8 +985,9 @@
     const DEFAULT_SUPABASE_URL = 'https://crsdccqseuhnimoxxeky.supabase.co';
     const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNyc2RjY3FzZXVobmltb3h4ZWt5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMjc1NzQsImV4cCI6MjA5MTkwMzU3NH0.3iz7x2JQj3qn6KI8JS3tjxV9vaBsN-mL6xDTvmJMDxA';
     const PRESCRIPTION_DELIVERY_FUNCTION = 'prescription-delivery';
-    const ADMIN_PREVIEW_PHONE = '+919685722570';
-    const ADMIN_PREVIEW_OTP = '412869';
+    const ADMIN_PREVIEW_USERNAME = 'admin.preview';
+    const ADMIN_PREVIEW_PASSWORD = 'preview412869';
+    const AUTH_USERNAME_EMAIL_DOMAIN = 'auth.vaitalcare.local';
     const MEDICINE_TIMING_OPTIONS = [
       'Empty Stomach',
       'Before Breakfast',
@@ -1042,8 +1042,6 @@
       demo: false,
       demoHistory: [],
       lastQueueError: null,
-      loginPhone: '',
-      otpSent: false,
       adminPreview: false,
     };
 
@@ -1086,37 +1084,26 @@
       showToast.timer = setTimeout(() => el.classList.add('hidden'), 4200);
     }
 
-    function normalizePhoneInput(value) {
-      const raw = String(value || '').trim();
-      if (!raw) return '';
-      const compact = raw.replace(/[\s\-().]/g, '');
-      if (compact.startsWith('+')) return compact;
-      if (/^\d{10}$/.test(compact)) return `+91${compact}`;
-      if (/^[1-9]\d{6,14}$/.test(compact)) return `+${compact}`;
-      return compact;
+    function normalizeUsername(value) {
+      return String(value || '').trim().toLowerCase();
     }
 
-    function isValidE164(phone) {
-      return /^\+[1-9]\d{6,14}$/.test(phone);
+    function isValidUsername(username) {
+      return /^[a-z0-9._-]{3,80}$/.test(username);
+    }
+
+    function usernameToInternalEmail(username) {
+      const clean = normalizeUsername(username);
+      if (!isValidUsername(clean)) return '';
+      return `${clean}@${AUTH_USERNAME_EMAIL_DOMAIN}`;
     }
 
     function isPreviewMode() {
       return state.demo || state.adminPreview;
     }
 
-    function isAdminPreviewPhone(phone) {
-      return normalizePhoneInput(phone) === ADMIN_PREVIEW_PHONE;
-    }
-
-    function resetLoginStep() {
-      state.loginPhone = '';
-      state.otpSent = false;
-      $('otp-field').classList.add('hidden');
-      $('otp-code').value = '';
-      $('doctor-phone').disabled = false;
-      $('change-phone').classList.add('hidden');
-      $('login-submit').textContent = 'Send WhatsApp OTP';
-      $('login-step').textContent = 'WhatsApp verification';
+    function isAdminPreviewLogin(username, password) {
+      return normalizeUsername(username) === ADMIN_PREVIEW_USERNAME && password === ADMIN_PREVIEW_PASSWORD;
     }
 
     function showBanner(title, body, { error = false, action = null } = {}) {
@@ -1219,7 +1206,7 @@
         return;
       }
       if (!HAS_SUPABASE_CONFIG) {
-        $('login-step').textContent = `WhatsApp verification or admin preview (${ADMIN_PREVIEW_PHONE})`;
+        $('login-step').textContent = `Username/password sign in or admin preview (${ADMIN_PREVIEW_USERNAME})`;
         return;
       }
       const { data } = await sb.auth.getSession();
@@ -1229,66 +1216,25 @@
     function bindEvents() {
       $('login-form').addEventListener('submit', async event => {
         event.preventDefault();
-        const phone = normalizePhoneInput($('doctor-phone').value);
-        if (!isValidE164(phone)) return showToast('Enter the registered WhatsApp number in international format.', true);
-        if (isAdminPreviewPhone(phone)) {
-          const token = $('otp-code').value.trim();
-          if (!state.otpSent) {
-            state.loginPhone = phone;
-            state.otpSent = true;
-            $('doctor-phone').value = phone;
-            $('doctor-phone').disabled = true;
-            $('otp-field').classList.remove('hidden');
-            $('otp-code').required = false;
-            $('change-phone').classList.remove('hidden');
-            $('login-submit').textContent = 'Open Admin Preview';
-            $('login-step').textContent = `Admin preview for ${phone}`;
-            $('otp-code').placeholder = `Optional preview code (${ADMIN_PREVIEW_OTP})`;
-            $('otp-code').focus();
-            return showToast('Admin preview ready. The OTP step is optional for this number.');
-          }
-          if (token && token !== ADMIN_PREVIEW_OTP) return showToast('Admin preview code did not match.', true);
-          await enterAdminPreviewApp(phone);
+        const username = normalizeUsername($('doctor-username').value);
+        const password = $('doctor-password').value;
+        if (!isValidUsername(username)) return showToast('Enter a valid username.', true);
+        if (!password || password.length < 8) return showToast('Enter your dashboard password.', true);
+        if (isAdminPreviewLogin(username, password)) {
+          await enterAdminPreviewApp(username);
           return;
         }
         if (!sb) return showConfigFallback();
-        if (!state.otpSent) {
-          const button = $('login-submit');
-          setButtonBusy(button, true, 'Sending...');
-          const { error } = await sb.auth.signInWithOtp({ phone });
-          setButtonBusy(button, false);
-          if (error) {
-            const hint = /sms|otp|hook|provider/i.test(error.message)
-              ? ' OTP delivery is not configured yet. Run npm run sync:doctor-otp-secrets.'
-              : '';
-            return showToast(`${error.message}${hint}`, true);
-          }
-          state.loginPhone = phone;
-          state.otpSent = true;
-          $('doctor-phone').value = phone;
-          $('doctor-phone').disabled = true;
-          $('otp-field').classList.remove('hidden');
-          $('otp-code').required = true;
-          $('change-phone').classList.remove('hidden');
-          $('login-submit').textContent = 'Verify and Sign In';
-          $('login-step').textContent = `OTP sent to ${phone}`;
-          $('otp-code').focus();
-          return showToast('OTP sent on WhatsApp.');
-        }
-        const token = $('otp-code').value.trim();
-        if (!/^\d{4,8}$/.test(token)) return showToast('Enter the OTP sent on WhatsApp.', true);
         const button = $('login-submit');
-        setButtonBusy(button, true, 'Verifying...');
-        const { data, error } = await sb.auth.verifyOtp({
-          phone: state.loginPhone,
-          token,
-          type: 'sms',
+        setButtonBusy(button, true, 'Signing in...');
+        const { data, error } = await sb.auth.signInWithPassword({
+          email: usernameToInternalEmail(username),
+          password,
         });
         setButtonBusy(button, false);
         if (error) return showToast(error.message, true);
         await enterApp(data.session);
       });
-      $('change-phone').addEventListener('click', resetLoginStep);
       $('sign-out').addEventListener('click', async () => {
         if (!sb) return location.reload();
         await sb.auth.signOut();
@@ -1410,7 +1356,7 @@
       showToast('Demo mode: sample data only.');
     }
 
-    async function enterAdminPreviewApp(phone) {
+    async function enterAdminPreviewApp(username) {
       state.demo = true;
       state.adminPreview = true;
       state.session = { user: { id: 'admin-preview-doctor' } };
@@ -1424,11 +1370,11 @@
         qualification: 'MBBS, MD',
         clinic_address: '18 Residency Road, Bengaluru',
         clinic_city: 'Bengaluru',
-        clinic_phone: phone,
+        clinic_phone: '+918080808080',
         clinic_email: 'admin.preview@vaitalcare.example',
         clinic_website: 'https://preview.vaitalcare.example',
         clinic_logo_url: '',
-        doctor_phone: phone,
+        doctor_phone: '+919999000111',
         signature_image_url: '',
         signature_label: 'Dr. Aditi Sharma',
         stamp_label: 'Admin preview sandbox',
@@ -1439,13 +1385,13 @@
       $('login-screen').classList.add('hidden');
       $('app').classList.remove('hidden');
       $('doctor-subtitle').textContent = `${state.profile.doctor_name} · Admin Preview`;
-      $('clinic-footer').textContent = `${state.profile.clinic_name} · ${phone}`;
+      $('clinic-footer').textContent = `${state.profile.clinic_name} · ${username}`;
       renderQueue();
       renderStats();
       updateJourney('queue');
       showBanner(
         'Admin preview mode',
-        `Signed in with ${phone}. Data stays inside this dashboard sandbox and does not touch Supabase.`,
+        `Signed in with ${username}. Data stays inside this dashboard sandbox and does not touch Supabase.`,
         { action: loadVisits }
       );
       showToast('Admin preview opened with sample patients.');
@@ -1465,7 +1411,7 @@
       if (error) {
         showBanner(
           'Doctor profile not found',
-          'This WhatsApp number is not linked to a doctor profile or hospital onboarding row. Check the registered doctor phone, then try again.',
+          'This username is not linked to a doctor profile or hospital onboarding row. Check the registered dashboard account, then try again.',
           { error: true, action: () => location.reload() }
         );
         throw error;
@@ -1474,10 +1420,10 @@
       if (!data) {
         showBanner(
           'Doctor profile not found',
-          'This WhatsApp number has no matching doctor in hospital onboarding yet.',
+          'This username has no matching doctor in hospital onboarding yet.',
           { error: true, action: () => location.reload() }
         );
-        throw new Error('Doctor profile not found for verified WhatsApp number.');
+        throw new Error('Doctor profile not found for signed-in username.');
       }
       state.profile = await enrichProfileFromBoarding(data);
       state.activeClinicId = state.profile.clinic_id || '';
