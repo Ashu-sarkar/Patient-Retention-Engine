@@ -3,6 +3,10 @@
     {
       "source": "/api/patient-form-intake",
       "destination": "https://vaitalcare-production.up.railway.app/webhook/patient-form-intake"
+    },
+    {
+      "source": "/i/(.*)",
+      "destination": "/index.html"
     }
   ]
 }

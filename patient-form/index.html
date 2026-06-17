@@ -737,6 +737,8 @@ function extractIntakeToken() {
   const hash = String(location.hash || '').trim();
   const match = hash.match(/^#\/?i\/([a-f0-9]{64})$/i) || hash.match(/^#token=([a-f0-9]{64})$/i);
   if (match) return match[1].toLowerCase();
+  const pathMatch = String(location.pathname || '').match(/\/i\/([a-f0-9]{64})\/?$/i);
+  if (pathMatch) return pathMatch[1].toLowerCase();
   const configured = String((window.VAITALCARE_CONFIG || {}).intakeToken || '').trim();
   return /^[a-f0-9]{64}$/i.test(configured) ? configured.toLowerCase() : '';
 }

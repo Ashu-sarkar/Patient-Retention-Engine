@@ -232,6 +232,7 @@ async function main() {
   const sqlFiles = [
     path.join(repoRoot, 'schemas', 'preflight-migrations.sql'),
     path.join(repoRoot, 'schemas', 'migration-v0-multitenant.sql'),
+    path.join(repoRoot, 'schemas', 'migration-admin-console.sql'),
   ];
   for (const sqlFile of sqlFiles) {
     if (!fs.existsSync(sqlFile)) die(`Missing ${sqlFile}`);
