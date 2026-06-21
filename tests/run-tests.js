@@ -521,10 +521,29 @@ async function main() {
     doctor_signature_url: 'https://example.com/signature.png',
     consultation_hours: 'Mon-Sat, 10 AM - 2 PM',
   };
+  function withDoctorCredentials(payload, overrides = {}) {
+    const doctor = {
+      doctor_name: payload.doctor_name,
+      doctor_qualification: payload.doctor_qualification,
+      doctor_expertise: payload.doctor_expertise,
+      doctor_registration_number: payload.doctor_registration_number,
+      doctor_phone: payload.doctor_phone,
+      doctor_signature_url: payload.doctor_signature_url,
+      login_username: overrides.login_username || 'test.doctor.primary',
+      password: overrides.password || 'TestPass123',
+      ...overrides,
+    };
+    return {
+      ...payload,
+      doctor_count: '1',
+      doctors_json: JSON.stringify([doctor]),
+      login_username: doctor.login_username,
+    };
+  }
 
   await test('2.1  Valid hospital boarding → 200 + success response', async () => {
     await sbDelete('hospital_boarding', `hospital_name=eq.${encodeURIComponent(HF.primaryHospital)}`).catch(() => {});
-    const { status, json } = await wh('hospital-boarding', 'POST', HOSPITAL_BASE);
+    const { status, json } = await wh('hospital-boarding', 'POST', withDoctorCredentials(HOSPITAL_BASE));
     assert(status === 200, `Expected 200, got ${status}: ${JSON.stringify(json)}`);
     assert(json.status === 'success', `Expected status=success: ${JSON.stringify(json)}`);
     assert(json.hospital_name === HF.primaryHospital, `hospital_name mismatch: ${JSON.stringify(json)}`);
@@ -552,7 +571,7 @@ async function main() {
 
   await test('2.2b Secondary hospital boarding row persisted for multi-clinic tests', async () => {
     await sbDelete('hospital_boarding', `hospital_name=eq.${encodeURIComponent(HF.secondaryHospital)}`).catch(() => {});
-    const { status, json } = await wh('hospital-boarding', 'POST', {
+    const secondaryPayload = {
       ...HOSPITAL_BASE,
       hospital_name: HF.secondaryHospital,
       address: '34 Parallel Care Road, Chennai, Tamil Nadu 600002',
@@ -561,7 +580,8 @@ async function main() {
       clinic_website: 'https://beta.example.com',
       doctor_registration_number: 'TNMC-54321',
       doctor_phone: '+919900002222',
-    });
+    };
+    const { status, json } = await wh('hospital-boarding', 'POST', withDoctorCredentials(secondaryPayload, { login_username: 'test.doctor.secondary' }));
     assert(status === 200, `Expected 200, got ${status}: ${JSON.stringify(json)}`);
     await sleep(1200);
     const row = await getHospitalBoarding(HF.secondaryHospital);
@@ -578,7 +598,7 @@ async function main() {
 
   await test('2.4  Validation: unsupported facility_type → 400 + errors[]', async () => {
     const { status, json } = await wh('hospital-boarding', 'POST', {
-      ...HOSPITAL_BASE,
+      ...withDoctorCredentials(HOSPITAL_BASE, { login_username: 'test.doctor.invalid' }),
       hospital_name: HF.secondaryHospital,
       facility_type: 'Veterinary Clinic',
     });
@@ -589,7 +609,7 @@ async function main() {
 
   await test('2.5  Validation: missing doctor_name → 400', async () => {
     const { status, json } = await wh('hospital-boarding', 'POST', {
-      ...HOSPITAL_BASE,
+      ...withDoctorCredentials(HOSPITAL_BASE, { doctor_name: '', login_username: 'test.doctor.blank' }),
       hospital_name: HF.secondaryHospital,
       doctor_name: '',
     });

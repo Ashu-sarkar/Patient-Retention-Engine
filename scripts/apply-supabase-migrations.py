@@ -108,6 +108,7 @@ def main() -> int:
     files = [
         ROOT / "schemas" / "preflight-migrations.sql",
         ROOT / "schemas" / "migration-v0-multitenant.sql",
+        ROOT / "schemas" / "migration-admin-console.sql",
     ]
     for path in files:
         if not path.exists():

@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="description" content="VaitalCare platform admin console" />
+  <title>VaitalCare Admin Console</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./vendor/qrcode.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --surface: #111a2e;
+      --surface-2: #16233d;
+      --border: #243250;
+      --text: #e7edf7;
+      --muted: #93a4c2;
+      --accent: #6366f1;
+      --accent-600: #4f46e5;
+      --green: #22c55e;
+      --amber: #f59e0b;
+      --red: #ef4444;
+      --r: 12px;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f4f6fb; --surface: #ffffff; --surface-2: #f8fafc; --border: #e2e8f0;
+        --text: #0f172a; --muted: #64748b;
+      }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg); color: var(--text); min-height: 100dvh;
+      -webkit-font-smoothing: antialiased;
+    }
+    .hidden { display: none !important; }
+    button { font-family: inherit; cursor: pointer; }
+    input, select { font-family: inherit; }
+
+    /* ── Login ── */
+    .login-wrap { min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .login-card {
+      width: 100%; max-width: 380px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 16px; padding: 28px;
+      box-shadow: 0 20px 50px rgba(0,0,0,.25);
+    }
+    .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+    .brand-dot { width: 34px; height: 34px; border-radius: 9px; background: linear-gradient(135deg, var(--accent), #8b5cf6); display: flex; align-items: center; justify-content: center; font-weight: 800; color: #fff; }
+    .brand h1 { font-size: 17px; }
+    .login-sub { color: var(--muted); font-size: 13px; margin: 4px 0 22px; }
+
+    .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+    .field label { font-size: 12.5px; font-weight: 600; color: var(--muted); }
+    .field input, .field select {
+      height: 44px; border: 1.5px solid var(--border); border-radius: 10px; padding: 0 12px;
+      background: var(--surface-2); color: var(--text); font-size: 15px; outline: none;
+      transition: border-color .15s;
+    }
+    .field input:focus, .field select:focus { border-color: var(--accent); }
+    textarea { width: 100%; border: 1.5px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--surface-2); color: var(--text); font-size: 14px; outline: none; resize: vertical; }
+
+    .btn {
+      height: 44px; border: none; border-radius: 10px; background: var(--accent-600); color: #fff;
+      font-weight: 600; font-size: 15px; width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      transition: filter .15s, transform .05s;
+    }
+    .btn:hover { filter: brightness(1.08); }
+    .btn:active { transform: scale(.99); }
+    .btn:disabled { opacity: .55; cursor: not-allowed; }
+    .btn-sm { height: 34px; padding: 0 12px; font-size: 13px; width: auto; border-radius: 8px; }
+    .btn-ghost { background: transparent; border: 1.5px solid var(--border); color: var(--text); }
+    .btn-danger { background: var(--red); }
+    .btn-amber { background: var(--amber); color: #1a1205; }
+
+    /* ── App shell ── */
+    .topbar {
+      display: flex; align-items: center; gap: 14px; padding: 12px 20px;
+      background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 20;
+    }
+    .topbar .spacer { flex: 1; }
+    .topbar .who { font-size: 13px; color: var(--muted); }
+    .tabs { display: flex; gap: 6px; padding: 14px 20px 0; flex-wrap: wrap; }
+    .tab { padding: 9px 16px; border-radius: 9px 9px 0 0; border: 1px solid transparent; color: var(--muted); font-weight: 600; font-size: 14px; background: transparent; }
+    .tab.active { color: var(--text); background: var(--surface); border-color: var(--border); border-bottom-color: var(--surface); }
+    .main { padding: 20px; max-width: 1100px; margin: 0 auto; }
+    .panel { display: none; }
+    .panel.active { display: block; animation: fade .2s ease; }
+    @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 18px; margin-bottom: 18px; }
+    .card h2 { font-size: 15px; margin-bottom: 4px; }
+    .card .desc { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    @media (max-width: 620px) { .grid2 { grid-template-columns: 1fr; } }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    th, td { text-align: left; padding: 10px 10px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+    td .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+    .pill.active { background: rgba(34,197,94,.15); color: var(--green); }
+    .pill.disabled { background: rgba(148,163,184,.18); color: var(--muted); }
+    .pill.expired { background: rgba(239,68,68,.15); color: var(--red); }
+    .pill.warn { background: rgba(245,158,11,.15); color: var(--amber); }
+
+    .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .muted { color: var(--muted); }
+    .stat-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+    .stat { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; min-width: 120px; }
+    .stat .n { font-size: 22px; font-weight: 800; }
+    .stat .l { font-size: 12px; color: var(--muted); }
+
+    .qr-stage { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; }
+    .qr-box { background: #fff; padding: 16px; border-radius: 12px; }
+    .qr-meta { flex: 1; min-width: 240px; }
+    .token-string { word-break: break-all; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+    .alert { padding: 11px 14px; border-radius: 10px; font-size: 13px; margin-bottom: 14px; }
+    .alert.err { background: rgba(239,68,68,.12); color: #fca5a5; border: 1px solid rgba(239,68,68,.3); }
+    .alert.ok { background: rgba(34,197,94,.12); color: #86efac; border: 1px solid rgba(34,197,94,.3); }
+    .alert.warn { background: rgba(245,158,11,.12); color: #fcd34d; border: 1px solid rgba(245,158,11,.3); }
+
+    .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(120px); background: var(--text); color: var(--bg); padding: 12px 18px; border-radius: 10px; font-size: 14px; z-index: 100; transition: transform .25s; box-shadow: 0 10px 30px rgba(0,0,0,.3); }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+    .toast.error { background: var(--red); color: #fff; }
+    .inline { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+    .inline .field { margin-bottom: 0; }
+    .split { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(280px, .8fr); gap: 16px; align-items: start; }
+    .mini-list { display: grid; gap: 8px; }
+    .mini-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .mini-item:last-child { border-bottom: 0; }
+    .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+    @media (max-width: 820px) { .split { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+
+<!-- ── LOGIN ────────────────────────────────────────────────── -->
+<div id="login-screen" class="login-wrap">
+  <div class="login-card">
+    <div class="brand">
+      <div class="brand-dot">V</div>
+      <h1>Admin Console</h1>
+    </div>
+    <p class="login-sub">Platform administrators only. Sign in with your admin username and password.</p>
+    <div id="login-alert" class="alert err hidden"></div>
+    <form id="login-form">
+      <div class="field">
+        <label for="username">Username</label>
+        <input id="username" type="text" autocomplete="username" placeholder="admin.username" required />
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password" placeholder="••••••••" required />
+      </div>
+      <button class="btn" id="login-btn" type="submit">Sign In</button>
+    </form>
+  </div>
+</div>
+
+<!-- ── APP ──────────────────────────────────────────────────── -->
+<div id="app" class="hidden">
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-dot">V</div>
+      <strong>Admin Console</strong>
+    </div>
+    <div class="spacer"></div>
+    <span class="who" id="who"></span>
+    <button class="btn btn-ghost btn-sm" id="sign-out">Sign out</button>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="overview">Overview</button>
+    <button class="tab" data-tab="clinics">Organizations</button>
+    <button class="tab" data-tab="qr">QR Codes</button>
+    <button class="tab" data-tab="demo">Demo Patients</button>
+    <button class="tab" data-tab="dashboard">Clinic Dashboard</button>
+    <button class="tab" data-tab="operations">Operations</button>
+    <button class="tab" data-tab="security">Security & Support</button>
+  </div>
+
+  <div class="main">
+    <!-- OVERVIEW -->
+    <section class="panel active" id="panel-overview">
+      <div class="card">
+        <div class="toolbar">
+          <div>
+            <h2>Platform command center</h2>
+            <p class="desc" style="margin-bottom:0">Usage, onboarding risk, manual payment status, and operational attention across all clinics.</p>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="reload-overview" style="margin-left:auto">Refresh</button>
+        </div>
+        <div id="overview-stats" class="stat-row"></div>
+        <div class="split">
+          <div>
+            <h2 style="font-size:13px;margin-bottom:8px">Accounts needing attention</h2>
+            <div id="overview-attention"><p class="muted">Loading…</p></div>
+          </div>
+          <div>
+            <h2 style="font-size:13px;margin-bottom:8px">Manual payment snapshot</h2>
+            <div id="overview-payment" class="mini-list"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CLINICS -->
+    <section class="panel" id="panel-clinics">
+      <div class="card">
+        <h2>Organizations</h2>
+        <p class="desc">Clinics self-register through the hospital-onboarding form. Use this view to review onboarded clinics, update manual SaaS/payment status, and generate QR codes. Click a row to see full details.</p>
+        <div id="clinics-summary" class="stat-row"></div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+          <input id="clinics-search" placeholder="Search by name, code, city, doctor, payment…" style="height:38px;flex:1;min-width:200px;border:1.5px solid var(--border);border-radius:9px;padding:0 12px;background:var(--surface-2);color:var(--text);outline:none" />
+          <button class="btn btn-ghost btn-sm" id="reload-clinics">Refresh</button>
+        </div>
+        <div id="clinics-table"></div>
+      </div>
+
+      <div class="card hidden" id="clinic-detail-card">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+          <h2 id="clinic-detail-name" style="margin:0">Clinic</h2>
+          <button class="btn btn-ghost btn-sm" id="clinic-detail-close" style="margin-left:auto">Close</button>
+        </div>
+        <p class="desc" id="clinic-detail-sub"></p>
+        <div id="clinic-detail-body"><p class="muted">Loading…</p></div>
+        <div class="row-actions" style="margin-top:14px">
+          <button class="btn btn-sm" id="clinic-detail-qr">Generate QR for this clinic</button>
+          <button class="btn btn-sm btn-ghost" id="clinic-detail-dash">Open dashboard</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- QR -->
+    <section class="panel" id="panel-qr">
+      <div class="card">
+        <h2>Generate clinic QR</h2>
+        <p class="desc">Pick an onboarded clinic to mint its unique intake token. The QR encodes a link that opens the patient form locked to that clinic. The raw token is shown once; only its hash is stored.</p>
+        <div class="field" style="max-width:520px">
+          <label>Patient form base URL</label>
+          <input id="form-base" placeholder="https://your-patient-form.vercel.app" />
+        </div>
+        <div class="inline" style="margin-top:8px">
+          <div class="field"><label>Clinic</label><select id="qr-clinic"></select></div>
+          <div class="field"><label>Label</label><input id="qr-label" placeholder="Reception QR" /></div>
+          <div class="field"><label>Expires (optional)</label><input id="qr-expires" type="date" /></div>
+          <button class="btn btn-sm" id="qr-generate" style="height:44px">Generate token + QR</button>
+        </div>
+        <div id="qr-result" class="hidden" style="margin-top:18px">
+          <div class="alert warn">Copy or download this now. For security the raw token cannot be shown again.</div>
+          <div class="qr-stage">
+            <div class="qr-box"><canvas id="qr-canvas"></canvas></div>
+            <div class="qr-meta">
+              <div class="field"><label>Scan URL</label><div class="token-string" id="qr-url"></div></div>
+              <div class="row-actions" style="margin-top:12px">
+                <button class="btn btn-sm" id="qr-download">Download PNG</button>
+                <button class="btn btn-sm btn-ghost" id="qr-print">Print</button>
+                <button class="btn btn-sm btn-ghost" id="qr-copy">Copy URL</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+          <h2 style="margin:0">Existing tokens</h2>
+          <button class="btn btn-ghost btn-sm" id="reload-tokens">Refresh</button>
+        </div>
+        <div id="tokens-table"><p class="muted">Select a clinic above to view its tokens.</p></div>
+      </div>
+    </section>
+
+    <!-- DEMO -->
+    <section class="panel" id="panel-demo">
+      <div class="card">
+        <h2>Demo patients</h2>
+        <p class="desc">Seeds throwaway patients (tagged <code>is_demo</code>, with non-routable +999 phone numbers excluded from all messaging workflows). Clear removes only demo rows for the clinic.</p>
+        <div class="inline">
+          <div class="field"><label>Clinic</label><select id="demo-clinic"></select></div>
+          <div class="field" style="max-width:120px"><label>Count</label><input id="demo-count" type="number" min="1" max="50" value="8" /></div>
+          <button class="btn btn-sm" id="demo-seed" style="height:44px">Seed</button>
+          <button class="btn btn-sm btn-danger" id="demo-clear" style="height:44px">Clear demo</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- DASHBOARD -->
+    <section class="panel" id="panel-dashboard">
+      <div class="card">
+        <div class="inline" style="margin-bottom:6px">
+          <div class="field"><label>Clinic</label><select id="dash-clinic"></select></div>
+          <button class="btn btn-sm" id="dash-load" style="height:44px">Load dashboard</button>
+        </div>
+        <div id="dash-stats" class="stat-row"></div>
+        <h2 style="margin:14px 0 8px">Today &amp; recent visits</h2>
+        <div id="dash-visits"><p class="muted">Pick a clinic and load.</p></div>
+      </div>
+    </section>
+
+    <!-- OPERATIONS -->
+    <section class="panel" id="panel-operations">
+      <div class="card">
+        <div class="toolbar">
+          <div>
+            <h2>Operations</h2>
+            <p class="desc" style="margin-bottom:0">Messaging delivery, workflow errors, and recent operational failures.</p>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="reload-operations" style="margin-left:auto">Refresh</button>
+        </div>
+        <div id="ops-stats" class="stat-row"></div>
+        <div class="grid2">
+          <div>
+            <h2 style="font-size:13px;margin-bottom:8px">Recent workflow issues</h2>
+            <div id="ops-errors"><p class="muted">Loading…</p></div>
+          </div>
+          <div>
+            <h2 style="font-size:13px;margin-bottom:8px">Message failures</h2>
+            <div id="ops-message-failures"><p class="muted">Loading…</p></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECURITY + SUPPORT -->
+    <section class="panel" id="panel-security">
+      <div class="card">
+        <div class="toolbar">
+          <div>
+            <h2>Security & support</h2>
+            <p class="desc" style="margin-bottom:0">Admin access posture, doctor onboarding gaps, and prioritized clinic follow-up queue.</p>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="reload-security" style="margin-left:auto">Refresh</button>
+        </div>
+        <div id="security-stats" class="stat-row"></div>
+        <h2 style="font-size:13px;margin:14px 0 8px">Support queue</h2>
+        <div id="support-queue"><p class="muted">Loading…</p></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ═══ CONFIG ═══ */
+const DEFAULT_SUPABASE_URL = 'https://crsdccqseuhnimoxxeky.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNyc2RjY3FzZXVobmltb3h4ZWt5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMjc1NzQsImV4cCI6MjA5MTkwMzU3NH0.3iz7x2JQj3qn6KI8JS3tjxV9vaBsN-mL6xDTvmJMDxA';
+
+const $ = id => document.getElementById(id);
+const readStored = k => { try { return localStorage.getItem(k) || ''; } catch (_) { return ''; } };
+const writeStored = (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} };
+
+function runtimeConfig() {
+  const g = window.VAITALCARE_CONFIG || {};
+  const params = new URLSearchParams(location.search || '');
+  return {
+    supabaseUrl: g.supabaseUrl || readStored('vaitalcare.supabaseUrl') || DEFAULT_SUPABASE_URL,
+    supabaseAnonKey: g.supabaseAnonKey || readStored('vaitalcare.supabaseAnonKey') || DEFAULT_SUPABASE_ANON_KEY,
+    patientFormBaseUrl:
+      params.get('patientFormBaseUrl') || g.patientFormBaseUrl ||
+      readStored('vaitalcare.patientFormBaseUrl') || '',
+  };
+}
+
+const CFG = runtimeConfig();
+const sb = (window.supabase?.createClient && CFG.supabaseUrl.startsWith('https://') && CFG.supabaseAnonKey && !CFG.supabaseAnonKey.includes('YOUR_'))
+  ? window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey)
+  : null;
+
+const AUTH_USERNAME_EMAIL_DOMAIN = 'auth.vaitalcare.local';
+const state = { clinics: [], activeQrClinic: null, lastTokenUrl: '', overview: null, operations: null, security: null };
+
+/* ═══ UI helpers ═══ */
+let toastTimer;
+function toast(msg, isError = false) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (isError ? ' error' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.className = 'toast' + (isError ? ' error' : ''); }, 3500);
+}
+function loginAlert(msg) {
+  const el = $('login-alert');
+  el.textContent = msg || '';
+  el.classList.toggle('hidden', !msg);
+}
+function normalizeUsername(value) {
+  return String(value || '').trim().toLowerCase();
+}
+function isValidUsername(username) {
+  return /^[a-z0-9._-]{3,80}$/.test(username);
+}
+function usernameToInternalEmail(username) {
+  const clean = normalizeUsername(username);
+  if (!isValidUsername(clean)) return '';
+  return `${clean}@${AUTH_USERNAME_EMAIL_DOMAIN}`;
+}
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+async function rpc(fn, args) {
+  const { data, error } = await sb.rpc(fn, args || {});
+  if (error) throw new Error(error.message || ('RPC ' + fn + ' failed'));
+  return data;
+}
+function pillClass(status) {
+  const s = String(status || '').toLowerCase();
+  if (['active', 'paid', 'delivered', 'read', 'ok'].includes(s)) return 'active';
+  if (['due', 'trial', 'onboarding', 'queued', 'warn', 'paused'].includes(s)) return 'warn';
+  if (['overdue', 'payment_failed', 'failed', 'undelivered', 'suspended', 'cancelled', 'expired'].includes(s)) return 'expired';
+  return 'disabled';
+}
+function titleize(v) {
+  return String(v || '—').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+/* ═══ AUTH ═══ */
+async function verifyAdmin() {
+  const isAdmin = await rpc('current_user_is_platform_admin');
+  return isAdmin === true;
+}
+
+async function enterApp(user) {
+  $('login-screen').classList.add('hidden');
+  $('app').classList.remove('hidden');
+  $('who').textContent = (user?.email || '').replace(`@${AUTH_USERNAME_EMAIL_DOMAIN}`, '');
+  $('form-base').value = CFG.patientFormBaseUrl || location.origin;
+  await Promise.all([loadOverview(), loadClinics()]);
+}
+
+$('login-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  loginAlert('');
+  if (!sb) return loginAlert('Supabase is not configured for this page.');
+  const username = normalizeUsername($('username').value);
+  const password = $('password').value;
+  if (!isValidUsername(username)) return loginAlert('Enter a valid username.');
+  const btn = $('login-btn');
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  try {
+    const { data, error } = await sb.auth.signInWithPassword({ email: usernameToInternalEmail(username), password });
+    if (error) throw error;
+    if (!(await verifyAdmin())) {
+      await sb.auth.signOut();
+      throw new Error('This account is not a platform administrator.');
+    }
+    await enterApp(data.user);
+  } catch (err) {
+    loginAlert(err.message || 'Sign in failed.');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Sign In';
+  }
+});
+
+$('sign-out').addEventListener('click', async () => {
+  if (sb) await sb.auth.signOut();
+  location.reload();
+});
+
+/* ═══ TABS ═══ */
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  $('panel-' + name).classList.add('active');
+  if (name === 'overview') loadOverview();
+  if (name === 'operations') loadOperations();
+  if (name === 'security') loadSecuritySupport();
+}
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+});
+
+/* ═══ OVERVIEW ═══ */
+function renderMiniRows(rows, emptyText) {
+  if (!rows || !rows.length) return `<p class="muted">${esc(emptyText || 'Nothing needs attention.')}</p>`;
+  return `<div class="mini-list">${rows.join('')}</div>`;
+}
+
+async function loadOverview() {
+  if (!$('overview-stats')) return;
+  try {
+    const data = await rpc('admin_get_platform_overview');
+    state.overview = data || {};
+    const totals = state.overview.totals || {};
+    const usage = state.overview.usage || {};
+    const manual = state.overview.manual_status || {};
+    const attention = state.overview.attention || {};
+    $('overview-stats').innerHTML = `
+      <div class="stat"><div class="n">${totals.clinics ?? 0}</div><div class="l">Organizations</div></div>
+      <div class="stat"><div class="n">${totals.real_patients ?? 0}</div><div class="l">Real patients</div></div>
+      <div class="stat"><div class="n">${usage.visits_today ?? 0}</div><div class="l">Visits today</div></div>
+      <div class="stat"><div class="n">${usage.messages_7d ?? 0}</div><div class="l">Messages 7d</div></div>
+      <div class="stat"><div class="n">${manual.payment_due ?? 0}</div><div class="l">Payment attention</div></div>
+      <div class="stat"><div class="n">${attention.workflow_errors_24h ?? 0}</div><div class="l">Workflow errors 24h</div></div>`;
+    $('overview-payment').innerHTML = renderMiniRows([
+      `<div class="mini-item"><span>Paid accounts</span><span class="pill active">${manual.paid ?? 0}</span></div>`,
+      `<div class="mini-item"><span>Trial accounts</span><span class="pill warn">${manual.trial ?? 0}</span></div>`,
+      `<div class="mini-item"><span>Due / failed / overdue</span><span class="pill expired">${manual.payment_due ?? 0}</span></div>`,
+      `<div class="mini-item"><span>Suspended accounts</span><span class="pill expired">${manual.suspended ?? 0}</span></div>`,
+    ]);
+    $('overview-attention').innerHTML = renderMiniRows([
+      `<div class="mini-item"><span>Clinics without active QR</span><span class="pill ${attention.without_active_qr ? 'warn' : 'active'}">${attention.without_active_qr ?? 0}</span></div>`,
+      `<div class="mini-item"><span>Doctors missing WhatsApp</span><span class="pill ${attention.missing_doctor_whatsapp ? 'warn' : 'active'}">${attention.missing_doctor_whatsapp ?? 0}</span></div>`,
+      `<div class="mini-item"><span>Failed messages 7d</span><span class="pill ${usage.failed_messages_7d ? 'expired' : 'active'}">${usage.failed_messages_7d ?? 0}</span></div>`,
+      `<div class="mini-item"><span>New patients 7d</span><span class="pill disabled">${usage.patients_7d ?? 0}</span></div>`,
+    ]);
+  } catch (err) {
+    $('overview-stats').innerHTML = `<div class="alert err">${esc(err.message)}</div>`;
+  }
+}
+$('reload-overview').addEventListener('click', loadOverview);
+
+/* ═══ CLINICS ═══ */
+function fmtDateTime(v) { return v ? new Date(v).toLocaleString() : '—'; }
+function fmtDate(v) { return v ? new Date(v).toLocaleDateString() : '—'; }
+function dateInputValue(v) { return v ? new Date(v).toLocaleDateString('en-CA') : ''; }
+
+async function loadClinics() {
+  try {
+    const rows = await rpc('admin_list_clinics');
+    state.clinics = Array.isArray(rows) ? rows : [];
+    renderClinicsSummary();
+    renderClinics();
+    fillClinicSelects();
+  } catch (err) {
+    $('clinics-table').innerHTML = `<div class="alert err">${esc(err.message)}</div>`;
+  }
+}
+
+function renderClinicsSummary() {
+  const cs = state.clinics;
+  const totalPatients = cs.reduce((s, c) => s + Number(c.patient_count || 0), 0);
+  const visitsToday = cs.reduce((s, c) => s + Number(c.visits_today || 0), 0);
+  const withQr = cs.filter(c => Number(c.active_tokens) > 0).length;
+  const attention = cs.filter(c => c.needs_attention).length;
+  const paymentAttention = cs.filter(c => ['due', 'overdue', 'payment_failed'].includes(c.payment_status)).length;
+  $('clinics-summary').innerHTML = `
+    <div class="stat"><div class="n">${cs.length}</div><div class="l">Clinics onboarded</div></div>
+    <div class="stat"><div class="n">${withQr}</div><div class="l">With active QR</div></div>
+    <div class="stat"><div class="n">${totalPatients}</div><div class="l">Total patients</div></div>
+    <div class="stat"><div class="n">${visitsToday}</div><div class="l">Visits today</div></div>
+    <div class="stat"><div class="n">${paymentAttention}</div><div class="l">Payment attention</div></div>
+    <div class="stat"><div class="n">${attention}</div><div class="l">Need attention</div></div>`;
+}
+
+function filteredClinics() {
+  const q = ($('clinics-search').value || '').trim().toLowerCase();
+  if (!q) return state.clinics;
+  return state.clinics.filter(c =>
+    [c.name, c.code, c.slug, c.city, c.primary_doctor, c.contact_phone, c.payment_status, c.lifecycle_status, c.plan_label, c.account_owner]
+      .some(v => String(v || '').toLowerCase().includes(q)));
+}
+
+function renderClinics() {
+  if (!state.clinics.length) {
+    $('clinics-table').innerHTML = '<p class="muted">No clinics yet. Clinics appear here once they register through the hospital-onboarding form.</p>';
+    return;
+  }
+  const list = filteredClinics();
+  if (!list.length) { $('clinics-table').innerHTML = '<p class="muted">No clinics match your search.</p>'; return; }
+  const rows = list.map(c => `
+    <tr data-clinic="${esc(c.clinic_id)}" style="cursor:pointer">
+      <td><strong>${esc(c.name)}</strong><br><span class="muted">${esc(c.code)}${c.city ? ' · ' + esc(c.city) : ''}</span></td>
+      <td>${esc(c.primary_doctor || '—')}</td>
+      <td><span class="pill ${pillClass(c.lifecycle_status || c.status)}">${esc(titleize(c.lifecycle_status || c.status))}</span></td>
+      <td><span class="pill ${pillClass(c.payment_status)}">${esc(titleize(c.payment_status))}</span><br><span class="muted">${esc(c.plan_label || 'Manual')}</span></td>
+      <td>${c.patient_count}${Number(c.demo_patient_count) ? ` <span class="muted">(${c.demo_patient_count} demo)</span>` : ''}</td>
+      <td>${c.visits_today}</td>
+      <td>${Number(c.active_tokens) > 0 ? `<span class="pill active">${c.active_tokens}</span>` : '<span class="pill disabled">none</span>'}</td>
+      <td>${c.needs_attention ? '<span class="pill expired">Action</span>' : '<span class="pill active">OK</span>'}</td>
+    </tr>`).join('');
+  $('clinics-table').innerHTML = `<table>
+    <thead><tr><th>Clinic</th><th>Doctor</th><th>Lifecycle</th><th>Payment</th><th>Patients</th><th>Visits today</th><th>Active QR</th><th>Health</th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+  $('clinics-table').querySelectorAll('[data-clinic]').forEach(tr =>
+    tr.addEventListener('click', () => showClinicDetail(tr.dataset.clinic)));
+}
+
+async function showClinicDetail(clinicId) {
+  const card = $('clinic-detail-card');
+  const clinic = state.clinics.find(c => c.clinic_id === clinicId);
+  card.classList.remove('hidden');
+  card.dataset.clinic = clinicId;
+  $('clinic-detail-name').textContent = clinic ? clinic.name : 'Clinic';
+  $('clinic-detail-sub').textContent = clinic ? `${clinic.code} · ${clinic.slug}` : '';
+  $('clinic-detail-body').innerHTML = '<p class="muted">Loading…</p>';
+  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  try {
+    const d = await rpc('admin_get_clinic_details', { p_clinic_id: clinicId });
+    const ct = d.contact || {};
+    const st = d.stats || {};
+    const admin = d.admin_settings || {};
+    const doctors = Array.isArray(d.doctors) ? d.doctors : [];
+    const docRows = doctors.length ? doctors.map(doc => `
+      <tr>
+        <td><strong>${esc(doc.doctor_name)}</strong></td>
+        <td>${esc(doc.doctor_expertise || doc.doctor_qualification || '—')}</td>
+        <td>${esc(doc.doctor_registration_number || '—')}</td>
+        <td>${doc.doctor_phone ? esc(doc.doctor_phone) : '<span class="pill expired">missing</span>'}</td>
+        <td>${doc.has_logged_in ? '<span class="pill active">active</span>' : '<span class="pill disabled">not signed in</span>'}</td>
+      </tr>`).join('') : '<tr><td colspan="5" class="muted">No doctor records.</td></tr>';
+    $('clinic-detail-body').innerHTML = `
+      <div class="stat-row">
+        <div class="stat"><div class="n">${st.patient_count ?? 0}</div><div class="l">Patients${Number(st.demo_patient_count) ? ` (${st.demo_patient_count} demo)` : ''}</div></div>
+        <div class="stat"><div class="n">${st.visits_today ?? 0}</div><div class="l">Visits today</div></div>
+        <div class="stat"><div class="n">${st.total_visits ?? 0}</div><div class="l">Total visits</div></div>
+        <div class="stat"><div class="n">${st.prescriptions ?? 0}</div><div class="l">Prescriptions</div></div>
+        <div class="stat"><div class="n">${st.active_tokens ?? 0}</div><div class="l">Active QR</div></div>
+        <div class="stat"><div class="n">${st.total_token_uses ?? 0}</div><div class="l">QR scans</div></div>
+      </div>
+      <div class="grid2" style="margin-top:6px">
+        <div>
+          <h2 style="font-size:13px;margin-bottom:8px">Facility & contact</h2>
+          <table>
+            <tbody>
+              <tr><th>Facility</th><td>${esc(ct.facility_type || '—')}</td></tr>
+              <tr><th>Address</th><td>${esc(ct.address || '—')}${ct.city ? ', ' + esc(ct.city) : ''}</td></tr>
+              <tr><th>Contact</th><td>${esc(ct.contact_phone || '—')}${ct.admin_contact_name ? ' · ' + esc(ct.admin_contact_name) : ''}</td></tr>
+              <tr><th>Email</th><td>${esc(ct.clinic_email || '—')}</td></tr>
+              <tr><th>Website</th><td>${esc(ct.clinic_website || '—')}</td></tr>
+              <tr><th>Hours</th><td>${esc(ct.consultation_hours || '—')}</td></tr>
+              <tr><th>Onboarded</th><td>${fmtDate(ct.onboarded_at)}</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <h2 style="font-size:13px;margin-bottom:8px">Activity</h2>
+          <table>
+            <tbody>
+              <tr><th>Last visit</th><td>${fmtDateTime(st.last_visit_at)}</td></tr>
+              <tr><th>Last QR scan</th><td>${fmtDateTime(st.last_token_used_at)}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <h2 style="font-size:13px;margin:16px 0 8px">SaaS account controls</h2>
+      <form id="clinic-admin-settings-form">
+        <div class="grid2">
+          <div class="field">
+            <label>Lifecycle status</label>
+            <select id="clinic-lifecycle-status">
+              ${['active','onboarding','paused','suspended','cancelled'].map(v => `<option value="${v}" ${admin.lifecycle_status === v ? 'selected' : ''}>${esc(titleize(v))}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field">
+            <label>Manual payment status</label>
+            <select id="clinic-payment-status">
+              ${['not_started','trial','paid','due','overdue','waived','paused','payment_failed','cancelled'].map(v => `<option value="${v}" ${admin.payment_status === v ? 'selected' : ''}>${esc(titleize(v))}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field">
+            <label>Plan label</label>
+            <input id="clinic-plan-label" value="${esc(admin.plan_label || 'Manual')}" placeholder="Manual / Starter / Growth" />
+          </div>
+          <div class="field">
+            <label>Account owner</label>
+            <input id="clinic-account-owner" value="${esc(admin.account_owner || '')}" placeholder="Internal owner" />
+          </div>
+          <div class="field">
+            <label>Payment due date</label>
+            <input id="clinic-payment-due-date" type="date" value="${esc(dateInputValue(admin.payment_due_date))}" />
+          </div>
+          <div class="field">
+            <label>Last payment date</label>
+            <input id="clinic-last-payment-date" type="date" value="${esc(dateInputValue(admin.last_payment_date))}" />
+          </div>
+          <div class="field">
+            <label>Renewal date</label>
+            <input id="clinic-renewal-date" type="date" value="${esc(dateInputValue(admin.renewal_date))}" />
+          </div>
+        </div>
+        <div class="grid2">
+          <div class="field">
+            <label>Billing notes</label>
+            <textarea id="clinic-billing-notes" rows="3" placeholder="Manual coordination notes">${esc(admin.billing_notes || '')}</textarea>
+          </div>
+          <div class="field">
+            <label>Internal support notes</label>
+            <textarea id="clinic-internal-notes" rows="3" placeholder="Onboarding, risk, relationship notes">${esc(admin.internal_notes || '')}</textarea>
+          </div>
+        </div>
+        <button class="btn btn-sm" id="clinic-admin-settings-save" type="submit">Save admin status</button>
+      </form>
+      <h2 style="font-size:13px;margin:16px 0 8px">Doctors</h2>
+      <table>
+        <thead><tr><th>Name</th><th>Expertise</th><th>Reg #</th><th>WhatsApp</th><th>Login</th></tr></thead>
+        <tbody>${docRows}</tbody>
+      </table>`;
+    $('clinic-admin-settings-form').addEventListener('submit', saveClinicAdminSettings);
+  } catch (err) {
+    $('clinic-detail-body').innerHTML = `<div class="alert err">${esc(err.message)}</div>`;
+  }
+}
+
+async function saveClinicAdminSettings(e) {
+  e.preventDefault();
+  const clinicId = $('clinic-detail-card').dataset.clinic;
+  const btn = $('clinic-admin-settings-save');
+  btn.disabled = true;
+  try {
+    await rpc('admin_update_clinic_admin_settings', {
+      p_clinic_id: clinicId,
+      p_lifecycle_status: $('clinic-lifecycle-status').value,
+      p_payment_status: $('clinic-payment-status').value,
+      p_plan_label: $('clinic-plan-label').value.trim() || 'Manual',
+      p_account_owner: $('clinic-account-owner').value.trim() || null,
+      p_renewal_date: $('clinic-renewal-date').value || null,
+      p_last_payment_date: $('clinic-last-payment-date').value || null,
+      p_payment_due_date: $('clinic-payment-due-date').value || null,
+      p_billing_notes: $('clinic-billing-notes').value.trim() || null,
+      p_internal_notes: $('clinic-internal-notes').value.trim() || null,
+    });
+    toast('Admin status saved.');
+    await Promise.all([loadClinics(), loadOverview()]);
+    await showClinicDetail(clinicId);
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function fillClinicSelects() {
+  const opts = '<option value="">Select clinic…</option>' +
+    state.clinics.map(c => `<option value="${esc(c.clinic_id)}">${esc(c.name)} (${esc(c.code)})</option>`).join('');
+  ['qr-clinic', 'demo-clinic', 'dash-clinic'].forEach(id => {
+    const sel = $(id); const prev = sel.value; sel.innerHTML = opts; sel.value = prev;
+  });
+}
+
+$('reload-clinics').addEventListener('click', loadClinics);
+$('clinics-search').addEventListener('input', renderClinics);
+$('clinic-detail-close').addEventListener('click', () => $('clinic-detail-card').classList.add('hidden'));
+$('clinic-detail-qr').addEventListener('click', () => {
+  const id = $('clinic-detail-card').dataset.clinic;
+  switchTab('qr');
+  const sel = $('qr-clinic'); sel.value = id; sel.dispatchEvent(new Event('change'));
+});
+$('clinic-detail-dash').addEventListener('click', () => {
+  const id = $('clinic-detail-card').dataset.clinic;
+  switchTab('dashboard');
+  $('dash-clinic').value = id;
+  loadDashboard();
+});
+
+/* ═══ QR ═══ */
+$('form-base').addEventListener('change', () => {
+  writeStored('vaitalcare.patientFormBaseUrl', $('form-base').value.trim());
+});
+
+function buildScanUrl(token) {
+  const base = ($('form-base').value.trim() || location.origin).replace(/\/+$/, '');
+  return `${base}/#/i/${token}`;
+}
+
+function drawQr(canvas, text) {
+  const qr = qrcode(0, 'M');
+  qr.addData(text);
+  qr.make();
+  const count = qr.getModuleCount();
+  const cell = 8;
+  const quiet = 4;
+  const size = (count + quiet * 2) * cell;
+  const ctx = canvas.getContext('2d');
+  canvas.width = size; canvas.height = size;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, size, size);
+  ctx.fillStyle = '#000000';
+  for (let r = 0; r < count; r++) {
+    for (let col = 0; col < count; col++) {
+      if (qr.isDark(r, col)) {
+        ctx.fillRect((col + quiet) * cell, (r + quiet) * cell, cell, cell);
+      }
+    }
+  }
+}
+
+$('qr-clinic').addEventListener('change', () => {
+  state.activeQrClinic = $('qr-clinic').value || null;
+  loadTokens();
+});
+
+$('qr-generate').addEventListener('click', async () => {
+  const clinicId = $('qr-clinic').value;
+  if (!clinicId) return toast('Select a clinic first.', true);
+  const base = $('form-base').value.trim();
+  if (!base) return toast('Set the patient form base URL first.', true);
+  writeStored('vaitalcare.patientFormBaseUrl', base);
+  const expires = $('qr-expires').value ? new Date($('qr-expires').value + 'T23:59:59').toISOString() : null;
+  const btn = $('qr-generate'); btn.disabled = true;
+  try {
+    const data = await rpc('create_clinic_intake_token', {
+      p_clinic_id: clinicId,
+      p_label: $('qr-label').value.trim() || 'Primary QR',
+      p_expires_at: expires,
+    });
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row || !row.token) throw new Error('Token was not returned.');
+    const url = buildScanUrl(row.token);
+    state.lastTokenUrl = url;
+    $('qr-url').textContent = url;
+    drawQr($('qr-canvas'), url);
+    $('qr-result').classList.remove('hidden');
+    toast('Token generated.');
+    loadTokens();
+    loadClinics();
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$('qr-download').addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.href = $('qr-canvas').toDataURL('image/png');
+  a.download = 'clinic-qr.png';
+  a.click();
+});
+$('qr-copy').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(state.lastTokenUrl); toast('URL copied.'); }
+  catch (_) { toast('Copy failed — select the URL manually.', true); }
+});
+$('qr-print').addEventListener('click', () => {
+  const img = $('qr-canvas').toDataURL('image/png');
+  const clinic = state.clinics.find(c => c.clinic_id === $('qr-clinic').value);
+  const w = window.open('', '_blank');
+  w.document.write(`<html><head><title>Clinic QR</title></head><body style="text-align:center;font-family:sans-serif;padding:40px">
+    <h2>${esc(clinic ? clinic.name : 'Clinic')}</h2>
+    <p>Scan to register at this clinic</p>
+    <img src="${img}" style="width:320px;height:320px" />
+    <p style="font-size:11px;color:#666;word-break:break-all">${esc(state.lastTokenUrl)}</p>
+    <script>window.onload=function(){window.print();}<\/script></body></html>`);
+  w.document.close();
+});
+
+async function loadTokens() {
+  const clinicId = $('qr-clinic').value;
+  if (!clinicId) { $('tokens-table').innerHTML = '<p class="muted">Select a clinic above to view its tokens.</p>'; return; }
+  try {
+    const rows = await rpc('admin_list_intake_tokens', { p_clinic_id: clinicId });
+    if (!Array.isArray(rows) || !rows.length) { $('tokens-table').innerHTML = '<p class="muted">No tokens yet for this clinic.</p>'; return; }
+    const body = rows.map(t => {
+      const expired = t.expires_at && new Date(t.expires_at) < new Date();
+      const status = expired ? 'expired' : t.status;
+      return `<tr>
+        <td>${esc(t.label)}</td>
+        <td><span class="pill ${status === 'active' ? 'active' : status === 'expired' ? 'expired' : 'disabled'}">${esc(status)}</span></td>
+        <td>${t.use_count}</td>
+        <td>${t.last_used_at ? new Date(t.last_used_at).toLocaleString() : '—'}</td>
+        <td>${t.expires_at ? new Date(t.expires_at).toLocaleDateString() : 'never'}</td>
+        <td class="row-actions">
+          ${t.status === 'active'
+            ? `<button class="btn btn-sm btn-amber" data-disable="${esc(t.id)}">Disable</button>`
+            : `<button class="btn btn-sm btn-ghost" data-enable="${esc(t.id)}">Enable</button>`}
+        </td>
+      </tr>`;
+    }).join('');
+    $('tokens-table').innerHTML = `<table>
+      <thead><tr><th>Label</th><th>Status</th><th>Uses</th><th>Last used</th><th>Expires</th><th></th></tr></thead>
+      <tbody>${body}</tbody></table>`;
+    $('tokens-table').querySelectorAll('[data-disable]').forEach(b =>
+      b.addEventListener('click', () => setTokenStatus(b.dataset.disable, 'disabled')));
+    $('tokens-table').querySelectorAll('[data-enable]').forEach(b =>
+      b.addEventListener('click', () => setTokenStatus(b.dataset.enable, 'active')));
+  } catch (err) {
+    $('tokens-table').innerHTML = `<div class="alert err">${esc(err.message)}</div>`;
+  }
+}
+async function setTokenStatus(id, status) {
+  try { await rpc('admin_set_token_status', { p_token_id: id, p_status: status }); toast('Token updated.'); loadTokens(); loadClinics(); }
+  catch (err) { toast(err.message, true); }
+}
+$('reload-tokens').addEventListener('click', loadTokens);
+
+/* ═══ DEMO ═══ */
+$('demo-seed').addEventListener('click', async () => {
+  const clinicId = $('demo-clinic').value;
+  if (!clinicId) return toast('Select a clinic.', true);
+  const count = Math.max(1, Math.min(50, parseInt($('demo-count').value, 10) || 8));
+  const btn = $('demo-seed'); btn.disabled = true;
+  try {
+    const data = await rpc('admin_seed_dummy_patients', { p_clinic_id: clinicId, p_count: count });
+    const n = Array.isArray(data) ? (data[0]?.seeded ?? data[0]) : data;
+    toast(`Seeded ${n} demo patients.`);
+    loadClinics();
+  } catch (err) { toast(err.message, true); }
+  finally { btn.disabled = false; }
+});
+$('demo-clear').addEventListener('click', async () => {
+  const clinicId = $('demo-clinic').value;
+  if (!clinicId) return toast('Select a clinic.', true);
+  if (!confirm('Delete ALL demo patients for this clinic? Real patients are untouched.')) return;
+  const btn = $('demo-clear'); btn.disabled = true;
+  try {
+    const data = await rpc('admin_clear_dummy_patients', { p_clinic_id: clinicId });
+    const n = Array.isArray(data) ? (data[0]?.deleted ?? data[0]) : data;
+    toast(`Cleared ${n} demo patients.`);
+    loadClinics();
+  } catch (err) { toast(err.message, true); }
+  finally { btn.disabled = false; }
+});
+
+/* ═══ CLINIC DASHBOARD (read-only) ═══ */
+$('dash-load').addEventListener('click', loadDashboard);
+async function loadDashboard() {
+  const clinicId = $('dash-clinic').value;
+  if (!clinicId) return toast('Select a clinic.', true);
+  $('dash-visits').innerHTML = '<p class="muted">Loading…</p>';
+  try {
+    const today = new Date().toLocaleDateString('en-CA');
+    const [patients, visits, rx] = await Promise.all([
+      sb.from('patients').select('id', { count: 'exact', head: true }).eq('clinic_id', clinicId),
+      sb.from('patient_visits')
+        .select('id,patient_code,doctor_name,visit_date,visit_status,chief_complaint,checked_in_at')
+        .eq('clinic_id', clinicId).order('visit_date', { ascending: false }).order('checked_in_at', { ascending: false }).limit(50),
+      sb.from('prescriptions').select('id', { count: 'exact', head: true }).eq('clinic_id', clinicId),
+    ]);
+    if (patients.error) throw patients.error;
+    if (visits.error) throw visits.error;
+    const vrows = visits.data || [];
+    const todays = vrows.filter(v => v.visit_date === today);
+    const waiting = vrows.filter(v => v.visit_status === 'waiting').length;
+    $('dash-stats').innerHTML = `
+      <div class="stat"><div class="n">${patients.count ?? '—'}</div><div class="l">Total patients</div></div>
+      <div class="stat"><div class="n">${todays.length}</div><div class="l">Visits today</div></div>
+      <div class="stat"><div class="n">${waiting}</div><div class="l">Waiting now</div></div>
+      <div class="stat"><div class="n">${rx.count ?? '—'}</div><div class="l">Prescriptions</div></div>`;
+    if (!vrows.length) { $('dash-visits').innerHTML = '<p class="muted">No visits for this clinic yet.</p>'; return; }
+    const body = vrows.map(v => `<tr>
+      <td>${esc(v.patient_code || '—')}</td>
+      <td>${esc(v.doctor_name)}</td>
+      <td>${esc(v.visit_date)}</td>
+      <td><span class="pill ${v.visit_status === 'waiting' ? 'active' : 'disabled'}">${esc(v.visit_status)}</span></td>
+      <td>${esc(v.chief_complaint || '—')}</td>
+    </tr>`).join('');
+    $('dash-visits').innerHTML = `<table>
+      <thead><tr><th>Patient</th><th>Doctor</th><th>Date</th><th>Status</th><th>Complaint</th></tr></thead>
+      <tbody>${body}</tbody></table>`;
+  } catch (err) {
+    $('dash-visits').innerHTML = `<div class="alert err">${esc(err.message)}</div>`;
+  }
+}
+
+/* ═══ OPERATIONS ═══ */
+async function loadOperations() {
+  try {
+    const data = await rpc('admin_get_operations_overview');
+    state.operations = data || {};
+    const mh = state.operations.message_health || {};
+    const wh = state.operations.workflow_health || {};
+    $('ops-stats').innerHTML = `
+      <div class="stat"><div class="n">${mh.sent_24h ?? 0}</div><div class="l">Messages 24h</div></div>
+      <div class="stat"><div class="n">${mh.delivered_24h ?? 0}</div><div class="l">Delivered/read 24h</div></div>
+      <div class="stat"><div class="n">${mh.failed_24h ?? 0}</div><div class="l">Failed 24h</div></div>
+      <div class="stat"><div class="n">${wh.errors_24h ?? 0}</div><div class="l">Workflow errors 24h</div></div>
+      <div class="stat"><div class="n">${wh.warnings_24h ?? 0}</div><div class="l">Warnings 24h</div></div>`;
+    const errors = state.operations.recent_errors || [];
+    $('ops-errors').innerHTML = errors.length ? `<table>
+      <thead><tr><th>Time</th><th>Workflow</th><th>Message</th></tr></thead>
+      <tbody>${errors.map(e => `<tr><td>${fmtDateTime(e.timestamp)}</td><td>${esc(e.workflow_name || '—')}</td><td>${esc(e.message || '—')}</td></tr>`).join('')}</tbody>
+    </table>` : '<p class="muted">No recent workflow warnings or errors.</p>';
+    const failures = state.operations.message_failures || [];
+    $('ops-message-failures').innerHTML = failures.length ? `<table>
+      <thead><tr><th>Time</th><th>Patient</th><th>Status</th><th>Error</th></tr></thead>
+      <tbody>${failures.map(m => `<tr>
+        <td>${fmtDateTime(m.sent_at)}</td>
+        <td>${esc(m.patient_name || m.phone || '—')}</td>
+        <td><span class="pill ${pillClass(m.delivery_status)}">${esc(titleize(m.delivery_status))}</span></td>
+        <td>${esc(m.error_message || m.workflow_name || '—')}</td>
+      </tr>`).join('')}</tbody>
+    </table>` : '<p class="muted">No recent message failures.</p>';
+  } catch (err) {
+    $('ops-stats').innerHTML = `<div class="alert err">${esc(err.message)}</div>`;
+  }
+}
+$('reload-operations').addEventListener('click', loadOperations);
+
+/* ═══ SECURITY + SUPPORT ═══ */
+async function loadSecuritySupport() {
+  try {
+    const data = await rpc('admin_get_security_support_overview');
+    state.security = data || {};
+    const access = state.security.access || {};
+    $('security-stats').innerHTML = `
+      <div class="stat"><div class="n">${access.platform_admins ?? 0}</div><div class="l">Platform admins</div></div>
+      <div class="stat"><div class="n">${access.doctor_auth_users ?? 0}</div><div class="l">Doctor auth users</div></div>
+      <div class="stat"><div class="n">${access.doctors_not_signed_in ?? 0}</div><div class="l">Doctors not signed in</div></div>
+      <div class="stat"><div class="n">${access.missing_doctor_whatsapp ?? 0}</div><div class="l">Missing WhatsApp</div></div>`;
+    const queue = state.security.support_queue || [];
+    $('support-queue').innerHTML = queue.length ? `<table>
+      <thead><tr><th>Clinic</th><th>Lifecycle</th><th>Payment</th><th>Owner</th><th>Priority</th></tr></thead>
+      <tbody>${queue.map(q => `<tr data-support-clinic="${esc(q.clinic_id)}" style="cursor:pointer">
+        <td><strong>${esc(q.name)}</strong><br><span class="muted">${esc(q.code || '')}</span></td>
+        <td><span class="pill ${pillClass(q.lifecycle_status)}">${esc(titleize(q.lifecycle_status))}</span></td>
+        <td><span class="pill ${pillClass(q.payment_status)}">${esc(titleize(q.payment_status))}</span></td>
+        <td>${esc(q.account_owner || '—')}</td>
+        <td><span class="pill ${Number(q.priority) >= 3 ? 'expired' : Number(q.priority) ? 'warn' : 'disabled'}">${esc(q.priority ?? 0)}</span></td>
+      </tr>`).join('')}</tbody>
+    </table>` : '<p class="muted">No support queue items.</p>';
+    $('support-queue').querySelectorAll('[data-support-clinic]').forEach(tr =>
+      tr.addEventListener('click', () => { switchTab('clinics'); showClinicDetail(tr.dataset.supportClinic); }));
+  } catch (err) {
+    $('security-stats').innerHTML = `<div class="alert err">${esc(err.message)}</div>`;
+  }
+}
+$('reload-security').addEventListener('click', loadSecuritySupport);
+
+/* ═══ BOOT ═══ */
+(async function boot() {
+  if (!sb) { loginAlert('Supabase is not configured (set window.VAITALCARE_CONFIG or localStorage keys).'); return; }
+  const { data } = await sb.auth.getSession();
+  if (data?.session) {
+    try {
+      if (await verifyAdmin()) { await enterApp(data.session.user); return; }
+      await sb.auth.signOut();
+    } catch (_) { /* fall through to login */ }
+  }
+})();
+</script>
+</body>
+</html>

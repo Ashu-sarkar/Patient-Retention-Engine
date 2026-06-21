@@ -486,6 +486,70 @@
       background: #fbfcfd;
     }
     .clinical-fields .wide { grid-column: 1 / -1; }
+    .patient-brief {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 12px;
+      align-items: center;
+      padding: 12px;
+      margin-bottom: 12px;
+      border: 1px solid rgba(190, 209, 204, 0.78);
+      border-radius: 8px;
+      background: linear-gradient(180deg, rgba(245, 250, 249, 0.94), rgba(255,255,255,0.9));
+    }
+    .patient-brief .avatar {
+      width: 44px;
+      height: 44px;
+      font-size: 15px;
+    }
+    .patient-brief strong {
+      display: block;
+      font-size: 17px;
+    }
+    .patient-brief span {
+      color: var(--muted);
+      font-size: 12px;
+      display: block;
+      margin-top: 3px;
+    }
+    .safety-panel {
+      border: 1px solid rgba(17, 124, 114, 0.18);
+      background: #f0faf7;
+      color: #0f514c;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .safety-panel strong {
+      display: block;
+      color: var(--teal-dark);
+      margin-bottom: 2px;
+    }
+    .inline-alert {
+      border: 1px solid #fecdd3;
+      background: var(--rose-2);
+      color: var(--rose);
+      border-radius: 8px;
+      padding: 9px 10px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .field-hint {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.35;
+    }
+    .quick-dates {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 7px;
+    }
+    .quick-dates .btn {
+      min-height: 34px;
+      padding: 7px 8px;
+      font-size: 12px;
+    }
     .medicine-row {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -561,7 +625,7 @@
       font-size: 12px;
       font-weight: 800;
     }
-    .otp-actions {
+    .login-actions {
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -629,6 +693,7 @@
       .facts, .medicine-row, .clinical-fields, .summary-strip { grid-template-columns: 1fr; }
       .clinical-fields .wide { grid-column: auto; }
       .topbar { align-items: flex-start; flex-direction: column; }
+      .quick-dates { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -636,20 +701,19 @@
   <section id="login-screen" class="login">
     <div class="panel">
       <h1>Doctor Dashboard</h1>
-      <p class="login-copy">Use the WhatsApp number registered through hospital onboarding. We will send a one-time code to confirm access.</p>
-      <span id="login-step" class="login-step">WhatsApp verification</span>
+      <p class="login-copy">Use the username and password created during hospital onboarding.</p>
+      <span id="login-step" class="login-step">Username/password sign in</span>
       <form id="login-form" class="filters" style="margin-top: 18px;">
         <div class="field">
-          <label for="doctor-phone">Registered WhatsApp Number</label>
-          <input id="doctor-phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+91 98765 43210" required />
+          <label for="doctor-username">Username</label>
+          <input id="doctor-username" type="text" inputmode="text" autocomplete="username" placeholder="doctor.username" required />
         </div>
-        <div id="otp-field" class="field hidden">
-          <label for="otp-code">One-Time Code</label>
-          <input id="otp-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="6-digit OTP" />
+        <div class="field">
+          <label for="doctor-password">Password</label>
+          <input id="doctor-password" type="password" autocomplete="current-password" placeholder="Minimum 8 characters" required />
         </div>
-        <div class="otp-actions">
-          <button id="login-submit" class="btn primary" type="submit">Send WhatsApp OTP</button>
-          <button id="change-phone" class="link-button hidden" type="button">Change number</button>
+        <div class="login-actions">
+          <button id="login-submit" class="btn primary" type="submit">Sign In</button>
         </div>
       </form>
     </div>
@@ -826,7 +890,13 @@
             </div>
             <span class="status in_consultation" id="draft-state">Draft</span>
           </div>
+          <div id="consult-brief" class="patient-brief"></div>
           <form id="prescription-form" class="filters">
+            <div class="safety-panel">
+              <strong>Prescription safety</strong>
+              Review allergies, current medicines, and follow-up timing before issuing. Follow-up dates cannot be in the past or on the visit day.
+            </div>
+            <div id="form-alert" class="inline-alert hidden" role="alert"></div>
             <div class="field wide" id="clinical-context-section">
               <label>Visit Context</label>
               <div class="clinical-fields">
@@ -881,12 +951,22 @@
             <div class="field">
               <label for="rx-follow-up">Follow-up Date</label>
               <input id="rx-follow-up" type="date" disabled />
+              <span id="follow-up-hint" class="field-hint">Enable follow-up to choose a date.</span>
+            </div>
+            <div class="field">
+              <label>Quick Follow-up</label>
+              <div class="quick-dates">
+                <button class="btn" type="button" data-follow-days="7">+7 days</button>
+                <button class="btn" type="button" data-follow-days="14">+14 days</button>
+                <button class="btn" type="button" data-follow-days="30">+30 days</button>
+              </div>
             </div>
             <div id="medicine-section">
               <div class="btn-row" style="justify-content: space-between; margin-bottom: 8px;">
                 <label>Medicines</label>
                 <button id="add-medicine" class="btn" type="button">Add Medicine</button>
               </div>
+              <div id="medicine-hint" class="field-hint">Complete the current medicine before adding another one.</div>
               <div id="medicine-list"></div>
             </div>
             <div class="btn-row" id="issue-section">
@@ -905,6 +985,9 @@
     const DEFAULT_SUPABASE_URL = 'https://crsdccqseuhnimoxxeky.supabase.co';
     const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNyc2RjY3FzZXVobmltb3h4ZWt5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMjc1NzQsImV4cCI6MjA5MTkwMzU3NH0.3iz7x2JQj3qn6KI8JS3tjxV9vaBsN-mL6xDTvmJMDxA';
     const PRESCRIPTION_DELIVERY_FUNCTION = 'prescription-delivery';
+    const ADMIN_PREVIEW_USERNAME = 'admin.preview';
+    const ADMIN_PREVIEW_PASSWORD = 'preview412869';
+    const AUTH_USERNAME_EMAIL_DOMAIN = 'auth.vaitalcare.local';
     const MEDICINE_TIMING_OPTIONS = [
       'Empty Stomach',
       'Before Breakfast',
@@ -959,12 +1042,37 @@
       demo: false,
       demoHistory: [],
       lastQueueError: null,
-      loginPhone: '',
-      otpSent: false,
+      adminPreview: false,
     };
 
     function todayISO() {
       return new Date().toLocaleDateString('en-CA');
+    }
+
+    function parseISODate(value) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))) return null;
+      const [year, month, day] = String(value).split('-').map(Number);
+      return new Date(year, month - 1, day);
+    }
+
+    function formatISODate(date) {
+      if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    function addDaysISO(baseISO, days) {
+      const base = parseISODate(baseISO) || parseISODate(todayISO());
+      base.setDate(base.getDate() + days);
+      return formatISODate(base);
+    }
+
+    function minFollowUpDate() {
+      const today = todayISO();
+      const visitNext = state.selected?.visit_date ? addDaysISO(state.selected.visit_date, 1) : today;
+      return visitNext > today ? visitNext : today;
     }
 
     function showToast(message, isError = false) {
@@ -976,29 +1084,26 @@
       showToast.timer = setTimeout(() => el.classList.add('hidden'), 4200);
     }
 
-    function normalizePhoneInput(value) {
-      const raw = String(value || '').trim();
-      if (!raw) return '';
-      const compact = raw.replace(/[\s\-().]/g, '');
-      if (compact.startsWith('+')) return compact;
-      if (/^\d{10}$/.test(compact)) return `+91${compact}`;
-      if (/^[1-9]\d{6,14}$/.test(compact)) return `+${compact}`;
-      return compact;
+    function normalizeUsername(value) {
+      return String(value || '').trim().toLowerCase();
     }
 
-    function isValidE164(phone) {
-      return /^\+[1-9]\d{6,14}$/.test(phone);
+    function isValidUsername(username) {
+      return /^[a-z0-9._-]{3,80}$/.test(username);
     }
 
-    function resetLoginStep() {
-      state.loginPhone = '';
-      state.otpSent = false;
-      $('otp-field').classList.add('hidden');
-      $('otp-code').value = '';
-      $('doctor-phone').disabled = false;
-      $('change-phone').classList.add('hidden');
-      $('login-submit').textContent = 'Send WhatsApp OTP';
-      $('login-step').textContent = 'WhatsApp verification';
+    function usernameToInternalEmail(username) {
+      const clean = normalizeUsername(username);
+      if (!isValidUsername(clean)) return '';
+      return `${clean}@${AUTH_USERNAME_EMAIL_DOMAIN}`;
+    }
+
+    function isPreviewMode() {
+      return state.demo || state.adminPreview;
+    }
+
+    function isAdminPreviewLogin(username, password) {
+      return normalizeUsername(username) === ADMIN_PREVIEW_USERNAME && password === ADMIN_PREVIEW_PASSWORD;
     }
 
     function showBanner(title, body, { error = false, action = null } = {}) {
@@ -1013,6 +1118,13 @@
     function hideBanner() {
       $('app-banner').classList.add('hidden');
       $('banner-action').onclick = null;
+    }
+
+    function showFormAlert(message) {
+      const alert = $('form-alert');
+      if (!alert) return;
+      alert.textContent = message || '';
+      alert.classList.toggle('hidden', !message);
     }
 
     function setButtonBusy(button, busy, label) {
@@ -1094,7 +1206,7 @@
         return;
       }
       if (!HAS_SUPABASE_CONFIG) {
-        showConfigFallback();
+        $('login-step').textContent = `Username/password sign in or admin preview (${ADMIN_PREVIEW_USERNAME})`;
         return;
       }
       const { data } = await sb.auth.getSession();
@@ -1104,46 +1216,25 @@
     function bindEvents() {
       $('login-form').addEventListener('submit', async event => {
         event.preventDefault();
-        if (!sb) return showConfigFallback();
-        if (!state.otpSent) {
-          const phone = normalizePhoneInput($('doctor-phone').value);
-          if (!isValidE164(phone)) return showToast('Enter the registered WhatsApp number in international format.', true);
-          const button = $('login-submit');
-          setButtonBusy(button, true, 'Sending...');
-          const { error } = await sb.auth.signInWithOtp({ phone });
-          setButtonBusy(button, false);
-          if (error) {
-            const hint = /sms|otp|hook|provider/i.test(error.message)
-              ? ' OTP delivery is not configured yet. Run npm run sync:doctor-otp-secrets.'
-              : '';
-            return showToast(`${error.message}${hint}`, true);
-          }
-          state.loginPhone = phone;
-          state.otpSent = true;
-          $('doctor-phone').value = phone;
-          $('doctor-phone').disabled = true;
-          $('otp-field').classList.remove('hidden');
-          $('otp-code').required = true;
-          $('change-phone').classList.remove('hidden');
-          $('login-submit').textContent = 'Verify and Sign In';
-          $('login-step').textContent = `OTP sent to ${phone}`;
-          $('otp-code').focus();
-          return showToast('OTP sent on WhatsApp.');
+        const username = normalizeUsername($('doctor-username').value);
+        const password = $('doctor-password').value;
+        if (!isValidUsername(username)) return showToast('Enter a valid username.', true);
+        if (!password || password.length < 8) return showToast('Enter your dashboard password.', true);
+        if (isAdminPreviewLogin(username, password)) {
+          await enterAdminPreviewApp(username);
+          return;
         }
-        const token = $('otp-code').value.trim();
-        if (!/^\d{4,8}$/.test(token)) return showToast('Enter the OTP sent on WhatsApp.', true);
+        if (!sb) return showConfigFallback();
         const button = $('login-submit');
-        setButtonBusy(button, true, 'Verifying...');
-        const { data, error } = await sb.auth.verifyOtp({
-          phone: state.loginPhone,
-          token,
-          type: 'sms',
+        setButtonBusy(button, true, 'Signing in...');
+        const { data, error } = await sb.auth.signInWithPassword({
+          email: usernameToInternalEmail(username),
+          password,
         });
         setButtonBusy(button, false);
         if (error) return showToast(error.message, true);
         await enterApp(data.session);
       });
-      $('change-phone').addEventListener('click', resetLoginStep);
       $('sign-out').addEventListener('click', async () => {
         if (!sb) return location.reload();
         await sb.auth.signOut();
@@ -1164,6 +1255,10 @@
         showBanner('Back online', 'You can refresh the queue and continue issuing prescriptions.', { action: loadVisits });
       });
       $('add-medicine').addEventListener('click', () => {
+        if (!canAddMedicine()) {
+          showToast('Complete the current medicine before adding another one.', true);
+          return;
+        }
         state.medicines.push(blankMedicine());
         renderMedicines();
       });
@@ -1173,6 +1268,13 @@
       });
       $('issue').addEventListener('click', issuePrescription);
       $('rx-follow-up-required').addEventListener('change', updateFollowUpControls);
+      $('rx-follow-up').addEventListener('input', () => {
+        const payload = collectPrescription();
+        showFormAlert(validateFollowUp(payload) || '');
+      });
+      document.querySelectorAll('[data-follow-days]').forEach(btn => {
+        btn.addEventListener('click', () => setQuickFollowUp(Number(btn.dataset.followDays || 0)));
+      });
       $('save-context').addEventListener('click', async () => {
         if (await saveClinicalContext()) showToast('Visit context saved.');
       });
@@ -1222,6 +1324,7 @@
 
     async function enterDemoApp() {
       state.session = { user: { id: 'demo-doctor' } };
+      state.adminPreview = false;
       state.profile = {
         id: 'demo-profile',
         clinic_id: 'demo-clinic',
@@ -1253,6 +1356,47 @@
       showToast('Demo mode: sample data only.');
     }
 
+    async function enterAdminPreviewApp(username) {
+      state.demo = true;
+      state.adminPreview = true;
+      state.session = { user: { id: 'admin-preview-doctor' } };
+      state.profile = {
+        id: 'admin-preview-profile',
+        clinic_id: 'admin-preview-clinic',
+        doctor_name: 'Dr. Aditi Sharma',
+        clinic_name: 'VaitalCare Admin Preview Clinic',
+        registration_number: 'MCI-AP-96857',
+        specialty: 'Internal Medicine',
+        qualification: 'MBBS, MD',
+        clinic_address: '18 Residency Road, Bengaluru',
+        clinic_city: 'Bengaluru',
+        clinic_phone: '+918080808080',
+        clinic_email: 'admin.preview@vaitalcare.example',
+        clinic_website: 'https://preview.vaitalcare.example',
+        clinic_logo_url: '',
+        doctor_phone: '+919999000111',
+        signature_image_url: '',
+        signature_label: 'Dr. Aditi Sharma',
+        stamp_label: 'Admin preview sandbox',
+      };
+      state.activeClinicId = state.profile.clinic_id;
+      state.visits = adminPreviewVisits();
+      state.demoHistory = adminPreviewHistory();
+      $('login-screen').classList.add('hidden');
+      $('app').classList.remove('hidden');
+      $('doctor-subtitle').textContent = `${state.profile.doctor_name} · Admin Preview`;
+      $('clinic-footer').textContent = `${state.profile.clinic_name} · ${username}`;
+      renderQueue();
+      renderStats();
+      updateJourney('queue');
+      showBanner(
+        'Admin preview mode',
+        `Signed in with ${username}. Data stays inside this dashboard sandbox and does not touch Supabase.`,
+        { action: loadVisits }
+      );
+      showToast('Admin preview opened with sample patients.');
+    }
+
     async function loadProfile() {
       let { data, error } = await sb.rpc('get_or_create_doctor_profile_for_current_user');
       if (error && /function .* does not exist|schema cache/i.test(error.message || '')) {
@@ -1267,7 +1411,7 @@
       if (error) {
         showBanner(
           'Doctor profile not found',
-          'This WhatsApp number is not linked to a doctor profile or hospital onboarding row. Check the registered doctor phone, then try again.',
+          'This username is not linked to a doctor profile or hospital onboarding row. Check the registered dashboard account, then try again.',
           { error: true, action: () => location.reload() }
         );
         throw error;
@@ -1276,10 +1420,10 @@
       if (!data) {
         showBanner(
           'Doctor profile not found',
-          'This WhatsApp number has no matching doctor in hospital onboarding yet.',
+          'This username has no matching doctor in hospital onboarding yet.',
           { error: true, action: () => location.reload() }
         );
-        throw new Error('Doctor profile not found for verified WhatsApp number.');
+        throw new Error('Doctor profile not found for signed-in username.');
       }
       state.profile = await enrichProfileFromBoarding(data);
       state.activeClinicId = state.profile.clinic_id || '';
@@ -1317,7 +1461,7 @@
     }
 
     async function loadVisits() {
-      if (state.demo) {
+      if (isPreviewMode()) {
         renderQueue();
         renderStats();
         return;
@@ -1436,6 +1580,12 @@
       $('main-subtitle').textContent = `${visit.clinic_name} · ${visit.doctor_name} · ${visit.visit_date}`;
       $('intake-status').textContent = visit.visit_status.replace('_', ' ');
       $('intake-status').className = `status ${escapeHtml(visit.visit_status)}`;
+      $('consult-brief').innerHTML = `
+        <span class="avatar" aria-hidden="true">${escapeHtml(initials(patient.name))}</span>
+        <span>
+          <strong>${escapeHtml(patient.name || 'Unnamed patient')}</strong>
+          <span>${escapeHtml(visit.patient_code || patient.patient_code || '')} · ${escapeHtml(patient.phone || '')} · ${escapeHtml(visit.visit_status.replace('_', ' '))}</span>
+        </span>`;
       const facts = [
         ['Patient Code', visit.patient_code || patient.patient_code],
         ['Phone', patient.phone],
@@ -1469,6 +1619,7 @@
       $('advice').value = '';
       $('rx-follow-up-required').value = 'No';
       $('rx-follow-up').value = '';
+      showFormAlert('');
       updateFollowUpControls();
       state.medicines = [blankMedicine()];
       $('draft-state').textContent = 'Draft';
@@ -1485,6 +1636,29 @@
         const label = value || 'Select timing';
         return `<option value="${escapeHtml(value)}"${value === selected ? ' selected' : ''}>${escapeHtml(label)}</option>`;
       }).join('');
+    }
+
+    function isMedicineComplete(med = {}) {
+      return Boolean(
+        String(med.medicine_name || '').trim() &&
+        String(med.dosage || '').trim() &&
+        String(med.frequency || '').trim() &&
+        String(med.timing || '').trim() &&
+        String(med.duration || '').trim()
+      );
+    }
+
+    function canAddMedicine() {
+      if (state.medicines.length === 0) return true;
+      return isMedicineComplete(state.medicines[state.medicines.length - 1]);
+    }
+
+    function updateMedicineControls() {
+      const canAdd = canAddMedicine();
+      $('add-medicine').disabled = !canAdd;
+      $('medicine-hint').textContent = canAdd
+        ? 'You can add another medicine.'
+        : 'Complete the current medicine before adding another one.';
     }
 
     function renderMedicines() {
@@ -1504,6 +1678,7 @@
         input.addEventListener(eventName, event => {
           const row = event.target.closest('.medicine-row');
           state.medicines[Number(row.dataset.index)][event.target.dataset.key] = event.target.value;
+          updateMedicineControls();
         });
       });
       document.querySelectorAll('[data-remove]').forEach(btn => {
@@ -1513,6 +1688,7 @@
           renderMedicines();
         });
       });
+      updateMedicineControls();
     }
 
     function collectClinicalContext() {
@@ -1529,7 +1705,7 @@
     async function saveClinicalContext(refresh = true) {
       if (!state.selected) return true;
       const patch = collectClinicalContext();
-      if (state.demo) {
+      if (isPreviewMode()) {
         state.selected = { ...state.selected, ...patch };
         state.visits = state.visits.map(v => v.id === state.selected.id ? state.selected : v);
         if (refresh) {
@@ -1575,15 +1751,30 @@
     function updateFollowUpControls() {
       const required = $('rx-follow-up-required').value === 'Yes';
       const input = $('rx-follow-up');
+      const hint = $('follow-up-hint');
+      const minDate = minFollowUpDate();
       input.disabled = !required;
-      if (state.selected?.visit_date) {
-        const next = new Date(`${state.selected.visit_date}T00:00:00`);
-        next.setDate(next.getDate() + 1);
-        input.min = next.toLocaleDateString('en-CA');
-      } else {
-        input.min = todayISO();
+      input.required = required;
+      input.min = minDate;
+      if (!required) {
+        input.value = '';
+        hint.textContent = 'Enable follow-up to choose a date.';
+        showFormAlert('');
+        return;
       }
-      if (!required) input.value = '';
+      hint.textContent = `Earliest allowed follow-up: ${minDate}.`;
+      if (input.value && input.value < minDate) input.value = '';
+      showFormAlert(validateFollowUp(collectPrescription()) || '');
+    }
+
+    function setQuickFollowUp(days) {
+      if (!days) return;
+      $('rx-follow-up-required').value = 'Yes';
+      updateFollowUpControls();
+      const proposed = addDaysISO(todayISO(), days);
+      const minDate = minFollowUpDate();
+      $('rx-follow-up').value = proposed < minDate ? minDate : proposed;
+      showFormAlert('');
     }
 
     function buildPrescriptionSnapshots() {
@@ -1613,15 +1804,21 @@
       };
     }
 
-    function validateIssue(payload) {
-      if (!payload.diagnosis && !payload.clinical_remarks) return 'Add diagnosis or remarks before issuing.';
-      if (payload.medicines.length === 0) return 'Add at least one medicine.';
+    function validateFollowUp(payload) {
       if (payload.follow_up_required === 'Yes') {
         if (!payload.follow_up_date) return 'Add a follow-up date or set follow-up required to No.';
-        if (state.selected?.visit_date && payload.follow_up_date <= state.selected.visit_date) {
-          return 'Follow-up date must be after the visit date.';
-        }
+        const minDate = minFollowUpDate();
+        if (payload.follow_up_date < minDate) return `Follow-up date cannot be earlier than ${minDate}.`;
+        if (state.selected?.visit_date && payload.follow_up_date <= state.selected.visit_date) return 'Follow-up date must be after the visit date.';
       }
+      return null;
+    }
+
+    function validateIssue(payload) {
+      const followUpError = validateFollowUp(payload);
+      if (followUpError) return followUpError;
+      if (!payload.diagnosis && !payload.clinical_remarks) return 'Add diagnosis or remarks before issuing.';
+      if (payload.medicines.length === 0) return 'Add at least one medicine.';
       const invalid = payload.medicines.find(m => !m.medicine_name || !m.dosage || !m.frequency || !m.timing || !m.duration);
       if (invalid) return 'Each medicine needs name, dosage, frequency, timing, and duration.';
       return null;
@@ -1630,9 +1827,16 @@
     async function saveDraft() {
       if (!state.selected) return;
       const payload = collectPrescription();
+      const followUpError = validateFollowUp(payload);
+      if (followUpError) {
+        showFormAlert(followUpError);
+        showToast(followUpError, true);
+        return null;
+      }
+      showFormAlert('');
       const clinicalSaved = await saveClinicalContext(false);
       if (!clinicalSaved) return;
-      if (state.demo) {
+      if (isPreviewMode()) {
         const prescription = state.currentDraft || {
           id: `demo-rx-${Date.now()}`,
           patient_id: state.selected.patient_id,
@@ -1714,12 +1918,16 @@
       const issueBtn = $('issue');
       const payload = collectPrescription();
       const validation = validateIssue(payload);
-      if (validation) return showToast(validation, true);
+      if (validation) {
+        showFormAlert(validation);
+        return showToast(validation, true);
+      }
+      showFormAlert('');
       setButtonBusy(issueBtn, true, 'Issuing...');
       try {
         const prescription = await saveDraft();
         if (!prescription) return;
-        if (state.demo) {
+        if (isPreviewMode()) {
           Object.assign(prescription, {
             status: 'issued',
             issued_at: new Date().toISOString(),
@@ -1761,7 +1969,7 @@
           action: 'issued',
           details: { pdf_storage_path: path },
         });
-        if (!state.demo) await triggerPrescriptionDelivery(prescription.id);
+        if (!isPreviewMode()) await triggerPrescriptionDelivery(prescription.id);
         state.currentDraft = null;
         $('draft-state').textContent = 'Issued';
         showToast('Prescription issued.');
@@ -2058,7 +2266,7 @@
       const patch = { ...collectClinicalContext(), visit_status: status };
       if (status === 'in_consultation') patch.consultation_started_at = new Date().toISOString();
       if (status === 'completed') patch.completed_at = new Date().toISOString();
-      if (state.demo) {
+      if (isPreviewMode()) {
         state.selected = { ...state.selected, ...patch };
         state.visits = state.visits.map(v => v.id === state.selected.id ? state.selected : v);
         withTransition(() => {
@@ -2085,7 +2293,7 @@
 
     async function loadPrescriptionHistory() {
       if (!state.selected) return;
-      if (state.demo) {
+      if (isPreviewMode()) {
         const data = state.demoHistory.filter(rx => rx.patient_id === state.selected.patient_id);
         renderPrescriptionHistory(data);
         return;
@@ -2102,8 +2310,8 @@
     }
 
     async function openPrescriptionPdf(rx) {
-      if (state.demo) {
-        showToast('Demo mode does not upload PDFs.');
+      if (isPreviewMode()) {
+        showToast('Preview mode does not upload PDFs.');
         return;
       }
       if (rx.pdf_storage_path) {
@@ -2120,7 +2328,7 @@
 
     async function loadVisitHistory() {
       if (!state.selected) return;
-      if (state.demo) {
+      if (isPreviewMode()) {
         renderVisitHistory(state.visits.filter(v => v.patient_id === state.selected.patient_id));
         return;
       }
@@ -2239,6 +2447,158 @@
             dob: '1979-11-03',
             sex: 'Female',
           },
+        },
+      ];
+    }
+
+    function adminPreviewVisits() {
+      const now = Date.now();
+      const today = todayISO();
+      return [
+        {
+          id: 'admin-visit-1',
+          patient_id: 'admin-patient-1',
+          patient_code: 'PRE-PAT-2001',
+          clinic_id: 'admin-preview-clinic',
+          clinic_name: 'VaitalCare Admin Preview Clinic',
+          doctor_name: 'Dr. Aditi Sharma',
+          visit_date: today,
+          visit_status: 'waiting',
+          chief_complaint: 'Recurrent migraine with light sensitivity',
+          symptoms_duration: 'Three days, more severe since last night',
+          known_allergies: 'Ibuprofen',
+          current_medicines: 'Sumatriptan as needed',
+          existing_conditions: 'Migraine history',
+          vitals_notes: 'BP 118/76, pulse 80, temp 98.4F',
+          checked_in_at: new Date(now - 18 * 60 * 1000).toISOString(),
+          patient: {
+            id: 'admin-patient-1',
+            patient_code: 'PRE-PAT-2001',
+            name: 'Priya Nair',
+            phone: '+919820001111',
+            dob: '1991-04-08',
+            sex: 'Female',
+          },
+        },
+        {
+          id: 'admin-visit-2',
+          patient_id: 'admin-patient-2',
+          patient_code: 'PRE-PAT-2002',
+          clinic_id: 'admin-preview-clinic',
+          clinic_name: 'VaitalCare Admin Preview Clinic',
+          doctor_name: 'Dr. Aditi Sharma',
+          visit_date: today,
+          visit_status: 'in_consultation',
+          chief_complaint: 'Dry cough with throat irritation',
+          symptoms_duration: 'Five days',
+          known_allergies: 'No known drug allergies',
+          current_medicines: 'Cetirizine 10 mg at night',
+          existing_conditions: 'Seasonal allergic rhinitis',
+          vitals_notes: 'SpO2 99%, temp 99.1F',
+          checked_in_at: new Date(now - 46 * 60 * 1000).toISOString(),
+          patient: {
+            id: 'admin-patient-2',
+            patient_code: 'PRE-PAT-2002',
+            name: 'Rahul Verma',
+            phone: '+919830002222',
+            dob: '1987-11-14',
+            sex: 'Male',
+          },
+        },
+        {
+          id: 'admin-visit-3',
+          patient_id: 'admin-patient-3',
+          patient_code: 'PRE-PAT-2003',
+          clinic_id: 'admin-preview-clinic',
+          clinic_name: 'VaitalCare Admin Preview Clinic',
+          doctor_name: 'Dr. Aditi Sharma',
+          visit_date: today,
+          visit_status: 'completed',
+          chief_complaint: 'Diabetes medication review',
+          symptoms_duration: 'Monthly follow-up',
+          known_allergies: 'None',
+          current_medicines: 'Metformin 500 mg twice daily',
+          existing_conditions: 'Type 2 diabetes',
+          vitals_notes: 'BP 126/82, fasting sugar log reviewed',
+          checked_in_at: new Date(now - 92 * 60 * 1000).toISOString(),
+          patient: {
+            id: 'admin-patient-3',
+            patient_code: 'PRE-PAT-2003',
+            name: 'Sneha Kapoor',
+            phone: '+919840003333',
+            dob: '1978-07-23',
+            sex: 'Female',
+          },
+        },
+        {
+          id: 'admin-visit-4',
+          patient_id: 'admin-patient-4',
+          patient_code: 'PRE-PAT-2004',
+          clinic_id: 'admin-preview-clinic',
+          clinic_name: 'VaitalCare Admin Preview Clinic',
+          doctor_name: 'Dr. Aditi Sharma',
+          visit_date: today,
+          visit_status: 'waiting',
+          chief_complaint: 'Low back pain after travel',
+          symptoms_duration: 'Two weeks',
+          known_allergies: 'None',
+          current_medicines: 'Paracetamol 650 mg occasionally',
+          existing_conditions: 'Vitamin D deficiency',
+          vitals_notes: 'Pain score 6/10, no red flags reported',
+          checked_in_at: new Date(now - 8 * 60 * 1000).toISOString(),
+          patient: {
+            id: 'admin-patient-4',
+            patient_code: 'PRE-PAT-2004',
+            name: 'Arjun Mehta',
+            phone: '+919850004444',
+            dob: '1993-02-17',
+            sex: 'Male',
+          },
+        },
+      ];
+    }
+
+    function adminPreviewHistory() {
+      return [
+        {
+          id: 'admin-rx-1',
+          patient_id: 'admin-patient-1',
+          visit_id: 'admin-old-visit-1',
+          doctor_profile_id: 'admin-preview-profile',
+          status: 'issued',
+          created_at: new Date(Date.now() - 21 * 24 * 60 * 60 * 1000).toISOString(),
+          issued_at: new Date(Date.now() - 21 * 24 * 60 * 60 * 1000).toISOString(),
+          delivery_status: 'sent',
+          diagnosis: 'Migraine without aura',
+          clinical_remarks: 'Hydration and sleep trigger review advised.',
+          advice: 'Reduce screen glare, maintain sleep routine.',
+          follow_up_required: 'Yes',
+          follow_up_date: addDaysISO(todayISO(), 7),
+          pdf_url: '',
+          pdf_storage_path: '',
+          medicines: [
+            { medicine_name: 'Sumatriptan', dosage: '50 mg', frequency: 'SOS', timing: 'After Breakfast', duration: '5 days', instructions: 'Take at onset of headache' },
+          ],
+        },
+        {
+          id: 'admin-rx-2',
+          patient_id: 'admin-patient-3',
+          visit_id: 'admin-old-visit-2',
+          doctor_profile_id: 'admin-preview-profile',
+          status: 'issued',
+          created_at: new Date(Date.now() - 35 * 24 * 60 * 60 * 1000).toISOString(),
+          issued_at: new Date(Date.now() - 35 * 24 * 60 * 60 * 1000).toISOString(),
+          delivery_status: 'sent',
+          diagnosis: 'Type 2 diabetes follow-up',
+          clinical_remarks: 'Continue current dose; monitor fasting sugars.',
+          advice: 'Repeat HbA1c in 8 weeks.',
+          follow_up_required: 'Yes',
+          follow_up_date: addDaysISO(todayISO(), 14),
+          pdf_url: '',
+          pdf_storage_path: '',
+          medicines: [
+            { medicine_name: 'Metformin', dosage: '500 mg', frequency: '1-0-1', timing: 'After Breakfast', duration: '30 days', instructions: 'Continue after meals' },
+          ],
         },
       ];
     }

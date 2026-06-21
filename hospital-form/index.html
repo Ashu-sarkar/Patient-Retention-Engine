@@ -193,6 +193,21 @@
       color: var(--red-500);
     }
     .errmsg.show { display: block; }
+    .doctor-block {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      padding: 14px;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--r-md);
+      background: var(--gray-50);
+    }
+    .doctor-block + .doctor-block { margin-top: 14px; }
+    .doctor-block h3 {
+      font-size: 13px;
+      color: var(--gray-700);
+      font-weight: 700;
+    }
 
     .submit-wrap {
       position: fixed;
@@ -432,46 +447,23 @@
           </div>
 
           <div class="field">
-            <label class="label" for="doctor_name">Doctor name <span class="req">*</span></label>
-            <input id="doctor_name" name="doctor_name" type="text" class="inp"
-                   placeholder="Dr. Name" autocomplete="name" maxlength="150" />
-            <span class="errmsg" id="e-doctor_name">Enter at least 2 characters</span>
+            <label class="label" for="doctor_count">Number of doctors <span class="req">*</span></label>
+            <select id="doctor_count" name="doctor_count" class="sel">
+              <option value="1">1 doctor</option>
+              <option value="2">2 doctors</option>
+              <option value="3">3 doctors</option>
+              <option value="4">4 doctors</option>
+              <option value="5">5 doctors</option>
+              <option value="6">6 doctors</option>
+              <option value="7">7 doctors</option>
+              <option value="8">8 doctors</option>
+              <option value="9">9 doctors</option>
+              <option value="10">10 doctors</option>
+            </select>
+            <span class="errmsg" id="e-doctor_count">Select the number of doctors</span>
           </div>
 
-          <div class="field">
-            <label class="label" for="doctor_qualification">Doctor qualification</label>
-            <input id="doctor_qualification" name="doctor_qualification" type="text" class="inp"
-                   placeholder="e.g. MBBS, MD" maxlength="200" />
-            <span class="errmsg" id="e-doctor_qualification">Enter at least 2 characters</span>
-          </div>
-
-          <div class="field">
-            <label class="label" for="doctor_expertise">Doctor expertise / specialty <span class="req">*</span></label>
-            <textarea id="doctor_expertise" name="doctor_expertise" class="ta" maxlength="500"
-                      placeholder="e.g. Cardiology, General medicine"></textarea>
-            <span class="errmsg" id="e-doctor_expertise">Describe specialty (at least 2 characters)</span>
-          </div>
-
-          <div class="field">
-            <label class="label" for="doctor_registration_number">Doctor registration number <span class="req">*</span></label>
-            <input id="doctor_registration_number" name="doctor_registration_number" type="text" class="inp"
-                   placeholder="Medical council registration number" maxlength="120" />
-            <span class="errmsg" id="e-doctor_registration_number">Enter registration number</span>
-          </div>
-
-          <div class="field">
-            <label class="label" for="doctor_phone">Doctor phone</label>
-            <input id="doctor_phone" name="doctor_phone" type="tel" class="inp"
-                   placeholder="Optional doctor contact number" autocomplete="tel" maxlength="16" />
-            <span class="errmsg" id="e-doctor_phone">Enter a valid phone number</span>
-          </div>
-
-          <div class="field">
-            <label class="label" for="doctor_signature_url">Doctor signature image URL</label>
-            <input id="doctor_signature_url" name="doctor_signature_url" type="url" class="inp"
-                   placeholder="https://example.com/signature.png" maxlength="1000" />
-            <span class="errmsg" id="e-doctor_signature_url">Enter an HTTPS image URL</span>
-          </div>
+          <div id="doctors-container"></div>
 
           <div class="field">
             <label class="label" for="consultation_hours">Consultation hours <span class="req">*</span></label>
@@ -590,9 +582,102 @@ function clearErr(id) {
 }
 function clearAllErr() {
   ['hospital_name', 'facility_type', 'address', 'city', 'contact_phone', 'admin_contact_name',
-   'clinic_logo_url', 'clinic_email', 'clinic_website', 'doctor_name', 'doctor_qualification',
-   'doctor_expertise', 'doctor_registration_number', 'doctor_phone', 'doctor_signature_url',
-   'consultation_hours'].forEach(clearErr);
+   'clinic_logo_url', 'clinic_email', 'clinic_website', 'doctor_count', 'consultation_hours'].forEach(clearErr);
+  document.querySelectorAll('[id^="doctor_"]').forEach(el => clearErr(el.id));
+}
+
+function escapeHtml(value) {
+  return String(value || '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+  }[ch]));
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value).replace(/`/g, '&#096;');
+}
+
+function normalizeUsername(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function doctorField(index, name) {
+  return $(`doctor_${index}_${name}`);
+}
+
+function collectDoctors(includePasswords = true) {
+  const countEl = $('doctor_count');
+  const count = countEl ? Math.min(Math.max(parseInt(countEl.value || '1', 10), 1), 10) : 1;
+  const doctors = [];
+  for (let index = 0; index < count; index += 1) {
+    const doctor = {
+      doctor_name: doctorField(index, 'name')?.value.trim() || '',
+      doctor_qualification: doctorField(index, 'qualification')?.value.trim() || '',
+      doctor_expertise: doctorField(index, 'expertise')?.value.trim() || '',
+      doctor_registration_number: doctorField(index, 'registration_number')?.value.trim() || '',
+      doctor_phone: doctorField(index, 'phone')?.value.trim().replace(/\s+/g, '') || '',
+      doctor_signature_url: doctorField(index, 'signature_url')?.value.trim() || '',
+      login_username: normalizeUsername(doctorField(index, 'username')?.value),
+    };
+    if (includePasswords) doctor.password = doctorField(index, 'password')?.value || '';
+    doctors.push(doctor);
+  }
+  return doctors;
+}
+
+function renderDoctorFields() {
+  const count = Math.min(Math.max(parseInt($('doctor_count').value || '1', 10), 1), 10);
+  const existing = collectDoctors(false);
+  $('doctors-container').innerHTML = Array.from({ length: count }, (_, index) => {
+    const d = existing[index] || {};
+    return `
+      <section class="doctor-block" aria-label="Doctor ${index + 1}">
+        <h3>Doctor ${index + 1}</h3>
+        <div class="field">
+          <label class="label" for="doctor_${index}_name">Doctor name <span class="req">*</span></label>
+          <input id="doctor_${index}_name" type="text" class="inp" placeholder="Dr. Name" autocomplete="name" maxlength="150" value="${escapeAttr(d.doctor_name || '')}" />
+          <span class="errmsg" id="e-doctor_${index}_name">Enter at least 2 characters</span>
+        </div>
+        <div class="field">
+          <label class="label" for="doctor_${index}_qualification">Doctor qualification</label>
+          <input id="doctor_${index}_qualification" type="text" class="inp" placeholder="e.g. MBBS, MD" maxlength="200" value="${escapeAttr(d.doctor_qualification || '')}" />
+          <span class="errmsg" id="e-doctor_${index}_qualification">Enter at least 2 characters</span>
+        </div>
+        <div class="field">
+          <label class="label" for="doctor_${index}_expertise">Doctor expertise / specialty <span class="req">*</span></label>
+          <textarea id="doctor_${index}_expertise" class="ta" maxlength="500" placeholder="e.g. Cardiology, General medicine">${escapeHtml(d.doctor_expertise || '')}</textarea>
+          <span class="errmsg" id="e-doctor_${index}_expertise">Describe specialty (at least 2 characters)</span>
+        </div>
+        <div class="field">
+          <label class="label" for="doctor_${index}_registration_number">Doctor registration number <span class="req">*</span></label>
+          <input id="doctor_${index}_registration_number" type="text" class="inp" placeholder="Medical council registration number" maxlength="120" value="${escapeAttr(d.doctor_registration_number || '')}" />
+          <span class="errmsg" id="e-doctor_${index}_registration_number">Enter registration number</span>
+        </div>
+        <div class="field">
+          <label class="label" for="doctor_${index}_phone">Doctor phone</label>
+          <input id="doctor_${index}_phone" type="tel" class="inp" placeholder="Optional doctor contact number" autocomplete="tel" maxlength="16" value="${escapeAttr(d.doctor_phone || '')}" />
+          <span class="errmsg" id="e-doctor_${index}_phone">Enter a valid phone number</span>
+        </div>
+        <div class="field">
+          <label class="label" for="doctor_${index}_signature_url">Doctor signature image URL</label>
+          <input id="doctor_${index}_signature_url" type="url" class="inp" placeholder="https://example.com/signature.png" maxlength="1000" value="${escapeAttr(d.doctor_signature_url || '')}" />
+          <span class="errmsg" id="e-doctor_${index}_signature_url">Enter an HTTPS image URL</span>
+        </div>
+        <div class="field">
+          <label class="label" for="doctor_${index}_username">Dashboard username <span class="req">*</span></label>
+          <input id="doctor_${index}_username" type="text" class="inp" inputmode="text" autocomplete="username" placeholder="doctor.username" maxlength="80" value="${escapeAttr(d.login_username || '')}" />
+          <span class="errmsg" id="e-doctor_${index}_username">Use a unique username with lowercase letters, numbers, dot, underscore, or hyphen</span>
+        </div>
+        <div class="field">
+          <label class="label" for="doctor_${index}_password">Dashboard password <span class="req">*</span></label>
+          <input id="doctor_${index}_password" type="password" class="inp" autocomplete="new-password" placeholder="Minimum 8 characters" maxlength="128" />
+          <span class="errmsg" id="e-doctor_${index}_password">Enter at least 8 characters</span>
+        </div>
+      </section>
+    `;
+  }).join('');
+  $('doctors-container').querySelectorAll('input, textarea').forEach(el => {
+    el.addEventListener('input', () => clearErr(el.id));
+  });
 }
 
 function validate() {
@@ -609,14 +694,10 @@ function validate() {
   const clinicLogoUrl = $('clinic_logo_url').value.trim();
   const clinicEmail = $('clinic_email').value.trim();
   const clinicWebsite = $('clinic_website').value.trim();
-  const doctor = $('doctor_name').value.trim();
-  const qualification = $('doctor_qualification').value.trim();
-  const expertise = $('doctor_expertise').value.trim();
-  const registration = $('doctor_registration_number').value.trim();
-  const doctorPhone = $('doctor_phone').value.trim();
-  const doctorSignatureUrl = $('doctor_signature_url').value.trim();
+  const doctors = collectDoctors();
   const hours = $('consultation_hours').value.trim();
   const isHttpsUrl = value => /^https:\/\//i.test(value);
+  const seenUsernames = new Set();
 
   if (!hospital || hospital.length < 2) {
     showErr('hospital_name');
@@ -663,36 +744,49 @@ function validate() {
     ok = false;
     firstInvalid = firstInvalid || $('clinic_website');
   }
-  if (!doctor || doctor.length < 2) {
-    showErr('doctor_name');
-    ok = false;
-    firstInvalid = firstInvalid || $('doctor_name');
-  }
-  if (qualification && qualification.length < 2) {
-    showErr('doctor_qualification');
-    ok = false;
-    firstInvalid = firstInvalid || $('doctor_qualification');
-  }
-  if (!expertise || expertise.length < 2) {
-    showErr('doctor_expertise');
-    ok = false;
-    firstInvalid = firstInvalid || $('doctor_expertise');
-  }
-  if (!registration || registration.length < 2) {
-    showErr('doctor_registration_number');
-    ok = false;
-    firstInvalid = firstInvalid || $('doctor_registration_number');
-  }
-  if (doctorPhone && !/^(\+?[1-9]\d{6,14})$/.test(doctorPhone.replace(/\s+/g, ''))) {
-    showErr('doctor_phone');
-    ok = false;
-    firstInvalid = firstInvalid || $('doctor_phone');
-  }
-  if (doctorSignatureUrl && !isHttpsUrl(doctorSignatureUrl)) {
-    showErr('doctor_signature_url');
-    ok = false;
-    firstInvalid = firstInvalid || $('doctor_signature_url');
-  }
+  doctors.forEach((doctor, index) => {
+    if (!doctor.doctor_name || doctor.doctor_name.length < 2) {
+      showErr(`doctor_${index}_name`);
+      ok = false;
+      firstInvalid = firstInvalid || doctorField(index, 'name');
+    }
+    if (doctor.doctor_qualification && doctor.doctor_qualification.length < 2) {
+      showErr(`doctor_${index}_qualification`);
+      ok = false;
+      firstInvalid = firstInvalid || doctorField(index, 'qualification');
+    }
+    if (!doctor.doctor_expertise || doctor.doctor_expertise.length < 2) {
+      showErr(`doctor_${index}_expertise`);
+      ok = false;
+      firstInvalid = firstInvalid || doctorField(index, 'expertise');
+    }
+    if (!doctor.doctor_registration_number || doctor.doctor_registration_number.length < 2) {
+      showErr(`doctor_${index}_registration_number`);
+      ok = false;
+      firstInvalid = firstInvalid || doctorField(index, 'registration_number');
+    }
+    if (doctor.doctor_phone && !/^(\+?[1-9]\d{6,14})$/.test(doctor.doctor_phone)) {
+      showErr(`doctor_${index}_phone`);
+      ok = false;
+      firstInvalid = firstInvalid || doctorField(index, 'phone');
+    }
+    if (doctor.doctor_signature_url && !isHttpsUrl(doctor.doctor_signature_url)) {
+      showErr(`doctor_${index}_signature_url`);
+      ok = false;
+      firstInvalid = firstInvalid || doctorField(index, 'signature_url');
+    }
+    if (!/^[a-z0-9._-]{3,80}$/.test(doctor.login_username) || seenUsernames.has(doctor.login_username)) {
+      showErr(`doctor_${index}_username`);
+      ok = false;
+      firstInvalid = firstInvalid || doctorField(index, 'username');
+    }
+    seenUsernames.add(doctor.login_username);
+    if (!doctor.password || doctor.password.length < 8) {
+      showErr(`doctor_${index}_password`);
+      ok = false;
+      firstInvalid = firstInvalid || doctorField(index, 'password');
+    }
+  });
   if (!hours || hours.length < 2) {
     showErr('consultation_hours');
     ok = false;
@@ -707,14 +801,16 @@ function validate() {
 }
 
 ['hospital_name', 'facility_type', 'address', 'city', 'contact_phone', 'admin_contact_name',
- 'clinic_logo_url', 'clinic_email', 'clinic_website', 'doctor_name', 'doctor_qualification',
- 'doctor_expertise', 'doctor_registration_number', 'doctor_phone', 'doctor_signature_url',
- 'consultation_hours'].forEach(id => {
+ 'clinic_logo_url', 'clinic_email', 'clinic_website', 'doctor_count', 'consultation_hours'].forEach(id => {
   const el = $(id);
   if (!el) return;
   const eventName = el.tagName === 'SELECT' ? 'change' : 'input';
-  el.addEventListener(eventName, () => clearErr(id));
+  el.addEventListener(eventName, () => {
+    clearErr(id);
+    if (id === 'doctor_count') renderDoctorFields();
+  });
 });
+renderDoctorFields();
 
 let toastTimer;
 function showToast(msg, isError = false) {
@@ -734,6 +830,8 @@ form.addEventListener('submit', async function (e) {
   submitBtn.disabled = true;
   submitBtn.innerHTML = '<div class="spin"></div>Submitting…';
 
+  const doctors = collectDoctors();
+  const primary = doctors[0] || {};
   const payload = {
     hospital_name: $('hospital_name').value.trim(),
     facility_type: $('facility_type').value.trim(),
@@ -744,12 +842,15 @@ form.addEventListener('submit', async function (e) {
     clinic_logo_url: $('clinic_logo_url').value.trim(),
     clinic_email: $('clinic_email').value.trim(),
     clinic_website: $('clinic_website').value.trim(),
-    doctor_name: $('doctor_name').value.trim(),
-    doctor_qualification: $('doctor_qualification').value.trim(),
-    doctor_expertise: $('doctor_expertise').value.trim(),
-    doctor_registration_number: $('doctor_registration_number').value.trim(),
-    doctor_phone: $('doctor_phone').value.trim().replace(/\s+/g, ''),
-    doctor_signature_url: $('doctor_signature_url').value.trim(),
+    doctor_count: String(doctors.length),
+    doctors_json: JSON.stringify(doctors),
+    doctor_name: primary.doctor_name || '',
+    doctor_qualification: primary.doctor_qualification || '',
+    doctor_expertise: primary.doctor_expertise || '',
+    doctor_registration_number: primary.doctor_registration_number || '',
+    doctor_phone: primary.doctor_phone || '',
+    doctor_signature_url: primary.doctor_signature_url || '',
+    login_username: primary.login_username || '',
     consultation_hours: $('consultation_hours').value.trim(),
   };
   const body = new URLSearchParams(payload);

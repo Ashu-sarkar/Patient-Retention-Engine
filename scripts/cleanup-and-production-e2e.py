@@ -208,6 +208,20 @@ def main() -> int:
         "doctor_signature_url": "",
         "consultation_hours": "Mon-Sat 9am-5pm",
     }
+    boarding["doctor_count"] = "1"
+    boarding["login_username"] = "cleanup.doctor"
+    boarding["doctors_json"] = json.dumps([
+        {
+            "doctor_name": boarding["doctor_name"],
+            "doctor_qualification": boarding["doctor_qualification"],
+            "doctor_expertise": boarding["doctor_expertise"],
+            "doctor_registration_number": boarding["doctor_registration_number"],
+            "doctor_phone": boarding["doctor_phone"],
+            "doctor_signature_url": boarding["doctor_signature_url"],
+            "login_username": boarding["login_username"],
+            "password": "CleanupPass123",
+        }
+    ])
 
     intake = {
         "patient_name": PATIENT_NAME,

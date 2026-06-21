@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
  * Browser E2E on production Vercel forms.
- * Phone: 9685722570 — OTP dashboard step is manual (headed mode).
+ * Phone: 9685722570.
  *
  *   npx playwright install chromium
  *   node tests/browser-production-e2e.mjs
  *
- * Env: HEADED=1 to show browser; DASHBOARD_OTP_PAUSE=1 to wait for manual OTP.
+ * Env: HEADED=1 to show browser.
  */
 
 import { chromium } from 'playwright';
@@ -17,8 +17,9 @@ const DOCTOR = process.env.E2E_DOCTOR || 'Dr Ashu E2E';
 const PATIENT_URL = process.env.PATIENT_FORM_URL || 'https://vaitalcare-patient.vercel.app/';
 const HOSPITAL_URL = process.env.HOSPITAL_FORM_URL || 'https://vaitalcare-hospital.vercel.app/';
 const DASHBOARD_URL = process.env.DOCTOR_DASHBOARD_URL || '';
+const DOCTOR_USERNAME = process.env.E2E_DOCTOR_USERNAME || 'browser.doctor';
+const DOCTOR_PASSWORD = process.env.E2E_DOCTOR_PASSWORD || 'BrowserPass123';
 const HEADED = process.env.HEADED === '1' || process.env.HEADED === 'true';
-const OTP_PAUSE = process.env.DASHBOARD_OTP_PAUSE === '1';
 
 function todayISO() {
   return new Date().toISOString().split('T')[0];
@@ -48,11 +49,13 @@ async function main() {
     await fillIfPresent(page, 'city', 'Bangalore');
     await fillIfPresent(page, 'contact_phone', PHONE);
     await fillIfPresent(page, 'admin_contact_name', 'Browser Admin');
-    await fillIfPresent(page, 'doctor_name', `${DOCTOR} Browser`);
-    await fillIfPresent(page, 'doctor_qualification', 'MBBS');
-    await fillIfPresent(page, 'doctor_expertise', 'Internal Medicine');
-    await fillIfPresent(page, 'doctor_registration_number', 'BR-96857');
-    await fillIfPresent(page, 'doctor_phone', `+91${PHONE}`);
+    await fillIfPresent(page, 'doctor_0_name', `${DOCTOR} Browser`);
+    await fillIfPresent(page, 'doctor_0_qualification', 'MBBS');
+    await fillIfPresent(page, 'doctor_0_expertise', 'Internal Medicine');
+    await fillIfPresent(page, 'doctor_0_registration_number', 'BR-96857');
+    await fillIfPresent(page, 'doctor_0_phone', `+91${PHONE}`);
+    await fillIfPresent(page, 'doctor_0_username', DOCTOR_USERNAME);
+    await fillIfPresent(page, 'doctor_0_password', DOCTOR_PASSWORD);
     await fillIfPresent(page, 'consultation_hours', 'Daily 10-6');
     await page.locator('#submit, button[type="submit"]').first().click();
     await page.waitForSelector('.success-screen.show, #success-screen.show', { timeout: 30000 }).catch(() => {});
@@ -95,21 +98,17 @@ async function main() {
     console.log(patOk ? `✅ Patient form success${codeVisible ? ' (patient code shown)' : ''}` : '❌ Patient form failed');
 
     if (DASHBOARD_URL) {
-      console.log('\n── Doctor dashboard (OTP manual) ──');
+      console.log('\n── Doctor dashboard (username/password) ──');
       await page.goto(DASHBOARD_URL, { waitUntil: 'networkidle', timeout: 60000 });
-      await fillIfPresent(page, 'doctor-phone', `+91${PHONE}`);
+      await fillIfPresent(page, 'doctor-username', DOCTOR_USERNAME);
+      await fillIfPresent(page, 'doctor-password', DOCTOR_PASSWORD);
       await page.locator('#login-submit, button[type="submit"]').first().click();
-      console.log('⏸  Enter WhatsApp OTP in the browser, then verify sign-in.');
-      if (OTP_PAUSE && HEADED) {
-        await page.pause();
-      } else {
-        await page.waitForTimeout(120000);
-      }
+      await page.waitForSelector('.queue-card, #empty-state', { timeout: 45000 }).catch(() => {});
       const queue = await page.locator('.queue-card').count();
       results.push(['dashboard-queue', queue > 0 ? 'pass' : 'fail']);
       console.log(queue > 0 ? `✅ Dashboard shows ${queue} queue card(s)` : '❌ No queue cards visible');
     } else {
-      console.log('\n(skip dashboard — set DOCTOR_DASHBOARD_URL to run OTP flow)');
+      console.log('\n(skip dashboard — set DOCTOR_DASHBOARD_URL to run dashboard login)');
     }
   } finally {
     await browser.close();
