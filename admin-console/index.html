@@ -103,6 +103,7 @@
     .pill.active { background: rgba(34,197,94,.15); color: var(--green); }
     .pill.disabled { background: rgba(148,163,184,.18); color: var(--muted); }
     .pill.expired { background: rgba(239,68,68,.15); color: var(--red); }
+    .pill.warn { background: rgba(245,158,11,.15); color: var(--amber); }
 
     .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
     .muted { color: var(--muted); }
@@ -125,6 +126,12 @@
     .toast.error { background: var(--red); color: #fff; }
     .inline { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
     .inline .field { margin-bottom: 0; }
+    .split { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(280px, .8fr); gap: 16px; align-items: start; }
+    .mini-list { display: grid; gap: 8px; }
+    .mini-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .mini-item:last-child { border-bottom: 0; }
+    .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+    @media (max-width: 820px) { .split { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -165,21 +172,48 @@
   </div>
 
   <div class="tabs">
-    <button class="tab active" data-tab="clinics">Clinics</button>
+    <button class="tab active" data-tab="overview">Overview</button>
+    <button class="tab" data-tab="clinics">Organizations</button>
     <button class="tab" data-tab="qr">QR Codes</button>
     <button class="tab" data-tab="demo">Demo Patients</button>
     <button class="tab" data-tab="dashboard">Clinic Dashboard</button>
+    <button class="tab" data-tab="operations">Operations</button>
+    <button class="tab" data-tab="security">Security & Support</button>
   </div>
 
   <div class="main">
-    <!-- CLINICS -->
-    <section class="panel active" id="panel-clinics">
+    <!-- OVERVIEW -->
+    <section class="panel active" id="panel-overview">
       <div class="card">
-        <h2>Registered clinics</h2>
-        <p class="desc">Clinics self-register through the hospital-onboarding form. This console is read-only for clinic data — use it to review onboarded clinics and generate their QR codes. Click a row to see full details.</p>
+        <div class="toolbar">
+          <div>
+            <h2>Platform command center</h2>
+            <p class="desc" style="margin-bottom:0">Usage, onboarding risk, manual payment status, and operational attention across all clinics.</p>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="reload-overview" style="margin-left:auto">Refresh</button>
+        </div>
+        <div id="overview-stats" class="stat-row"></div>
+        <div class="split">
+          <div>
+            <h2 style="font-size:13px;margin-bottom:8px">Accounts needing attention</h2>
+            <div id="overview-attention"><p class="muted">Loading…</p></div>
+          </div>
+          <div>
+            <h2 style="font-size:13px;margin-bottom:8px">Manual payment snapshot</h2>
+            <div id="overview-payment" class="mini-list"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CLINICS -->
+    <section class="panel" id="panel-clinics">
+      <div class="card">
+        <h2>Organizations</h2>
+        <p class="desc">Clinics self-register through the hospital-onboarding form. Use this view to review onboarded clinics, update manual SaaS/payment status, and generate QR codes. Click a row to see full details.</p>
         <div id="clinics-summary" class="stat-row"></div>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-          <input id="clinics-search" placeholder="Search by name, code, city, doctor…" style="height:38px;flex:1;min-width:200px;border:1.5px solid var(--border);border-radius:9px;padding:0 12px;background:var(--surface-2);color:var(--text);outline:none" />
+          <input id="clinics-search" placeholder="Search by name, code, city, doctor, payment…" style="height:38px;flex:1;min-width:200px;border:1.5px solid var(--border);border-radius:9px;padding:0 12px;background:var(--surface-2);color:var(--text);outline:none" />
           <button class="btn btn-ghost btn-sm" id="reload-clinics">Refresh</button>
         </div>
         <div id="clinics-table"></div>
@@ -265,6 +299,46 @@
         <div id="dash-visits"><p class="muted">Pick a clinic and load.</p></div>
       </div>
     </section>
+
+    <!-- OPERATIONS -->
+    <section class="panel" id="panel-operations">
+      <div class="card">
+        <div class="toolbar">
+          <div>
+            <h2>Operations</h2>
+            <p class="desc" style="margin-bottom:0">Messaging delivery, workflow errors, and recent operational failures.</p>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="reload-operations" style="margin-left:auto">Refresh</button>
+        </div>
+        <div id="ops-stats" class="stat-row"></div>
+        <div class="grid2">
+          <div>
+            <h2 style="font-size:13px;margin-bottom:8px">Recent workflow issues</h2>
+            <div id="ops-errors"><p class="muted">Loading…</p></div>
+          </div>
+          <div>
+            <h2 style="font-size:13px;margin-bottom:8px">Message failures</h2>
+            <div id="ops-message-failures"><p class="muted">Loading…</p></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECURITY + SUPPORT -->
+    <section class="panel" id="panel-security">
+      <div class="card">
+        <div class="toolbar">
+          <div>
+            <h2>Security & support</h2>
+            <p class="desc" style="margin-bottom:0">Admin access posture, doctor onboarding gaps, and prioritized clinic follow-up queue.</p>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="reload-security" style="margin-left:auto">Refresh</button>
+        </div>
+        <div id="security-stats" class="stat-row"></div>
+        <h2 style="font-size:13px;margin:14px 0 8px">Support queue</h2>
+        <div id="support-queue"><p class="muted">Loading…</p></div>
+      </div>
+    </section>
   </div>
 </div>
 
@@ -297,7 +371,7 @@ const sb = (window.supabase?.createClient && CFG.supabaseUrl.startsWith('https:/
   : null;
 
 const AUTH_USERNAME_EMAIL_DOMAIN = 'auth.vaitalcare.local';
-const state = { clinics: [], activeQrClinic: null, lastTokenUrl: '' };
+const state = { clinics: [], activeQrClinic: null, lastTokenUrl: '', overview: null, operations: null, security: null };
 
 /* ═══ UI helpers ═══ */
 let toastTimer;
@@ -332,6 +406,16 @@ async function rpc(fn, args) {
   if (error) throw new Error(error.message || ('RPC ' + fn + ' failed'));
   return data;
 }
+function pillClass(status) {
+  const s = String(status || '').toLowerCase();
+  if (['active', 'paid', 'delivered', 'read', 'ok'].includes(s)) return 'active';
+  if (['due', 'trial', 'onboarding', 'queued', 'warn', 'paused'].includes(s)) return 'warn';
+  if (['overdue', 'payment_failed', 'failed', 'undelivered', 'suspended', 'cancelled', 'expired'].includes(s)) return 'expired';
+  return 'disabled';
+}
+function titleize(v) {
+  return String(v || '—').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
 
 /* ═══ AUTH ═══ */
 async function verifyAdmin() {
@@ -344,7 +428,7 @@ async function enterApp(user) {
   $('app').classList.remove('hidden');
   $('who').textContent = (user?.email || '').replace(`@${AUTH_USERNAME_EMAIL_DOMAIN}`, '');
   $('form-base').value = CFG.patientFormBaseUrl || location.origin;
-  await loadClinics();
+  await Promise.all([loadOverview(), loadClinics()]);
 }
 
 $('login-form').addEventListener('submit', async e => {
@@ -381,14 +465,58 @@ function switchTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   $('panel-' + name).classList.add('active');
+  if (name === 'overview') loadOverview();
+  if (name === 'operations') loadOperations();
+  if (name === 'security') loadSecuritySupport();
 }
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => switchTab(tab.dataset.tab));
 });
 
+/* ═══ OVERVIEW ═══ */
+function renderMiniRows(rows, emptyText) {
+  if (!rows || !rows.length) return `<p class="muted">${esc(emptyText || 'Nothing needs attention.')}</p>`;
+  return `<div class="mini-list">${rows.join('')}</div>`;
+}
+
+async function loadOverview() {
+  if (!$('overview-stats')) return;
+  try {
+    const data = await rpc('admin_get_platform_overview');
+    state.overview = data || {};
+    const totals = state.overview.totals || {};
+    const usage = state.overview.usage || {};
+    const manual = state.overview.manual_status || {};
+    const attention = state.overview.attention || {};
+    $('overview-stats').innerHTML = `
+      <div class="stat"><div class="n">${totals.clinics ?? 0}</div><div class="l">Organizations</div></div>
+      <div class="stat"><div class="n">${totals.real_patients ?? 0}</div><div class="l">Real patients</div></div>
+      <div class="stat"><div class="n">${usage.visits_today ?? 0}</div><div class="l">Visits today</div></div>
+      <div class="stat"><div class="n">${usage.messages_7d ?? 0}</div><div class="l">Messages 7d</div></div>
+      <div class="stat"><div class="n">${manual.payment_due ?? 0}</div><div class="l">Payment attention</div></div>
+      <div class="stat"><div class="n">${attention.workflow_errors_24h ?? 0}</div><div class="l">Workflow errors 24h</div></div>`;
+    $('overview-payment').innerHTML = renderMiniRows([
+      `<div class="mini-item"><span>Paid accounts</span><span class="pill active">${manual.paid ?? 0}</span></div>`,
+      `<div class="mini-item"><span>Trial accounts</span><span class="pill warn">${manual.trial ?? 0}</span></div>`,
+      `<div class="mini-item"><span>Due / failed / overdue</span><span class="pill expired">${manual.payment_due ?? 0}</span></div>`,
+      `<div class="mini-item"><span>Suspended accounts</span><span class="pill expired">${manual.suspended ?? 0}</span></div>`,
+    ]);
+    $('overview-attention').innerHTML = renderMiniRows([
+      `<div class="mini-item"><span>Clinics without active QR</span><span class="pill ${attention.without_active_qr ? 'warn' : 'active'}">${attention.without_active_qr ?? 0}</span></div>`,
+      `<div class="mini-item"><span>Doctors missing WhatsApp</span><span class="pill ${attention.missing_doctor_whatsapp ? 'warn' : 'active'}">${attention.missing_doctor_whatsapp ?? 0}</span></div>`,
+      `<div class="mini-item"><span>Failed messages 7d</span><span class="pill ${usage.failed_messages_7d ? 'expired' : 'active'}">${usage.failed_messages_7d ?? 0}</span></div>`,
+      `<div class="mini-item"><span>New patients 7d</span><span class="pill disabled">${usage.patients_7d ?? 0}</span></div>`,
+    ]);
+  } catch (err) {
+    $('overview-stats').innerHTML = `<div class="alert err">${esc(err.message)}</div>`;
+  }
+}
+$('reload-overview').addEventListener('click', loadOverview);
+
 /* ═══ CLINICS ═══ */
 function fmtDateTime(v) { return v ? new Date(v).toLocaleString() : '—'; }
 function fmtDate(v) { return v ? new Date(v).toLocaleDateString() : '—'; }
+function dateInputValue(v) { return v ? new Date(v).toLocaleDateString('en-CA') : ''; }
 
 async function loadClinics() {
   try {
@@ -408,11 +536,13 @@ function renderClinicsSummary() {
   const visitsToday = cs.reduce((s, c) => s + Number(c.visits_today || 0), 0);
   const withQr = cs.filter(c => Number(c.active_tokens) > 0).length;
   const attention = cs.filter(c => c.needs_attention).length;
+  const paymentAttention = cs.filter(c => ['due', 'overdue', 'payment_failed'].includes(c.payment_status)).length;
   $('clinics-summary').innerHTML = `
     <div class="stat"><div class="n">${cs.length}</div><div class="l">Clinics onboarded</div></div>
     <div class="stat"><div class="n">${withQr}</div><div class="l">With active QR</div></div>
     <div class="stat"><div class="n">${totalPatients}</div><div class="l">Total patients</div></div>
     <div class="stat"><div class="n">${visitsToday}</div><div class="l">Visits today</div></div>
+    <div class="stat"><div class="n">${paymentAttention}</div><div class="l">Payment attention</div></div>
     <div class="stat"><div class="n">${attention}</div><div class="l">Need attention</div></div>`;
 }
 
@@ -420,7 +550,7 @@ function filteredClinics() {
   const q = ($('clinics-search').value || '').trim().toLowerCase();
   if (!q) return state.clinics;
   return state.clinics.filter(c =>
-    [c.name, c.code, c.slug, c.city, c.primary_doctor, c.contact_phone]
+    [c.name, c.code, c.slug, c.city, c.primary_doctor, c.contact_phone, c.payment_status, c.lifecycle_status, c.plan_label, c.account_owner]
       .some(v => String(v || '').toLowerCase().includes(q)));
 }
 
@@ -435,14 +565,15 @@ function renderClinics() {
     <tr data-clinic="${esc(c.clinic_id)}" style="cursor:pointer">
       <td><strong>${esc(c.name)}</strong><br><span class="muted">${esc(c.code)}${c.city ? ' · ' + esc(c.city) : ''}</span></td>
       <td>${esc(c.primary_doctor || '—')}</td>
-      <td><span class="pill ${c.status === 'active' ? 'active' : 'disabled'}">${esc(c.status)}</span></td>
+      <td><span class="pill ${pillClass(c.lifecycle_status || c.status)}">${esc(titleize(c.lifecycle_status || c.status))}</span></td>
+      <td><span class="pill ${pillClass(c.payment_status)}">${esc(titleize(c.payment_status))}</span><br><span class="muted">${esc(c.plan_label || 'Manual')}</span></td>
       <td>${c.patient_count}${Number(c.demo_patient_count) ? ` <span class="muted">(${c.demo_patient_count} demo)</span>` : ''}</td>
       <td>${c.visits_today}</td>
       <td>${Number(c.active_tokens) > 0 ? `<span class="pill active">${c.active_tokens}</span>` : '<span class="pill disabled">none</span>'}</td>
       <td>${c.needs_attention ? '<span class="pill expired">Action</span>' : '<span class="pill active">OK</span>'}</td>
     </tr>`).join('');
   $('clinics-table').innerHTML = `<table>
-    <thead><tr><th>Clinic</th><th>Doctor</th><th>Status</th><th>Patients</th><th>Visits today</th><th>Active QR</th><th>Health</th></tr></thead>
+    <thead><tr><th>Clinic</th><th>Doctor</th><th>Lifecycle</th><th>Payment</th><th>Patients</th><th>Visits today</th><th>Active QR</th><th>Health</th></tr></thead>
     <tbody>${rows}</tbody></table>`;
   $('clinics-table').querySelectorAll('[data-clinic]').forEach(tr =>
     tr.addEventListener('click', () => showClinicDetail(tr.dataset.clinic)));
@@ -461,6 +592,7 @@ async function showClinicDetail(clinicId) {
     const d = await rpc('admin_get_clinic_details', { p_clinic_id: clinicId });
     const ct = d.contact || {};
     const st = d.stats || {};
+    const admin = d.admin_settings || {};
     const doctors = Array.isArray(d.doctors) ? d.doctors : [];
     const docRows = doctors.length ? doctors.map(doc => `
       <tr>
@@ -504,13 +636,90 @@ async function showClinicDetail(clinicId) {
           </table>
         </div>
       </div>
+      <h2 style="font-size:13px;margin:16px 0 8px">SaaS account controls</h2>
+      <form id="clinic-admin-settings-form">
+        <div class="grid2">
+          <div class="field">
+            <label>Lifecycle status</label>
+            <select id="clinic-lifecycle-status">
+              ${['active','onboarding','paused','suspended','cancelled'].map(v => `<option value="${v}" ${admin.lifecycle_status === v ? 'selected' : ''}>${esc(titleize(v))}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field">
+            <label>Manual payment status</label>
+            <select id="clinic-payment-status">
+              ${['not_started','trial','paid','due','overdue','waived','paused','payment_failed','cancelled'].map(v => `<option value="${v}" ${admin.payment_status === v ? 'selected' : ''}>${esc(titleize(v))}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field">
+            <label>Plan label</label>
+            <input id="clinic-plan-label" value="${esc(admin.plan_label || 'Manual')}" placeholder="Manual / Starter / Growth" />
+          </div>
+          <div class="field">
+            <label>Account owner</label>
+            <input id="clinic-account-owner" value="${esc(admin.account_owner || '')}" placeholder="Internal owner" />
+          </div>
+          <div class="field">
+            <label>Payment due date</label>
+            <input id="clinic-payment-due-date" type="date" value="${esc(dateInputValue(admin.payment_due_date))}" />
+          </div>
+          <div class="field">
+            <label>Last payment date</label>
+            <input id="clinic-last-payment-date" type="date" value="${esc(dateInputValue(admin.last_payment_date))}" />
+          </div>
+          <div class="field">
+            <label>Renewal date</label>
+            <input id="clinic-renewal-date" type="date" value="${esc(dateInputValue(admin.renewal_date))}" />
+          </div>
+        </div>
+        <div class="grid2">
+          <div class="field">
+            <label>Billing notes</label>
+            <textarea id="clinic-billing-notes" rows="3" placeholder="Manual coordination notes">${esc(admin.billing_notes || '')}</textarea>
+          </div>
+          <div class="field">
+            <label>Internal support notes</label>
+            <textarea id="clinic-internal-notes" rows="3" placeholder="Onboarding, risk, relationship notes">${esc(admin.internal_notes || '')}</textarea>
+          </div>
+        </div>
+        <button class="btn btn-sm" id="clinic-admin-settings-save" type="submit">Save admin status</button>
+      </form>
       <h2 style="font-size:13px;margin:16px 0 8px">Doctors</h2>
       <table>
         <thead><tr><th>Name</th><th>Expertise</th><th>Reg #</th><th>WhatsApp</th><th>Login</th></tr></thead>
         <tbody>${docRows}</tbody>
       </table>`;
+    $('clinic-admin-settings-form').addEventListener('submit', saveClinicAdminSettings);
   } catch (err) {
     $('clinic-detail-body').innerHTML = `<div class="alert err">${esc(err.message)}</div>`;
+  }
+}
+
+async function saveClinicAdminSettings(e) {
+  e.preventDefault();
+  const clinicId = $('clinic-detail-card').dataset.clinic;
+  const btn = $('clinic-admin-settings-save');
+  btn.disabled = true;
+  try {
+    await rpc('admin_update_clinic_admin_settings', {
+      p_clinic_id: clinicId,
+      p_lifecycle_status: $('clinic-lifecycle-status').value,
+      p_payment_status: $('clinic-payment-status').value,
+      p_plan_label: $('clinic-plan-label').value.trim() || 'Manual',
+      p_account_owner: $('clinic-account-owner').value.trim() || null,
+      p_renewal_date: $('clinic-renewal-date').value || null,
+      p_last_payment_date: $('clinic-last-payment-date').value || null,
+      p_payment_due_date: $('clinic-payment-due-date').value || null,
+      p_billing_notes: $('clinic-billing-notes').value.trim() || null,
+      p_internal_notes: $('clinic-internal-notes').value.trim() || null,
+    });
+    toast('Admin status saved.');
+    await Promise.all([loadClinics(), loadOverview()]);
+    await showClinicDetail(clinicId);
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -735,6 +944,70 @@ async function loadDashboard() {
     $('dash-visits').innerHTML = `<div class="alert err">${esc(err.message)}</div>`;
   }
 }
+
+/* ═══ OPERATIONS ═══ */
+async function loadOperations() {
+  try {
+    const data = await rpc('admin_get_operations_overview');
+    state.operations = data || {};
+    const mh = state.operations.message_health || {};
+    const wh = state.operations.workflow_health || {};
+    $('ops-stats').innerHTML = `
+      <div class="stat"><div class="n">${mh.sent_24h ?? 0}</div><div class="l">Messages 24h</div></div>
+      <div class="stat"><div class="n">${mh.delivered_24h ?? 0}</div><div class="l">Delivered/read 24h</div></div>
+      <div class="stat"><div class="n">${mh.failed_24h ?? 0}</div><div class="l">Failed 24h</div></div>
+      <div class="stat"><div class="n">${wh.errors_24h ?? 0}</div><div class="l">Workflow errors 24h</div></div>
+      <div class="stat"><div class="n">${wh.warnings_24h ?? 0}</div><div class="l">Warnings 24h</div></div>`;
+    const errors = state.operations.recent_errors || [];
+    $('ops-errors').innerHTML = errors.length ? `<table>
+      <thead><tr><th>Time</th><th>Workflow</th><th>Message</th></tr></thead>
+      <tbody>${errors.map(e => `<tr><td>${fmtDateTime(e.timestamp)}</td><td>${esc(e.workflow_name || '—')}</td><td>${esc(e.message || '—')}</td></tr>`).join('')}</tbody>
+    </table>` : '<p class="muted">No recent workflow warnings or errors.</p>';
+    const failures = state.operations.message_failures || [];
+    $('ops-message-failures').innerHTML = failures.length ? `<table>
+      <thead><tr><th>Time</th><th>Patient</th><th>Status</th><th>Error</th></tr></thead>
+      <tbody>${failures.map(m => `<tr>
+        <td>${fmtDateTime(m.sent_at)}</td>
+        <td>${esc(m.patient_name || m.phone || '—')}</td>
+        <td><span class="pill ${pillClass(m.delivery_status)}">${esc(titleize(m.delivery_status))}</span></td>
+        <td>${esc(m.error_message || m.workflow_name || '—')}</td>
+      </tr>`).join('')}</tbody>
+    </table>` : '<p class="muted">No recent message failures.</p>';
+  } catch (err) {
+    $('ops-stats').innerHTML = `<div class="alert err">${esc(err.message)}</div>`;
+  }
+}
+$('reload-operations').addEventListener('click', loadOperations);
+
+/* ═══ SECURITY + SUPPORT ═══ */
+async function loadSecuritySupport() {
+  try {
+    const data = await rpc('admin_get_security_support_overview');
+    state.security = data || {};
+    const access = state.security.access || {};
+    $('security-stats').innerHTML = `
+      <div class="stat"><div class="n">${access.platform_admins ?? 0}</div><div class="l">Platform admins</div></div>
+      <div class="stat"><div class="n">${access.doctor_auth_users ?? 0}</div><div class="l">Doctor auth users</div></div>
+      <div class="stat"><div class="n">${access.doctors_not_signed_in ?? 0}</div><div class="l">Doctors not signed in</div></div>
+      <div class="stat"><div class="n">${access.missing_doctor_whatsapp ?? 0}</div><div class="l">Missing WhatsApp</div></div>`;
+    const queue = state.security.support_queue || [];
+    $('support-queue').innerHTML = queue.length ? `<table>
+      <thead><tr><th>Clinic</th><th>Lifecycle</th><th>Payment</th><th>Owner</th><th>Priority</th></tr></thead>
+      <tbody>${queue.map(q => `<tr data-support-clinic="${esc(q.clinic_id)}" style="cursor:pointer">
+        <td><strong>${esc(q.name)}</strong><br><span class="muted">${esc(q.code || '')}</span></td>
+        <td><span class="pill ${pillClass(q.lifecycle_status)}">${esc(titleize(q.lifecycle_status))}</span></td>
+        <td><span class="pill ${pillClass(q.payment_status)}">${esc(titleize(q.payment_status))}</span></td>
+        <td>${esc(q.account_owner || '—')}</td>
+        <td><span class="pill ${Number(q.priority) >= 3 ? 'expired' : Number(q.priority) ? 'warn' : 'disabled'}">${esc(q.priority ?? 0)}</span></td>
+      </tr>`).join('')}</tbody>
+    </table>` : '<p class="muted">No support queue items.</p>';
+    $('support-queue').querySelectorAll('[data-support-clinic]').forEach(tr =>
+      tr.addEventListener('click', () => { switchTab('clinics'); showClinicDetail(tr.dataset.supportClinic); }));
+  } catch (err) {
+    $('security-stats').innerHTML = `<div class="alert err">${esc(err.message)}</div>`;
+  }
+}
+$('reload-security').addEventListener('click', loadSecuritySupport);
 
 /* ═══ BOOT ═══ */
 (async function boot() {

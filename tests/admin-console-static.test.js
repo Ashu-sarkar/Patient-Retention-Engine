@@ -26,6 +26,11 @@ includes(admin, 'This account is not a platform administrator.', 'non-admin sign
 includes(admin, "sb.auth.signOut()", 'non-admin session is signed out');
 includes(admin, "rpc('admin_list_clinics')", 'clinic listing wired to gated RPC');
 includes(admin, "rpc('admin_get_clinic_details'", 'clinic detail view wired to gated RPC');
+includes(admin, "rpc('admin_get_platform_overview')", 'platform overview wired to gated RPC');
+includes(admin, "rpc('admin_get_operations_overview')", 'operations overview wired to gated RPC');
+includes(admin, "rpc('admin_get_security_support_overview')", 'security/support overview wired to gated RPC');
+includes(admin, "rpc('admin_update_clinic_admin_settings'", 'manual clinic SaaS settings wired to gated RPC');
+includes(admin, 'Manual payment status', 'admin can manually track payment status');
 assert(!admin.includes("rpc('admin_create_clinic'"), 'admin console must NOT create clinics (onboarding form owns registration)');
 includes(admin, "rpc('create_clinic_intake_token'", 'token generation wired to RPC');
 includes(admin, "rpc('admin_list_intake_tokens'", 'token listing wired to RPC');
@@ -46,6 +51,12 @@ assert(
 // ── Migration: gated admin RPCs + demo tagging + platform admin ─────────────
 includes(migration, 'CREATE TABLE IF NOT EXISTS public.platform_admins', 'platform_admins table');
 includes(migration, 'FROM public.platform_admins pa', 'platform admin check reads platform_admins');
+includes(migration, 'CREATE TABLE IF NOT EXISTS public.platform_clinic_admin_settings', 'manual SaaS admin settings table');
+includes(migration, "payment_status IN ('not_started','trial','paid','due','overdue','waived','paused','payment_failed','cancelled')", 'manual payment statuses are constrained');
+includes(migration, 'FUNCTION public.admin_update_clinic_admin_settings', 'manual clinic admin settings RPC');
+includes(migration, 'FUNCTION public.admin_get_platform_overview', 'platform overview RPC');
+includes(migration, 'FUNCTION public.admin_get_operations_overview', 'operations overview RPC');
+includes(migration, 'FUNCTION public.admin_get_security_support_overview', 'security/support overview RPC');
 includes(migration, 'ADD COLUMN IF NOT EXISTS is_demo', 'is_demo tagging columns');
 includes(migration, 'DROP FUNCTION IF EXISTS public.admin_create_clinic', 'admin_create_clinic is removed (onboarding owns registration)');
 includes(migration, 'FUNCTION public.admin_list_clinics', 'admin_list_clinics RPC');

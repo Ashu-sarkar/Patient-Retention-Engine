@@ -7,6 +7,7 @@
 --
 -- Adds:
 --   * platform_admins table (super admins not tied to a single clinic)
+--   * platform_clinic_admin_settings for manual SaaS account/payment tracking
 --   * is_demo tagging on patients / patient_visits / prescriptions
 --   * admin RPCs to create clinics, list clinics, manage intake tokens, and
 --     seed / clear demo patients (all gated on current_user_is_platform_admin)
@@ -37,6 +38,40 @@ CREATE POLICY "platform admins read roster"
   ON public.platform_admins FOR SELECT
   TO authenticated
   USING (public.current_user_is_platform_admin());
+
+-- -----------------------------------------------------------------------------
+-- Manual SaaS account controls
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.platform_clinic_admin_settings (
+  clinic_id        UUID        PRIMARY KEY REFERENCES public.clinics (id) ON DELETE CASCADE,
+  lifecycle_status TEXT       NOT NULL DEFAULT 'active'
+                  CHECK (lifecycle_status IN ('active','onboarding','paused','suspended','cancelled')),
+  payment_status   TEXT       NOT NULL DEFAULT 'not_started'
+                  CHECK (payment_status IN ('not_started','trial','paid','due','overdue','waived','paused','payment_failed','cancelled')),
+  plan_label       TEXT       NOT NULL DEFAULT 'Manual',
+  account_owner    TEXT,
+  renewal_date     DATE,
+  last_payment_date DATE,
+  payment_due_date DATE,
+  billing_notes    TEXT,
+  internal_notes   TEXT,
+  updated_by       UUID REFERENCES auth.users (id) ON DELETE SET NULL,
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.platform_clinic_admin_settings ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "platform admins read clinic admin settings" ON public.platform_clinic_admin_settings;
+CREATE POLICY "platform admins read clinic admin settings"
+  ON public.platform_clinic_admin_settings FOR SELECT
+  TO authenticated
+  USING (public.current_user_is_platform_admin());
+
+DROP TRIGGER IF EXISTS trg_platform_clinic_admin_settings_updated_at ON public.platform_clinic_admin_settings;
+CREATE TRIGGER trg_platform_clinic_admin_settings_updated_at
+  BEFORE UPDATE ON public.platform_clinic_admin_settings
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 -- Treat a row in platform_admins as platform-admin in addition to the existing
 -- super_admin clinic membership. SECURITY DEFINER bypasses RLS so there is no
@@ -106,6 +141,13 @@ RETURNS TABLE(
   last_visit_at      TIMESTAMPTZ,
   active_tokens      BIGINT,
   total_token_uses   BIGINT,
+  lifecycle_status   TEXT,
+  payment_status     TEXT,
+  plan_label         TEXT,
+  account_owner      TEXT,
+  renewal_date       DATE,
+  payment_due_date   DATE,
+  last_payment_date  DATE,
   needs_attention    BOOLEAN
 )
 LANGUAGE plpgsql
@@ -137,8 +179,16 @@ BEGIN
        WHERE t.clinic_id = c.id AND t.status = 'active'
          AND (t.expires_at IS NULL OR t.expires_at > NOW())),
     (SELECT COALESCE(SUM(t.use_count), 0) FROM public.clinic_intake_tokens t WHERE t.clinic_id = c.id),
+    COALESCE(acs.lifecycle_status, 'active'),
+    COALESCE(acs.payment_status, 'not_started'),
+    COALESCE(acs.plan_label, 'Manual'),
+    acs.account_owner,
+    acs.renewal_date,
+    acs.payment_due_date,
+    acs.last_payment_date,
     -- Flag clinics that cannot fully operate yet: no active QR, or a doctor
-    -- without a WhatsApp phone (so they cannot sign in to the dashboard).
+    -- without a WhatsApp phone (so they cannot sign in to the dashboard), or
+    -- manual account/payment statuses that need admin attention.
     (
       NOT EXISTS (
         SELECT 1 FROM public.clinic_intake_tokens t
@@ -150,8 +200,12 @@ BEGIN
         WHERE h.clinic_id = c.id
           AND public.normalized_whatsapp_phone(h.doctor_phone) IS NULL
       )
+      OR COALESCE(acs.lifecycle_status, 'active') IN ('onboarding','paused','suspended')
+      OR COALESCE(acs.payment_status, 'not_started') IN ('due','overdue','payment_failed')
+      OR (acs.payment_due_date IS NOT NULL AND acs.payment_due_date < CURRENT_DATE AND COALESCE(acs.payment_status, 'not_started') <> 'paid')
     )
   FROM public.clinics c
+  LEFT JOIN public.platform_clinic_admin_settings acs ON acs.clinic_id = c.id
   LEFT JOIN LATERAL (
     SELECT h.city, h.doctor_name, h.contact_phone
     FROM public.hospital_boarding h
@@ -181,6 +235,14 @@ BEGIN
 
   SELECT jsonb_build_object(
     'clinic', to_jsonb(c.*),
+    'admin_settings', COALESCE((
+      SELECT to_jsonb(acs) FROM public.platform_clinic_admin_settings acs
+      WHERE acs.clinic_id = c.id
+    ), jsonb_build_object(
+      'lifecycle_status', 'active',
+      'payment_status', 'not_started',
+      'plan_label', 'Manual'
+    )),
     'contact', (
       SELECT to_jsonb(h) FROM (
         SELECT hb.hospital_name, hb.facility_type, hb.address, hb.city, hb.contact_phone,
@@ -226,6 +288,265 @@ BEGIN
   IF v_result IS NULL THEN
     RAISE EXCEPTION 'clinic not found';
   END IF;
+
+  RETURN v_result;
+END;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- Admin: manual lifecycle/payment/support metadata for a clinic
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.admin_update_clinic_admin_settings(
+  p_clinic_id UUID,
+  p_lifecycle_status TEXT DEFAULT NULL,
+  p_payment_status TEXT DEFAULT NULL,
+  p_plan_label TEXT DEFAULT NULL,
+  p_account_owner TEXT DEFAULT NULL,
+  p_renewal_date DATE DEFAULT NULL,
+  p_last_payment_date DATE DEFAULT NULL,
+  p_payment_due_date DATE DEFAULT NULL,
+  p_billing_notes TEXT DEFAULT NULL,
+  p_internal_notes TEXT DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_row public.platform_clinic_admin_settings;
+BEGIN
+  IF NOT public.current_user_is_platform_admin() THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM public.clinics WHERE id = p_clinic_id) THEN
+    RAISE EXCEPTION 'clinic not found';
+  END IF;
+
+  IF p_lifecycle_status IS NOT NULL AND p_lifecycle_status NOT IN ('active','onboarding','paused','suspended','cancelled') THEN
+    RAISE EXCEPTION 'invalid lifecycle status: %', p_lifecycle_status;
+  END IF;
+
+  IF p_payment_status IS NOT NULL AND p_payment_status NOT IN ('not_started','trial','paid','due','overdue','waived','paused','payment_failed','cancelled') THEN
+    RAISE EXCEPTION 'invalid payment status: %', p_payment_status;
+  END IF;
+
+  INSERT INTO public.platform_clinic_admin_settings (
+    clinic_id, lifecycle_status, payment_status, plan_label,
+    account_owner, renewal_date, last_payment_date, payment_due_date,
+    billing_notes, internal_notes, updated_by
+  )
+  VALUES (
+    p_clinic_id,
+    COALESCE(p_lifecycle_status, 'active'),
+    COALESCE(p_payment_status, 'not_started'),
+    COALESCE(NULLIF(trim(p_plan_label), ''), 'Manual'),
+    NULLIF(trim(p_account_owner), ''),
+    p_renewal_date,
+    p_last_payment_date,
+    p_payment_due_date,
+    NULLIF(trim(p_billing_notes), ''),
+    NULLIF(trim(p_internal_notes), ''),
+    auth.uid()
+  )
+  ON CONFLICT (clinic_id) DO UPDATE SET
+    lifecycle_status = COALESCE(EXCLUDED.lifecycle_status, platform_clinic_admin_settings.lifecycle_status),
+    payment_status = COALESCE(EXCLUDED.payment_status, platform_clinic_admin_settings.payment_status),
+    plan_label = COALESCE(EXCLUDED.plan_label, platform_clinic_admin_settings.plan_label),
+    account_owner = EXCLUDED.account_owner,
+    renewal_date = EXCLUDED.renewal_date,
+    last_payment_date = EXCLUDED.last_payment_date,
+    payment_due_date = EXCLUDED.payment_due_date,
+    billing_notes = EXCLUDED.billing_notes,
+    internal_notes = EXCLUDED.internal_notes,
+    updated_by = auth.uid(),
+    updated_at = NOW()
+  RETURNING * INTO v_row;
+
+  RETURN to_jsonb(v_row);
+END;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- Admin: SaaS command-center rollups
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.admin_get_platform_overview()
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_result JSONB;
+BEGIN
+  IF NOT public.current_user_is_platform_admin() THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+
+  SELECT jsonb_build_object(
+    'totals', jsonb_build_object(
+      'clinics', (SELECT COUNT(*) FROM public.clinics),
+      'active_clinics', (SELECT COUNT(*) FROM public.clinics c WHERE c.status = 'active'),
+      'patients', (SELECT COUNT(*) FROM public.patients),
+      'real_patients', (SELECT COUNT(*) FROM public.patients WHERE COALESCE(is_demo, FALSE) = FALSE),
+      'doctors', (SELECT COUNT(DISTINCT lower(trim(doctor_name))) FROM public.hospital_boarding WHERE doctor_name IS NOT NULL),
+      'active_qr_clinics', (
+        SELECT COUNT(DISTINCT t.clinic_id) FROM public.clinic_intake_tokens t
+        WHERE t.status = 'active' AND (t.expires_at IS NULL OR t.expires_at > NOW())
+      )
+    ),
+    'usage', jsonb_build_object(
+      'visits_today', (SELECT COUNT(*) FROM public.patient_visits WHERE visit_date = CURRENT_DATE),
+      'visits_7d', (SELECT COUNT(*) FROM public.patient_visits WHERE visit_date >= CURRENT_DATE - 6),
+      'patients_7d', (SELECT COUNT(*) FROM public.patients WHERE created_at >= NOW() - INTERVAL '7 days'),
+      'messages_7d', (SELECT COUNT(*) FROM public.message_logs WHERE sent_at >= NOW() - INTERVAL '7 days'),
+      'failed_messages_7d', (SELECT COUNT(*) FROM public.message_logs WHERE sent_at >= NOW() - INTERVAL '7 days' AND delivery_status IN ('failed','undelivered'))
+    ),
+    'manual_status', jsonb_build_object(
+      'payment_due', (
+        SELECT COUNT(*) FROM public.platform_clinic_admin_settings
+        WHERE payment_status IN ('due','overdue','payment_failed')
+           OR (payment_due_date IS NOT NULL AND payment_due_date < CURRENT_DATE AND payment_status <> 'paid')
+      ),
+      'paid', (SELECT COUNT(*) FROM public.platform_clinic_admin_settings WHERE payment_status = 'paid'),
+      'trial', (SELECT COUNT(*) FROM public.platform_clinic_admin_settings WHERE payment_status = 'trial'),
+      'suspended', (SELECT COUNT(*) FROM public.platform_clinic_admin_settings WHERE lifecycle_status = 'suspended')
+    ),
+    'attention', jsonb_build_object(
+      'without_active_qr', (
+        SELECT COUNT(*) FROM public.clinics c
+        WHERE NOT EXISTS (
+          SELECT 1 FROM public.clinic_intake_tokens t
+          WHERE t.clinic_id = c.id AND t.status = 'active'
+            AND (t.expires_at IS NULL OR t.expires_at > NOW())
+        )
+      ),
+      'missing_doctor_whatsapp', (
+        SELECT COUNT(*) FROM public.hospital_boarding hb
+        WHERE public.normalized_whatsapp_phone(hb.doctor_phone) IS NULL
+      ),
+      'workflow_errors_24h', (
+        SELECT COUNT(*) FROM public.system_logs
+        WHERE timestamp >= NOW() - INTERVAL '24 hours' AND log_level = 'ERROR'
+      )
+    )
+  )
+  INTO v_result;
+
+  RETURN v_result;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_get_operations_overview()
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_result JSONB;
+BEGIN
+  IF NOT public.current_user_is_platform_admin() THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+
+  SELECT jsonb_build_object(
+    'message_health', jsonb_build_object(
+      'sent_24h', (SELECT COUNT(*) FROM public.message_logs WHERE sent_at >= NOW() - INTERVAL '24 hours'),
+      'failed_24h', (SELECT COUNT(*) FROM public.message_logs WHERE sent_at >= NOW() - INTERVAL '24 hours' AND delivery_status IN ('failed','undelivered')),
+      'queued_24h', (SELECT COUNT(*) FROM public.message_logs WHERE sent_at >= NOW() - INTERVAL '24 hours' AND delivery_status = 'queued'),
+      'delivered_24h', (SELECT COUNT(*) FROM public.message_logs WHERE sent_at >= NOW() - INTERVAL '24 hours' AND delivery_status IN ('delivered','read'))
+    ),
+    'workflow_health', jsonb_build_object(
+      'errors_24h', (SELECT COUNT(*) FROM public.system_logs WHERE timestamp >= NOW() - INTERVAL '24 hours' AND log_level = 'ERROR'),
+      'warnings_24h', (SELECT COUNT(*) FROM public.system_logs WHERE timestamp >= NOW() - INTERVAL '24 hours' AND log_level = 'WARN'),
+      'last_error_at', (SELECT MAX(timestamp) FROM public.system_logs WHERE log_level = 'ERROR')
+    ),
+    'recent_errors', COALESCE((
+      SELECT jsonb_agg(e ORDER BY e.timestamp DESC)
+      FROM (
+        SELECT timestamp, workflow_name, message
+        FROM public.system_logs
+        WHERE log_level IN ('ERROR','WARN')
+        ORDER BY timestamp DESC
+        LIMIT 10
+      ) e
+    ), '[]'::jsonb),
+    'message_failures', COALESCE((
+      SELECT jsonb_agg(m ORDER BY m.sent_at DESC)
+      FROM (
+        SELECT sent_at, workflow_name, patient_name, phone, delivery_status, error_message
+        FROM public.message_logs
+        WHERE delivery_status IN ('failed','undelivered')
+        ORDER BY sent_at DESC
+        LIMIT 10
+      ) m
+    ), '[]'::jsonb)
+  )
+  INTO v_result;
+
+  RETURN v_result;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_get_security_support_overview()
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_result JSONB;
+BEGIN
+  IF NOT public.current_user_is_platform_admin() THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+
+  SELECT jsonb_build_object(
+    'access', jsonb_build_object(
+      'platform_admins', (SELECT COUNT(*) FROM public.platform_admins),
+      'doctor_auth_users', (SELECT COUNT(*) FROM public.hospital_boarding WHERE auth_user_id IS NOT NULL),
+      'doctors_not_signed_in', (
+        SELECT COUNT(*) FROM public.hospital_boarding hb
+        WHERE hb.auth_user_id IS NULL
+      ),
+      'missing_doctor_whatsapp', (
+        SELECT COUNT(*) FROM public.hospital_boarding hb
+        WHERE public.normalized_whatsapp_phone(hb.doctor_phone) IS NULL
+      )
+    ),
+    'support_queue', COALESCE((
+      SELECT jsonb_agg(q ORDER BY q.priority DESC, q.created_at DESC)
+      FROM (
+        SELECT c.id AS clinic_id, c.name, c.code, c.created_at,
+               COALESCE(acs.payment_status, 'not_started') AS payment_status,
+               COALESCE(acs.lifecycle_status, 'active') AS lifecycle_status,
+               acs.account_owner,
+               (
+                 CASE WHEN COALESCE(acs.payment_status, 'not_started') IN ('overdue','payment_failed') THEN 3 ELSE 0 END
+                 + CASE WHEN COALESCE(acs.lifecycle_status, 'active') IN ('onboarding','suspended','paused') THEN 2 ELSE 0 END
+                 + CASE WHEN NOT EXISTS (
+                     SELECT 1 FROM public.clinic_intake_tokens t
+                     WHERE t.clinic_id = c.id AND t.status = 'active'
+                       AND (t.expires_at IS NULL OR t.expires_at > NOW())
+                   ) THEN 1 ELSE 0 END
+               ) AS priority
+        FROM public.clinics c
+        LEFT JOIN public.platform_clinic_admin_settings acs ON acs.clinic_id = c.id
+        WHERE COALESCE(acs.payment_status, 'not_started') IN ('not_started','due','overdue','payment_failed')
+           OR COALESCE(acs.lifecycle_status, 'active') IN ('onboarding','paused','suspended')
+           OR NOT EXISTS (
+             SELECT 1 FROM public.clinic_intake_tokens t
+             WHERE t.clinic_id = c.id AND t.status = 'active'
+               AND (t.expires_at IS NULL OR t.expires_at > NOW())
+           )
+        ORDER BY priority DESC, c.created_at DESC
+        LIMIT 20
+      ) q
+    ), '[]'::jsonb)
+  )
+  INTO v_result;
 
   RETURN v_result;
 END;
@@ -462,6 +783,10 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.admin_list_clinics() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_get_clinic_details(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_update_clinic_admin_settings(UUID, TEXT, TEXT, TEXT, INTEGER, INTEGER, TEXT, DATE, DATE, DATE, TEXT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_get_platform_overview() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_get_operations_overview() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_get_security_support_overview() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_list_intake_tokens(UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_set_token_status(UUID, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_seed_dummy_patients(UUID, INTEGER) TO authenticated;
