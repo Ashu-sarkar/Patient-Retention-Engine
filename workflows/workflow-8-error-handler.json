@@ -60,7 +60,7 @@
             "execution_id": "={{ $json._execution_id }}",
             "log_level": "ERROR",
             "message": "={{ $json._error_message }}",
-            "details": "={{ $json._details }}"
+            "details": "={{ JSON.stringify($json._details) }}"
           },
           "matchingColumns": [],
           "schema": []

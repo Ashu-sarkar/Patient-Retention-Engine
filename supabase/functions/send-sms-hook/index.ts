@@ -136,11 +136,12 @@ Deno.serve(async (req) => {
   const phone = normalizePhone(String(event.user?.phone || ''));
   const otp = extractOtp(event);
   if (!phone || !/^\+\d{8,15}$/.test(phone)) {
-    console.error('send-sms-hook invalid phone payload:', JSON.stringify(event.user));
-    return jsonError(500, `Invalid phone in hook payload: ${String(event.user?.phone || '')}`);
+    // Never log the raw payload — it contains PII (phone) and the OTP.
+    console.error('send-sms-hook: invalid or missing phone in hook payload');
+    return jsonError(500, 'Invalid phone in hook payload');
   }
   if (!otp) {
-    console.error('send-sms-hook missing otp payload:', JSON.stringify(event.sms));
+    console.error('send-sms-hook: missing OTP in hook payload');
     return jsonError(500, 'OTP missing in hook payload');
   }
 

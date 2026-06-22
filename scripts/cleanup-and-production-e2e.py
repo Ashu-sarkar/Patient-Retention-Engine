@@ -178,6 +178,18 @@ def main() -> int:
     print(f"  Hospital  : {HOSPITAL}")
     print(f"  Patient   : {PATIENT_NAME}")
 
+    # ── Safety guard ───────────────────────────────────────────────────────────
+    # cleanup_data() TRUNCATEs ALL clinic/patient/prescription data (every tenant),
+    # not just the E2E rows, against production. Require explicit opt-in.
+    if "--yes-truncate-production" not in sys.argv:
+        print(
+            "\n⛔ Refusing to run.\n"
+            f"   This will TRUNCATE ALL clinic/patient/prescription data on {PROD_BASE}.\n"
+            "   Every tenant's data will be deleted, not just the E2E test rows.\n"
+            "   Re-run with --yes-truncate-production if you really mean it."
+        )
+        return 2
+
     # ── Cleanup ──────────────────────────────────────────────────────────────
     try:
         with db_connect(env) as conn:

@@ -12,8 +12,9 @@
 
 -- -------------------------
 -- Table: patients
--- Primary record store. One row per patient (keyed on phone number).
--- Upserted by WF11 (QR form intake) on conflict with phone.
+-- Primary record store. In multi-clinic deployments patient identity is scoped
+-- by `(clinic_id, phone)` after schemas/migration-v0-multitenant.sql is applied.
+-- Upserted by WF11 (QR form intake) on conflict with `(clinic_id, phone)`.
 -- WF1–WF8 read exclusively from this table (Supabase = source of truth).
 -- -------------------------
 CREATE TABLE IF NOT EXISTS public.patients (
@@ -43,12 +44,9 @@ CREATE TABLE IF NOT EXISTS public.patients (
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Unique constraints
-ALTER TABLE public.patients
-  ADD CONSTRAINT patients_phone_unique UNIQUE (phone);
-
-ALTER TABLE public.patients
-  ADD CONSTRAINT patients_patient_code_unique UNIQUE (patient_code);
+-- Unique constraints for patient identity are tenant-scoped in
+-- schemas/migration-v0-multitenant.sql. Do not enforce global phone or
+-- patient_code uniqueness in the baseline schema.
 
 CREATE INDEX IF NOT EXISTS idx_patients_follow_up_date    ON public.patients (follow_up_date);
 CREATE INDEX IF NOT EXISTS idx_patients_status             ON public.patients (status);

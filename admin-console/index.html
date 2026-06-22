@@ -828,6 +828,7 @@ $('qr-print').addEventListener('click', () => {
   const img = $('qr-canvas').toDataURL('image/png');
   const clinic = state.clinics.find(c => c.clinic_id === $('qr-clinic').value);
   const w = window.open('', '_blank');
+  if (!w) { toast('Allow pop-ups for this site to print the QR code.', true); return; }
   w.document.write(`<html><head><title>Clinic QR</title></head><body style="text-align:center;font-family:sans-serif;padding:40px">
     <h2>${esc(clinic ? clinic.name : 'Clinic')}</h2>
     <p>Scan to register at this clinic</p>

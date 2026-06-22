@@ -783,7 +783,7 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.admin_list_clinics() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_get_clinic_details(UUID) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.admin_update_clinic_admin_settings(UUID, TEXT, TEXT, TEXT, INTEGER, INTEGER, TEXT, DATE, DATE, DATE, TEXT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_update_clinic_admin_settings(UUID, TEXT, TEXT, TEXT, TEXT, DATE, DATE, DATE, TEXT, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_get_platform_overview() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_get_operations_overview() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_get_security_support_overview() TO authenticated;

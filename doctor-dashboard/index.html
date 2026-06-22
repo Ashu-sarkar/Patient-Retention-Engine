@@ -986,7 +986,6 @@
     const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNyc2RjY3FzZXVobmltb3h4ZWt5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMjc1NzQsImV4cCI6MjA5MTkwMzU3NH0.3iz7x2JQj3qn6KI8JS3tjxV9vaBsN-mL6xDTvmJMDxA';
     const PRESCRIPTION_DELIVERY_FUNCTION = 'prescription-delivery';
     const ADMIN_PREVIEW_USERNAME = 'admin.preview';
-    const ADMIN_PREVIEW_PASSWORD = 'preview412869';
     const AUTH_USERNAME_EMAIL_DOMAIN = 'auth.vaitalcare.local';
     const MEDICINE_TIMING_OPTIONS = [
       'Empty Stomach',
@@ -1102,8 +1101,11 @@
       return state.demo || state.adminPreview;
     }
 
-    function isAdminPreviewLogin(username, password) {
-      return normalizeUsername(username) === ADMIN_PREVIEW_USERNAME && password === ADMIN_PREVIEW_PASSWORD;
+    function isAdminPreviewLogin(username) {
+      // The sandbox preview (sample data only, no Supabase access) is unlocked via an explicit
+      // URL flag rather than a shipped password, so production builds carry no hardcoded secret.
+      return normalizeUsername(username) === ADMIN_PREVIEW_USERNAME
+        && new URLSearchParams(location.search).get('preview') === '1';
     }
 
     function showBanner(title, body, { error = false, action = null } = {}) {
@@ -1206,7 +1208,7 @@
         return;
       }
       if (!HAS_SUPABASE_CONFIG) {
-        $('login-step').textContent = `Username/password sign in or admin preview (${ADMIN_PREVIEW_USERNAME})`;
+        $('login-step').textContent = `Username/password sign in or admin preview (${ADMIN_PREVIEW_USERNAME}, add ?preview=1 to the URL)`;
         return;
       }
       const { data } = await sb.auth.getSession();
@@ -1218,12 +1220,12 @@
         event.preventDefault();
         const username = normalizeUsername($('doctor-username').value);
         const password = $('doctor-password').value;
-        if (!isValidUsername(username)) return showToast('Enter a valid username.', true);
-        if (!password || password.length < 8) return showToast('Enter your dashboard password.', true);
-        if (isAdminPreviewLogin(username, password)) {
+        if (isAdminPreviewLogin(username)) {
           await enterAdminPreviewApp(username);
           return;
         }
+        if (!isValidUsername(username)) return showToast('Enter a valid username.', true);
+        if (!password || password.length < 8) return showToast('Enter your dashboard password.', true);
         if (!sb) return showConfigFallback();
         const button = $('login-submit');
         setButtonBusy(button, true, 'Signing in...');
@@ -1578,20 +1580,20 @@
       $('mark-complete').classList.toggle('hidden', !['waiting', 'in_consultation'].includes(visit.visit_status));
       $('main-title').textContent = patient.name || 'Unnamed patient';
       $('main-subtitle').textContent = `${visit.clinic_name} · ${visit.doctor_name} · ${visit.visit_date}`;
-      $('intake-status').textContent = visit.visit_status.replace('_', ' ');
+      $('intake-status').textContent = (visit.visit_status || '').replace('_', ' ');
       $('intake-status').className = `status ${escapeHtml(visit.visit_status)}`;
       $('consult-brief').innerHTML = `
         <span class="avatar" aria-hidden="true">${escapeHtml(initials(patient.name))}</span>
         <span>
           <strong>${escapeHtml(patient.name || 'Unnamed patient')}</strong>
-          <span>${escapeHtml(visit.patient_code || patient.patient_code || '')} · ${escapeHtml(patient.phone || '')} · ${escapeHtml(visit.visit_status.replace('_', ' '))}</span>
+          <span>${escapeHtml(visit.patient_code || patient.patient_code || '')} · ${escapeHtml(patient.phone || '')} · ${escapeHtml((visit.visit_status || '').replace('_', ' '))}</span>
         </span>`;
       const facts = [
         ['Patient Code', visit.patient_code || patient.patient_code],
         ['Phone', patient.phone],
         ['DOB', patient.dob],
         ['Sex', patient.sex],
-        ['Visit Status', visit.visit_status.replace('_', ' ')],
+        ['Visit Status', (visit.visit_status || '').replace('_', ' ')],
         ['Checked In', visit.checked_in_at ? new Date(visit.checked_in_at).toLocaleString() : ''],
       ];
       $('patient-facts').innerHTML = facts.map(([k, v]) => `<div class="fact"><small>${k}</small><span>${escapeHtml(v || '-')}</span></div>`).join('');
@@ -2007,8 +2009,10 @@
 
     async function imageUrlToDataUrl(url) {
       if (!url) return null;
+      const ctrl = new AbortController();
+      const timeoutId = setTimeout(() => ctrl.abort(), 8000);
       try {
-        const response = await fetch(url, { mode: 'cors' });
+        const response = await fetch(url, { mode: 'cors', signal: ctrl.signal });
         if (!response.ok) return null;
         const blob = await response.blob();
         if (!/^image\//i.test(blob.type)) return null;
@@ -2019,7 +2023,10 @@
           reader.readAsDataURL(blob);
         });
       } catch (_) {
+        // Network error or timeout — proceed without the image rather than hang PDF generation.
         return null;
+      } finally {
+        clearTimeout(timeoutId);
       }
     }
 

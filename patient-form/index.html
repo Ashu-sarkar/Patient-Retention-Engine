@@ -990,10 +990,13 @@ form.addEventListener('submit', async function (e) {
   };
   const body = new URLSearchParams(payload);
 
+  const ctrl = new AbortController();
+  const timeoutId = setTimeout(() => ctrl.abort(), 20000);
   try {
     const res  = await fetch(WEBHOOK_URL, {
       method:  'POST',
       body,
+      signal: ctrl.signal,
     });
 
     if (!res.ok) {
@@ -1026,9 +1029,11 @@ form.addEventListener('submit', async function (e) {
 
   } catch (err) {
     console.error('Submission error:', err);
-    const message = err instanceof TypeError && /fetch/i.test(err.message)
-      ? 'Unable to reach the intake server from this browser. Check HTTPS, DNS, and CORS for the webhook host.'
-      : (err.message || 'Something went wrong. Please try again.');
+    const message = err && err.name === 'AbortError'
+      ? 'The request timed out. Please check your connection and try again.'
+      : err instanceof TypeError && /fetch/i.test(err.message)
+        ? 'Unable to reach the intake server from this browser. Check HTTPS, DNS, and CORS for the webhook host.'
+        : (err.message || 'Something went wrong. Please try again.');
     showToast(message, true);
     submitBtn.disabled = false;
     submitBtn.classList.remove('loading');
@@ -1040,6 +1045,8 @@ form.addEventListener('submit', async function (e) {
       </svg>
       Submit Details`;
     busy = false;
+  } finally {
+    clearTimeout(timeoutId);
   }
 });
 </script>

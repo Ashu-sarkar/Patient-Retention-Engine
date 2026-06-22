@@ -58,6 +58,7 @@ AS $$
 DECLARE
   clean_name TEXT := COALESCE(NULLIF(trim(input_name), ''), 'Unassigned Clinic');
   base_slug TEXT := public.slugify_clinic_name(clean_name);
+  base_code TEXT := upper(left(regexp_replace(public.slugify_clinic_name(clean_name), '[^a-z0-9]', '', 'g'), 10));
   candidate_slug TEXT := base_slug;
   candidate_code TEXT;
   suffix INTEGER := 1;
@@ -75,9 +76,13 @@ BEGIN
   END IF;
 
   LOOP
-    candidate_code := upper(left(regexp_replace(candidate_slug, '[^a-z0-9]', '', 'g'), 10));
-    IF candidate_code = '' THEN
-      candidate_code := 'CLINIC';
+    IF base_code = '' THEN
+      base_code := 'CLINIC';
+    END IF;
+    IF suffix = 1 THEN
+      candidate_code := base_code;
+    ELSE
+      candidate_code := left(base_code, greatest(1, 10 - length(suffix::text) - 1)) || '-' || suffix::text;
     END IF;
 
     BEGIN

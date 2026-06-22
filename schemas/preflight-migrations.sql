@@ -134,29 +134,11 @@ BEGIN
   END IF;
 END $$;
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint c
-    JOIN pg_class t ON t.oid = c.conrelid
-    JOIN pg_namespace n ON n.oid = t.relnamespace
-    WHERE n.nspname = 'public' AND t.relname = 'patients' AND c.conname = 'patients_phone_unique'
-  ) THEN
-    ALTER TABLE public.patients ADD CONSTRAINT patients_phone_unique UNIQUE (phone);
-  END IF;
-END $$;
-
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint c
-    JOIN pg_class t ON t.oid = c.conrelid
-    JOIN pg_namespace n ON n.oid = t.relnamespace
-    WHERE n.nspname = 'public' AND t.relname = 'patients' AND c.conname = 'patients_patient_code_unique'
-  ) THEN
-    ALTER TABLE public.patients ADD CONSTRAINT patients_patient_code_unique UNIQUE (patient_code);
-  END IF;
-END $$;
+-- Patient identity is tenant-scoped in v0 multi-clinic deployments. Do not add
+-- global phone/patient_code uniqueness here; migration-v0-multitenant.sql owns
+-- the `(clinic_id, phone)` and `(clinic_id, patient_code)` unique indexes.
+ALTER TABLE public.patients DROP CONSTRAINT IF EXISTS patients_phone_unique;
+ALTER TABLE public.patients DROP CONSTRAINT IF EXISTS patients_patient_code_unique;
 
 CREATE INDEX IF NOT EXISTS idx_patients_follow_up_date    ON public.patients (follow_up_date);
 CREATE INDEX IF NOT EXISTS idx_patients_status             ON public.patients (status);

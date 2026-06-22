@@ -626,7 +626,7 @@ function collectDoctors(includePasswords = true) {
 
 function renderDoctorFields() {
   const count = Math.min(Math.max(parseInt($('doctor_count').value || '1', 10), 1), 10);
-  const existing = collectDoctors(false);
+  const existing = collectDoctors(true);
   $('doctors-container').innerHTML = Array.from({ length: count }, (_, index) => {
     const d = existing[index] || {};
     return `
@@ -669,7 +669,7 @@ function renderDoctorFields() {
         </div>
         <div class="field">
           <label class="label" for="doctor_${index}_password">Dashboard password <span class="req">*</span></label>
-          <input id="doctor_${index}_password" type="password" class="inp" autocomplete="new-password" placeholder="Minimum 8 characters" maxlength="128" />
+          <input id="doctor_${index}_password" type="password" class="inp" autocomplete="new-password" placeholder="Minimum 8 characters" maxlength="128" value="${escapeAttr(d.password || '')}" />
           <span class="errmsg" id="e-doctor_${index}_password">Enter at least 8 characters</span>
         </div>
       </section>
@@ -855,15 +855,23 @@ form.addEventListener('submit', async function (e) {
   };
   const body = new URLSearchParams(payload);
 
+  const ctrl = new AbortController();
+  const timeoutId = setTimeout(() => ctrl.abort(), 20000);
   try {
     const res = await fetch(WEBHOOK_URL, {
       method: 'POST',
       body,
+      signal: ctrl.signal,
     });
 
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(`HTTP ${res.status}${text ? `: ${text.slice(0, 180)}` : ''}`);
+      let parsed = null;
+      try { parsed = JSON.parse(text); } catch (_) {}
+      const detail = parsed && Array.isArray(parsed.errors) && parsed.errors.length
+        ? parsed.errors.join(', ')
+        : (parsed && parsed.message) || (text ? text.slice(0, 180) : '');
+      throw new Error(detail || `HTTP ${res.status}`);
     }
 
     let data = {};
@@ -878,13 +886,17 @@ form.addEventListener('submit', async function (e) {
     successScr.classList.add('show');
   } catch (err) {
     console.error(err);
-    const message = err instanceof TypeError && /fetch/i.test(err.message)
-      ? 'Unable to reach the intake server from this browser. Check HTTPS, DNS, and CORS for the webhook host.'
-      : (err.message || 'Something went wrong. Please try again.');
+    const message = err && err.name === 'AbortError'
+      ? 'The request timed out. Please check your connection and try again.'
+      : err instanceof TypeError && /fetch/i.test(err.message)
+        ? 'Unable to reach the intake server from this browser. Check HTTPS, DNS, and CORS for the webhook host.'
+        : (err.message || 'Something went wrong. Please try again.');
     showToast(message, true);
     submitBtn.disabled = false;
     submitBtn.textContent = 'Submit listing';
     busy = false;
+  } finally {
+    clearTimeout(timeoutId);
   }
 });
 </script>

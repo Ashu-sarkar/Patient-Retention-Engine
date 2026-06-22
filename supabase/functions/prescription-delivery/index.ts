@@ -181,6 +181,7 @@ Deno.serve(async (req) => {
 
   if (req.method !== 'POST') return jsonResponse(req, 405, { error: 'Method not allowed' });
 
+  try {
   const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
   const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') || '';
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
@@ -299,6 +300,23 @@ Deno.serve(async (req) => {
 
   const scheduledDate = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
+  // Atomic claim to prevent double-send races (e.g. the dashboard retrying, or the Edge
+  // runtime re-invoking on timeout). Flip to 'queued' only if the row is still in the exact
+  // state we just read; a concurrent request that already claimed it gets 0 rows back.
+  const priorDeliveryStatus = prescription.delivery_status ?? 'not_sent';
+  const { data: claimed, error: claimError } = await supabase
+    .from('prescriptions')
+    .update({ delivery_status: 'queued' })
+    .eq('id', prescription.id)
+    .eq('delivery_status', priorDeliveryStatus)
+    .select('id');
+  if (claimError) {
+    return jsonResponse(req, 500, { error: 'Failed to claim prescription for delivery' });
+  }
+  if (!claimed || claimed.length === 0) {
+    return jsonResponse(req, 409, { error: 'Prescription delivery already in progress' });
+  }
+
   // 1) Approved template card (short link in {{3}} — full signed URLs break Twilio variables)
   let twilioResult = contentSid
     ? await sendTwilioWhatsApp({
@@ -369,4 +387,8 @@ Deno.serve(async (req) => {
     twilio_message_sid: messageSid,
     pdf_link: shortPdfLink,
   });
+  } catch (err) {
+    console.error('prescription-delivery unexpected error:', err instanceof Error ? err.message : String(err));
+    return jsonResponse(req, 500, { error: 'Internal error during prescription delivery' });
+  }
 });

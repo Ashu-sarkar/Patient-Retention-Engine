@@ -88,6 +88,7 @@
       "id": "99999999-9999-9999-9999-000000000004",
       "name": "Update Message Log",
       "type": "n8n-nodes-base.postgres",
+      "alwaysOutputData": true,
       "typeVersion": 2.4,
       "position": [
         900,
@@ -103,12 +104,13 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "=UPDATE public.message_ledger\nSET status = '{{ $json._status }}',\n    error_message = {{ $json._error_code || $json._error_message ? \"'\" + ($json._error_code + ' ' + $json._error_message).trim().replace(/'/g, \"''\") + \"'\" : 'error_message' }}\nWHERE id = (\n  SELECT id\n  FROM public.message_ledger\n  WHERE clinic_id IS NOT NULL\n    AND (twilio_message_sid = '{{ $json._message_sid.replace(/'/g, \"''\") }}'\n     OR provider_message_id = '{{ $json._message_sid.replace(/'/g, \"''\") }}')\n  ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST, id DESC\n  LIMIT 1\n);",
+        "query": "=UPDATE public.message_ledger\nSET status = '{{ $('Normalise Status').item.json._status }}',\n    error_message = {{ $('Normalise Status').item.json._error_code || $('Normalise Status').item.json._error_message ? \"'\" + ($('Normalise Status').item.json._error_code + ' ' + $('Normalise Status').item.json._error_message).trim().replace(/'/g, \"''\") + \"'\" : 'error_message' }}\nWHERE id = (\n  SELECT id\n  FROM public.message_ledger\n  WHERE clinic_id IS NOT NULL\n    AND (twilio_message_sid = '{{ $('Normalise Status').item.json._message_sid.replace(/'/g, \"''\") }}'\n     OR provider_message_id = '{{ $('Normalise Status').item.json._message_sid.replace(/'/g, \"''\") }}')\n  ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST, id DESC\n  LIMIT 1\n);",
         "options": {}
       },
       "id": "99999999-9999-9999-9999-000000000005",
       "name": "Update Message Ledger",
       "type": "n8n-nodes-base.postgres",
+      "alwaysOutputData": true,
       "typeVersion": 2.4,
       "position": [
         900,

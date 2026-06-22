@@ -22,7 +22,15 @@ function buildPdfToken(secret: string, prescriptionId: string, clinicId: string,
   return hmacSha256Hex(secret, `pdf:${prescriptionId}:${clinicId}:${expiresAt}`).then((hex) => hex.slice(0, 32));
 }
 
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
 Deno.serve(async (req) => {
+  try {
   if (req.method !== 'GET') {
     return new Response('Method not allowed', { status: 405 });
   }
@@ -50,7 +58,7 @@ Deno.serve(async (req) => {
   }
 
   const expected = (await buildPdfToken(internalSecret, prescriptionId, clinicId, expiresAt)).slice(0, 32);
-  if (token !== expected) {
+  if (!timingSafeEqual(token.toLowerCase(), expected.toLowerCase())) {
     return new Response('Invalid or expired prescription link', { status: 403 });
   }
 
@@ -69,5 +77,15 @@ Deno.serve(async (req) => {
     return new Response('Prescription PDF not found', { status: 404 });
   }
 
+  // Defense-in-depth: only ever redirect to an HTTPS target (pdf_url is system-set, but
+  // guard against an unexpected/relative value becoming an open redirect).
+  if (!/^https:\/\//i.test(String(prescription.pdf_url))) {
+    return new Response('Prescription PDF not available', { status: 404 });
+  }
+
   return Response.redirect(prescription.pdf_url, 302);
+  } catch (err) {
+    console.error('prescription-pdf unexpected error:', err instanceof Error ? err.message : String(err));
+    return new Response('Prescription link error', { status: 500 });
+  }
 });
