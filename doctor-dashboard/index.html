@@ -1693,6 +1693,14 @@
       updateMedicineControls();
     }
 
+    function resolveClinicId(source = null) {
+      return source?.clinic_id
+        || state.selected?.clinic_id
+        || state.activeClinicId
+        || state.profile?.clinic_id
+        || null;
+    }
+
     function collectClinicalContext() {
       return {
         chief_complaint: $('chief-input').value.trim() || null,
@@ -1868,7 +1876,7 @@
         patient_id: state.selected.patient_id,
         visit_id: state.selected.id,
         doctor_profile_id: state.profile.id,
-        clinic_id: state.activeClinicId || state.selected.clinic_id,
+        clinic_id: resolveClinicId(),
         status: 'draft',
         diagnosis: payload.diagnosis,
         clinical_remarks: payload.clinical_remarks,
@@ -1897,7 +1905,7 @@
         const meds = payload.medicines.map(m => ({
           ...m,
           prescription_id: prescription.id,
-          clinic_id: prescription.clinic_id || state.activeClinicId || state.selected.clinic_id,
+          clinic_id: resolveClinicId(prescription),
         }));
         const { error } = await sb.from('prescription_medicines').insert(meds);
         if (error) return showToast(error.message, true);
@@ -1907,7 +1915,8 @@
       await sb.from('prescription_audit_logs').insert({
         prescription_id: prescription.id,
         visit_id: state.selected.id,
-        clinic_id: prescription.clinic_id || state.activeClinicId || state.selected.clinic_id,
+        clinic_id: resolveClinicId(prescription),
+        actor_user_id: state.session.user.id,
         action: 'draft_saved',
         details: { medicine_count: payload.medicines.length },
       });
@@ -1946,7 +1955,9 @@
           return;
         }
         const pdfBlob = await generatePdf(prescription, payload);
-        const path = `${state.activeClinicId || state.selected.clinic_id || 'clinic'}/${state.session.user.id}/${prescription.id}.pdf`;
+        const clinicId = resolveClinicId(prescription);
+        if (!clinicId) return showToast('Missing clinic context for this visit.', true);
+        const path = `${clinicId}/${state.session.user.id}/${prescription.id}.pdf`;
         const upload = await sb.storage.from('prescriptions').upload(path, pdfBlob, {
           contentType: 'application/pdf',
           upsert: true,
@@ -1957,7 +1968,7 @@
         const { error } = await sb.from('prescriptions').update({
           status: 'issued',
           issued_at: new Date().toISOString(),
-          clinic_id: state.activeClinicId || state.selected.clinic_id,
+          clinic_id: resolveClinicId(prescription),
           pdf_url: signed.data.signedUrl,
           pdf_storage_path: path,
           delivery_status: 'queued',
@@ -1967,7 +1978,8 @@
         await sb.from('prescription_audit_logs').insert({
           prescription_id: prescription.id,
           visit_id: state.selected.id,
-          clinic_id: state.activeClinicId || state.selected.clinic_id,
+          clinic_id: resolveClinicId(prescription),
+          actor_user_id: state.session.user.id,
           action: 'issued',
           details: { pdf_storage_path: path },
         });
