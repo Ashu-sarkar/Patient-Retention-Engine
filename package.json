@@ -22,8 +22,9 @@
     "test:production-cleanup-e2e": "python3 scripts/cleanup-and-production-e2e.py",
     "deploy:workflows:production": "python3 scripts/deploy-workflows-production.py",
     "test:production-browser": "node tests/browser-production-e2e.mjs",
+    "test:production-admin": "node tests/admin-console-production-e2e.mjs",
     "sync:prescription-secrets": "bash scripts/sync-prescription-delivery-secrets.sh",
-    "sync:doctor-otp-secrets": "python3 scripts/configure-supabase-auth.py",
+    "bootstrap:platform-admin": "node scripts/bootstrap-platform-admin.js",
     "setup:dev-tools": "bash scripts/setup-dev-tools.sh",
     "test:playbook": "node production-test-playbook/verify.js",
     "smoke": "node tests/run-tests.js"

@@ -60,10 +60,18 @@ curl -sS -X POST https://vaitalcare-production.up.railway.app/webhook/hospital-b
 # --- 1.4 Automated production API E2E (Railway + Supabase, phone 9685722570) ---
 npm run test:production-e2e
 
-# --- 1.5 Browser UI E2E (Vercel forms; dashboard OTP entered manually) ---
+# --- 1.5 Browser UI E2E (Vercel forms + username/password doctor dashboard) ---
 HEADED=1 DOCTOR_DASHBOARD_URL=https://vaitalcare-doctor.vercel.app \
   E2E_PHONE_RAW=9685722570 \
+  E2E_DOCTOR_USERNAME=browser.doctor \
+  E2E_DOCTOR_PASSWORD=BrowserPass123 \
   npm run test:production-browser
+
+# --- 1.6 Admin console browser E2E ---
+ADMIN_CONSOLE_URL=https://your-admin-console.example \
+  ADMIN_USERNAME=founder \
+  ADMIN_PASSWORD='change-this-strong-password' \
+  npm run test:production-admin
 ```
 
 **Healthy webhook:** `HTTP 400` with `{"status":"error","message":"Validation failed",...}`  
@@ -239,7 +247,7 @@ railway_post_json prescription-delivery '{}'
 ## 5. Doctor dashboard + prescription WhatsApp (manual)
 
 ```bash
-# 1. Open dashboard, login with +919685722570 (enter OTP manually)
+# 1. Open dashboard, log in with the username/password created during hospital onboarding
 open https://vaitalcare-doctor.vercel.app/
 
 # 2. Ensure hospital boarding exists for your clinic/doctor (WF12 above)

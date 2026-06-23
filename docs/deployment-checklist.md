@@ -89,7 +89,8 @@ These are the values still required from your side before production works:
 - Doctor dashboard `PRESCRIPTION_DELIVERY_FUNCTION`
 - Supabase Edge Function `prescription-delivery` deployed
 - Matching `INTERNAL_WEBHOOK_SECRET` set in n8n and Supabase function secrets
-- At least one Supabase Auth doctor user and matching `doctor_profiles` row
+- At least one Supabase Auth doctor user created by hospital onboarding and matching `doctor_profiles` row
+- At least one platform admin bootstrapped with `npm run bootstrap:platform-admin`
 
 ## Needed For Proactive WhatsApp Templates
 
@@ -174,3 +175,4 @@ After Railway variables are added:
 8. Sign in to the doctor dashboard and confirm the visit appears in the queue
 9. Issue a test prescription and confirm a PDF is stored in the `prescriptions` bucket
 10. Confirm WF13 logs a `prescription_pdf` row in `message_logs`
+11. Run `ADMIN_CONSOLE_URL=<url> ADMIN_USERNAME=<admin> ADMIN_PASSWORD=<password> npm run test:production-admin` to verify admin login, clinic list, QR lifecycle, demo seed/clear, and dashboard counts

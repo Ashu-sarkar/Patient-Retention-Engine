@@ -1,6 +1,6 @@
 # Doctor Dashboard
 
-Authenticated Supabase dashboard for the clinic/doctor queue and prescription workflow. Doctors sign in with the WhatsApp number captured during hospital onboarding.
+Authenticated Supabase dashboard for the clinic/doctor queue and prescription workflow. Doctors sign in with the username and password created during hospital onboarding.
 
 ## Configure
 
@@ -22,19 +22,13 @@ https://your-domain.example/doctor-dashboard/
 
 For local preview, open `doctor-dashboard/index.html?demo=1`.
 
-## WhatsApp OTP Login
+## Username/Password Login
 
-1. Enable phone OTP in Supabase Auth.
-2. Deploy the `send-sms-hook` edge function and push auth hook config:
+Hospital onboarding creates Supabase Auth users server-side for each doctor through WF12. The browser dashboard never receives or stores the password after submission; it only signs in with Supabase Auth using the doctor username mapped to an internal email address.
 
-```bash
-npm run sync:doctor-otp-secrets
-```
-
-This routes Supabase Auth OTP delivery through the same Twilio WhatsApp sender used by n8n workflows. Add `SEND_SMS_HOOK_SECRETS=v1,whsec_<base64-secret>` to `.env` (the sync script generates one if missing).
-
-3. Ensure the hospital onboarding form captures each doctor's WhatsApp number in international format, for example `+919876543210`.
-4. Run `npm run preflight` so Supabase has the phone-matching RPC and RLS policies.
+1. Ensure the hospital onboarding form captures each doctor's dashboard username, password, phone, name, clinic, and registration details.
+2. Run `npm run setup` or deploy/import WF12 so onboarding can create the auth users with `SUPABASE_SERVICE_ROLE_KEY`.
+3. Run `npm run preflight` so Supabase has the profile bootstrap RPC and RLS policies.
 
 ## Secure Prescription Delivery
 
@@ -51,24 +45,24 @@ supabase secrets set DOCTOR_DASHBOARD_ORIGIN=https://vaitalcare-doctor.vercel.ap
 
 Use the same `INTERNAL_WEBHOOK_SECRET` in the n8n runtime environment so WF13 can verify `X-Internal-Signature`.
 
-At login, the dashboard sends an OTP to the entered WhatsApp number. After verification, Supabase issues the authenticated session. The dashboard then calls `get_or_create_doctor_profile_for_current_user()`:
+At login, the dashboard maps the username to an internal Supabase Auth email, signs in with `signInWithPassword`, and then calls `get_or_create_doctor_profile_for_current_user()`:
 
 - If a `doctor_profiles.user_id` already matches the session, that profile is used.
-- If a profile has the same `doctor_phone`, it is claimed by setting `user_id`.
-- If no profile exists but the latest `hospital_boarding.doctor_phone` matches, a profile is created from hospital onboarding.
+- If a profile has matching onboarding metadata, it is claimed by setting `user_id`.
+- If no profile exists but the latest `hospital_boarding.auth_user_id` matches, a profile is created from hospital onboarding.
 - If no match exists, login succeeds but dashboard access is blocked with a profile-not-found notice.
 
 ## Doctor Accounts
 
-Manual profile creation is optional if hospital onboarding already has `doctor_phone`, `doctor_name`, `hospital_name`, and doctor registration details. If you want to create a profile ahead of time, insert a row with the doctor's registered WhatsApp number:
+Manual profile creation is optional if hospital onboarding already has `auth_user_id`, `doctor_phone`, `doctor_name`, `hospital_name`, and doctor registration details. If you want to create a profile ahead of time, insert a row with the doctor's registered details and set `user_id` to the matching Supabase Auth user UUID when available:
 
 ```sql
 INSERT INTO public.doctor_profiles
-  (doctor_name, clinic_name, registration_number, specialty,
+  (user_id, doctor_name, clinic_name, registration_number, specialty,
    qualification, clinic_address, clinic_city, clinic_phone, clinic_email,
    clinic_website, clinic_logo_url, doctor_phone, signature_image_url)
 VALUES
-  ('Dr. Sharma', 'City Hospital', 'STATE-MED-12345', 'General Medicine',
+  ('<auth user uuid>', 'Dr. Sharma', 'City Hospital', 'STATE-MED-12345', 'General Medicine',
    'MBBS, MD', '12 Main Road', 'Bangalore', '+918080808080', 'frontdesk@example.com',
    'https://example.com', 'https://example.com/logo.png', '+919999000111',
    'https://example.com/signature.png');
@@ -97,7 +91,7 @@ If the project is still linked to the monorepo root, a root-level `vercel.json` 
 1. Patient scans the QR and submits `patient-form`.
 2. WF11 upserts `patients` and inserts a `patient_visits` row with `visit_status = waiting`.
 3. Doctor signs in, opens the queue, adds optional visit context such as chief complaint, allergies, current medicines, conditions, vitals, and saves a draft prescription.
-4. Doctor issues the prescription. The dashboard generates a PDF, uploads it to the private `prescriptions` Supabase Storage bucket, stores a signed URL, marks the visit completed, and invokes the secure Supabase Edge Function for WhatsApp delivery.
+4. Doctor issues the prescription. The dashboard generates a PDF, uploads it to the private `prescriptions` Supabase Storage bucket, stores `pdf_storage_path` plus compatibility URL metadata, marks the visit completed, and invokes the secure Supabase Edge Function for WhatsApp delivery. Patient-facing PDF links go through the `prescription-pdf` gateway, which creates a fresh storage signed URL on each valid request.
 5. The prescription row stores `doctor_snapshot` and `clinic_snapshot`, so the PDF and patient prescription history keep the issuing doctor/clinic details even if the profile changes later.
 
 ## Prescription PDF Format

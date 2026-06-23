@@ -1,4 +1,5 @@
-# Supabase project config — push with: npm run sync:doctor-otp-secrets
+# Supabase project config. Doctor dashboard auth uses onboarding-created
+# username/password accounts, so SMS OTP hooks stay disabled.
 project_id = "crsdccqseuhnimoxxeky"
 
 [auth]
@@ -12,10 +13,5 @@ additional_redirect_urls = [
 ]
 
 [auth.sms]
-enable_signup = true
-enable_confirmations = true
-
-[auth.hook.send_sms]
-enabled = true
-uri = "https://crsdccqseuhnimoxxeky.supabase.co/functions/v1/send-sms-hook"
-secrets = "env(SEND_SMS_HOOK_SECRETS)"
+enable_signup = false
+enable_confirmations = false

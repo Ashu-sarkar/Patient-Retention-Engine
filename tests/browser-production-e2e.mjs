@@ -35,10 +35,36 @@ async function selectIfPresent(page, id, value) {
   if (await el.count()) await el.selectOption({ label: value }).catch(() => el.selectOption(value));
 }
 
+async function fillMedicineRow(page) {
+  const rows = page.locator('.medicine-row');
+  if ((await rows.count()) === 0) {
+    await page.locator('#add-medicine').click();
+  }
+  const row = page.locator('.medicine-row').first();
+  await row.locator('[data-key="medicine_name"]').fill('Paracetamol');
+  await row.locator('[data-key="dosage"]').fill('500 mg');
+  await row.locator('[data-key="frequency"]').fill('1-0-1');
+  await row.locator('[data-key="timing"]').selectOption({ label: 'After Food' }).catch(() => row.locator('[data-key="timing"]').selectOption({ index: 1 }));
+  await row.locator('[data-key="duration"]').fill('3 days');
+  const instructions = row.locator('[data-key="instructions"]');
+  if (await instructions.count()) await instructions.fill('Take with water after meals.');
+}
+
 async function main() {
   const browser = await chromium.launch({ headless: !HEADED, slowMo: HEADED ? 80 : 0 });
   const page = await browser.newPage();
   const results = [];
+  const dashboardSignals = {
+    storageUpload: false,
+    storageSign: false,
+    deliveryFunction: false,
+  };
+  page.on('response', response => {
+    const url = response.url();
+    if (url.includes('/storage/v1/object/prescriptions')) dashboardSignals.storageUpload = true;
+    if (url.includes('/storage/v1/object/sign/prescriptions')) dashboardSignals.storageSign = true;
+    if (url.includes('/functions/v1/prescription-delivery')) dashboardSignals.deliveryFunction = true;
+  });
 
   try {
     console.log('\n── Hospital form (production) ──');
@@ -107,6 +133,47 @@ async function main() {
       const queue = await page.locator('.queue-card').count();
       results.push(['dashboard-queue', queue > 0 ? 'pass' : 'fail']);
       console.log(queue > 0 ? `✅ Dashboard shows ${queue} queue card(s)` : '❌ No queue cards visible');
+
+      if (queue > 0) {
+        console.log('\n── Doctor dashboard prescription issue ──');
+        const patientCard = page.locator('.queue-card').filter({ hasText: 'Browser E2E Patient' }).first();
+        if (await patientCard.count()) await patientCard.click();
+        else await page.locator('.queue-card').first().click();
+        await page.waitForSelector('#diagnosis', { timeout: 30000 });
+
+        await fillIfPresent(page, 'chief-input', 'Browser E2E cough and fever');
+        await fillIfPresent(page, 'duration-input', '2 days');
+        await fillIfPresent(page, 'allergies-input', 'None known');
+        await fillIfPresent(page, 'vitals-input', 'Temp 99 F, pulse 82');
+        const saveContext = page.locator('#save-context');
+        if (await saveContext.count()) {
+          await saveContext.click();
+          await page.waitForTimeout(1200);
+        }
+
+        await fillIfPresent(page, 'diagnosis', 'Viral upper respiratory infection');
+        await fillIfPresent(page, 'remarks', 'Hydration and rest advised.');
+        await fillIfPresent(page, 'advice', 'Return if fever persists beyond 3 days.');
+        await selectIfPresent(page, 'rx-follow-up-required', 'No');
+        await fillMedicineRow(page);
+
+        await page.locator('#issue').click();
+        await page.waitForFunction(() => {
+          const draft = document.querySelector('#draft-state')?.textContent || '';
+          const toast = document.querySelector('#toast')?.textContent || '';
+          return /Issued/i.test(draft) || /Prescription issued/i.test(toast);
+        }, { timeout: 90000 }).catch(() => {});
+
+        const issued = /Issued/i.test(await page.locator('#draft-state').textContent().catch(() => ''));
+        const pdfStored = dashboardSignals.storageUpload || dashboardSignals.storageSign;
+        const deliveryCalled = dashboardSignals.deliveryFunction;
+        results.push(['dashboard-prescription-issued', issued ? 'pass' : 'fail']);
+        results.push(['dashboard-pdf-storage', pdfStored ? 'pass' : 'fail']);
+        results.push(['dashboard-delivery-handoff', deliveryCalled ? 'pass' : 'fail']);
+        console.log(issued ? '✅ Prescription reached issued state' : '❌ Prescription did not reach issued state');
+        console.log(pdfStored ? '✅ PDF storage/signing observed' : '❌ PDF storage/signing was not observed');
+        console.log(deliveryCalled ? '✅ Prescription delivery function called' : '❌ Delivery function call was not observed');
+      }
     } else {
       console.log('\n(skip dashboard — set DOCTOR_DASHBOARD_URL to run dashboard login)');
     }

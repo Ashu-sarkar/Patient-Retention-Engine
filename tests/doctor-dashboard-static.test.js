@@ -7,6 +7,11 @@ const assert = require('assert');
 
 const root = path.join(__dirname, '..');
 const dashboard = fs.readFileSync(path.join(root, 'doctor-dashboard', 'index.html'), 'utf8');
+const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
+const dashboardReadme = fs.readFileSync(path.join(root, 'doctor-dashboard', 'README.md'), 'utf8');
+const setupGuide = fs.readFileSync(path.join(root, 'docs', 'setup-guide.md'), 'utf8');
+const architecture = fs.readFileSync(path.join(root, 'docs', 'architecture.md'), 'utf8');
+const pdfGateway = fs.readFileSync(path.join(root, 'supabase', 'functions', 'prescription-pdf', 'index.ts'), 'utf8');
 const preflight = fs.readFileSync(path.join(root, 'schemas', 'preflight-migrations.sql'), 'utf8');
 const schema = fs.readFileSync(path.join(root, 'schemas', 'supabase-schema.sql'), 'utf8');
 
@@ -26,6 +31,14 @@ includes(dashboard, 'function usernameToInternalEmail(username)', 'username maps
 includes(dashboard, 'signInWithPassword', 'doctor dashboard uses username/password auth');
 assert(!dashboard.includes('signInWithOtp'), 'doctor dashboard must not request WhatsApp OTP login');
 assert(!dashboard.includes('verifyOtp'), 'doctor dashboard must not verify WhatsApp OTP login');
+for (const [text, label] of [
+  [readme, 'root README'],
+  [dashboardReadme, 'doctor dashboard README'],
+  [setupGuide, 'setup guide'],
+  [architecture, 'architecture docs'],
+]) {
+  assert(!/WhatsApp OTP|phone OTP|sync:doctor-otp-secrets|after OTP verification/i.test(text), `${label} must not document stale doctor OTP auth`);
+}
 includes(dashboard, 'function isPreviewMode()', 'shared preview mode helper');
 includes(dashboard, 'function enterAdminPreviewApp(username)', 'admin preview bootstrap');
 includes(dashboard, 'Admin preview opened with sample patients.', 'admin preview success toast');
@@ -43,5 +56,9 @@ includes(dashboard, 'id="form-alert"', 'inline validation alert');
 includes(preflight, "IF NEW.follow_up_date < CURRENT_DATE THEN", 'preflight DB past follow-up guard');
 includes(preflight, "RAISE EXCEPTION 'Follow-up date cannot be in the past';", 'preflight DB past follow-up error');
 includes(schema, "IF NEW.follow_up_date < CURRENT_DATE THEN", 'reference schema past follow-up guard');
+
+includes(pdfGateway, '.select(\'pdf_storage_path, status\')', 'PDF gateway loads durable storage path');
+includes(pdfGateway, ".storage\n    .from('prescriptions')\n    .createSignedUrl(storagePath", 'PDF gateway creates a fresh storage signed URL');
+assert(!pdfGateway.includes('Response.redirect(prescription.pdf_url'), 'PDF gateway must not redirect to stored expiring pdf_url');
 
 console.log('[doctor-dashboard-static] Passed.');

@@ -103,9 +103,9 @@ Update:
 
 Replace `YOUR_N8N_WEBHOOK_URL` with your public n8n URL. Deploy the static forms through Vercel, Netlify, or another HTTPS static host.
 
-For the doctor dashboard, also replace `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `PRESCRIPTION_DELIVERY_FUNCTION`. Enable Supabase phone OTP, then run `npm run sync:doctor-otp-secrets` so OTP delivery uses the `send-sms-hook` edge function and your existing Twilio WhatsApp sender. Doctors should use the deployed `doctor-dashboard/` URL and sign in with the same WhatsApp number captured in hospital onboarding.
+For the doctor dashboard, also replace `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `PRESCRIPTION_DELIVERY_FUNCTION`. Doctors should use the deployed `doctor-dashboard/` URL and sign in with the dashboard username and password created during hospital onboarding.
 
-The dashboard resolves doctors in this order: existing `doctor_profiles.user_id`, then matching `doctor_profiles.doctor_phone`, then latest matching `hospital_boarding.doctor_phone`. If it uses hospital onboarding, it creates the `doctor_profiles` row automatically after the OTP session is verified. You can still pre-create `doctor_profiles` rows manually; include `doctor_phone` in international format and leave `user_id` empty until the doctor first logs in.
+The dashboard resolves doctors in this order: existing `doctor_profiles.user_id`, then latest matching `hospital_boarding.auth_user_id`. If it uses hospital onboarding, it creates the `doctor_profiles` row automatically after the password session is verified. You can still pre-create `doctor_profiles` rows manually; include the doctor details and set `user_id` to the Supabase Auth user UUID.
 
 Prescription PDFs can also use these optional `doctor_profiles` fields: `qualification`, `clinic_address`, `clinic_city`, `clinic_phone`, `clinic_email`, `clinic_website`, `clinic_logo_url`, `doctor_phone`, `signature_image_url`, `signature_label`, and `stamp_label`. The hospital intake form captures matching optional fields in `hospital_boarding`; if the profile is missing them, the dashboard falls back to the latest matching hospital/doctor onboarding row.
 

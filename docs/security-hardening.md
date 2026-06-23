@@ -53,7 +53,7 @@ clinics that still lack an active QR or a doctor WhatsApp number).
 
 ### Authentication and authorization
 
-- Admins sign in with **email + password** (Supabase Auth, separate from doctor WhatsApp OTP).
+- Admins sign in with **username/email + password** (Supabase Auth, separate from doctor dashboard accounts).
 - Immediately after sign-in the page calls `public.current_user_is_platform_admin()`; a session
   that is not a platform admin is signed out and denied. The client check is cosmetic — every
   privileged operation is a `SECURITY DEFINER` RPC that re-asserts
@@ -64,9 +64,22 @@ clinics that still lack an active QR or a doctor WhatsApp number).
 
 ### Bootstrapping the first admin
 
-1. Create the admin auth user (Supabase Dashboard → Authentication → Add user, with a strong
-   password; enable email confirmation).
-2. Grant platform admin in SQL:
+1. Apply migrations (`schemas/migration-admin-console.sql` after the base/preflight migrations) so
+   `public.platform_admins`, admin RPCs, and policies exist.
+2. Run the bootstrap command with service-role credentials:
+
+```bash
+PLATFORM_ADMIN_USERNAME=founder \
+PLATFORM_ADMIN_PASSWORD='change-this-strong-password' \
+PLATFORM_ADMIN_LABEL='Founder admin' \
+npm run bootstrap:platform-admin
+```
+
+The script creates the Supabase Auth user if needed and grants `public.platform_admins`. To grant an
+existing user, pass `PLATFORM_ADMIN_USER_ID=<auth user uuid>` instead of username/password.
+
+3. If you need to do it manually, create the admin auth user (Supabase Dashboard -> Authentication
+   -> Add user, with a strong password; enable email confirmation), then grant platform admin in SQL:
 
 ```sql
 insert into public.platform_admins (user_id, label)
@@ -74,7 +87,6 @@ values ('<auth user uuid>', 'Founder admin')
 on conflict (user_id) do nothing;
 ```
 
-3. Apply migrations (`npm run preflight`) so the admin RPCs and policies exist.
 
 ### Read access model
 

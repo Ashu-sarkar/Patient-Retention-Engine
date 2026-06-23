@@ -68,22 +68,30 @@ Deno.serve(async (req) => {
 
   const { data: prescription, error } = await admin
     .from('prescriptions')
-    .select('pdf_url, status')
+    .select('pdf_storage_path, status')
     .eq('id', prescriptionId)
     .eq('clinic_id', clinicId)
     .single();
 
-  if (error || !prescription?.pdf_url || prescription.status !== 'issued') {
+  if (error || !prescription?.pdf_storage_path || prescription.status !== 'issued') {
     return new Response('Prescription PDF not found', { status: 404 });
   }
 
-  // Defense-in-depth: only ever redirect to an HTTPS target (pdf_url is system-set, but
-  // guard against an unexpected/relative value becoming an open redirect).
-  if (!/^https:\/\//i.test(String(prescription.pdf_url))) {
+  const storagePath = String(prescription.pdf_storage_path || '').replace(/^\/+/, '');
+  if (!storagePath || storagePath.includes('..')) {
     return new Response('Prescription PDF not available', { status: 404 });
   }
 
-  return Response.redirect(prescription.pdf_url, 302);
+  const { data: signed, error: signedError } = await admin
+    .storage
+    .from('prescriptions')
+    .createSignedUrl(storagePath, 60 * 10);
+
+  if (signedError || !signed?.signedUrl || !/^https:\/\//i.test(String(signed.signedUrl))) {
+    return new Response('Prescription PDF not available', { status: 404 });
+  }
+
+  return Response.redirect(signed.signedUrl, 302);
   } catch (err) {
     console.error('prescription-pdf unexpected error:', err instanceof Error ? err.message : String(err));
     return new Response('Prescription link error', { status: 500 });

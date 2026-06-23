@@ -34,7 +34,7 @@ fi
 echo ""
 echo "Dev tools ready. Useful commands:"
 echo "  npm run validate-env"
-echo "  npm run sync:doctor-otp-secrets"
+echo "  npm run bootstrap:platform-admin"
 echo "  npm run sync:prescription-secrets"
 echo "  npm run test:production-cleanup-e2e"
 echo ""

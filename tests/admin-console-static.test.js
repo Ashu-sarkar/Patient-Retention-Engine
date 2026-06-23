@@ -12,6 +12,10 @@ const patientForm = fs.readFileSync(path.join(root, 'patient-form', 'index.html'
 const hospitalForm = fs.readFileSync(path.join(root, 'hospital-form', 'index.html'), 'utf8');
 const hospitalWorkflow = fs.readFileSync(path.join(root, 'workflows', 'workflow-12-hospital-boarding.json'), 'utf8');
 const hospitalWorkflowJson = JSON.parse(hospitalWorkflow);
+const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+const bootstrapScript = fs.readFileSync(path.join(root, 'scripts', 'bootstrap-platform-admin.js'), 'utf8');
+const securityDocs = fs.readFileSync(path.join(root, 'docs', 'security-hardening.md'), 'utf8');
+const adminE2e = fs.readFileSync(path.join(root, 'tests', 'admin-console-production-e2e.mjs'), 'utf8');
 
 function includes(haystack, needle, label) {
   assert(haystack.includes(needle), `${label || 'Expected content'} missing: ${needle}`);
@@ -68,6 +72,23 @@ includes(migration, "'+999'", 'demo phones use the unassigned +999 country code'
 includes(migration, "'draft'", 'demo prescriptions stay draft so cleanup can delete them');
 includes(migration, 'platform admin reads patients', 'platform-admin read RLS for patients');
 includes(migration, 'FOR SELECT TO authenticated', 'platform-admin policies are read-only');
+
+assert(pkg.scripts['bootstrap:platform-admin'] === 'node scripts/bootstrap-platform-admin.js', 'package exposes platform admin bootstrap command');
+assert(!pkg.scripts['sync:doctor-otp-secrets'], 'package must not expose stale doctor OTP setup');
+includes(bootstrapScript, '/auth/v1/admin/users', 'bootstrap creates Supabase Auth admin users');
+includes(bootstrapScript, '/rest/v1/platform_admins?on_conflict=user_id', 'bootstrap upserts platform_admins');
+includes(bootstrapScript, "AUTH_USERNAME_EMAIL_DOMAIN = 'auth.vaitalcare.local'", 'bootstrap shares username email domain');
+includes(securityDocs, 'npm run bootstrap:platform-admin', 'security docs document first-admin bootstrap');
+
+includes(adminE2e, 'ADMIN_CONSOLE_URL', 'live admin E2E requires admin console URL');
+includes(adminE2e, '#login-btn', 'live admin E2E covers login');
+includes(adminE2e, '#clinics-table table tr[data-clinic]', 'live admin E2E covers clinic list');
+includes(adminE2e, '#qr-generate', 'live admin E2E covers QR creation');
+includes(adminE2e, '[data-disable]', 'live admin E2E covers token disable');
+includes(adminE2e, '[data-enable]', 'live admin E2E covers token enable');
+includes(adminE2e, '#demo-seed', 'live admin E2E covers demo seed');
+includes(adminE2e, '#demo-clear', 'live admin E2E covers demo clear');
+includes(adminE2e, '#dash-stats .stat', 'live admin E2E covers dashboard counts');
 
 // ── Workflows must exclude demo patients ─────────────────────────────────────
 for (const [file, label] of [
