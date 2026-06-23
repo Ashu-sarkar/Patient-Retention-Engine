@@ -201,7 +201,10 @@ ON CONFLICT (clinic_id, user_id, role) DO UPDATE
       status = 'active',
       updated_at = NOW();
 
--- Align storage RLS with dashboard upload path: {clinic_id}/{auth.uid()}/{file}.pdf
+-- Align storage RLS with the dashboard upload path.
+-- Dashboard uploads to: {clinic_id}/{auth.uid()}/{prescription_id}.pdf
+-- Older files on existing instances used: {auth.uid()}/{prescription_id}.pdf
+-- The new policy accepts BOTH formats so no stored files become inaccessible.
 DROP POLICY IF EXISTS "doctors manage prescription pdfs" ON storage.objects;
 DROP POLICY IF EXISTS "members manage clinic prescription pdfs" ON storage.objects;
 CREATE POLICY "members manage clinic prescription pdfs"
@@ -209,20 +212,24 @@ CREATE POLICY "members manage clinic prescription pdfs"
   TO authenticated
   USING (
     bucket_id = 'prescriptions'
-    AND (storage.foldername(name))[2] = auth.uid()::text
-    AND (storage.foldername(name))[1] ~* '^[0-9a-f-]{36}$'
-    AND public.current_user_has_clinic_role(
-      ((storage.foldername(name))[1])::uuid,
-      ARRAY['clinic_admin','doctor','super_admin']
+    AND (
+      -- Old format: {user_id}/{prescription_id}.pdf
+      (storage.foldername(name))[1] = auth.uid()::text
+      OR (
+        -- New format: {clinic_id}/{user_id}/{prescription_id}.pdf
+        (storage.foldername(name))[2] = auth.uid()::text
+        AND (storage.foldername(name))[1] ~ '^[0-9a-f-]{36}$'
+      )
     )
   )
   WITH CHECK (
     bucket_id = 'prescriptions'
-    AND (storage.foldername(name))[2] = auth.uid()::text
-    AND (storage.foldername(name))[1] ~* '^[0-9a-f-]{36}$'
-    AND public.current_user_has_clinic_role(
-      ((storage.foldername(name))[1])::uuid,
-      ARRAY['clinic_admin','doctor','super_admin']
+    AND (
+      (storage.foldername(name))[1] = auth.uid()::text
+      OR (
+        (storage.foldername(name))[2] = auth.uid()::text
+        AND (storage.foldername(name))[1] ~ '^[0-9a-f-]{36}$'
+      )
     )
   );
 
