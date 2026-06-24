@@ -173,9 +173,36 @@
       "twilio_content_sid": "HX74f34fa412dd8817fa95b85b4eaebbfa"
     },
     {
+      "id": "followup_confirmation",
+      "workflow": "workflow-1-followup-reminder",
+      "trigger": "Day-before follow-up reminder with Confirm / Reschedule Quick Reply buttons",
+      "category": "UTILITY",
+      "twilio_friendly_name": "followup_confirmation_v1",
+      "header_text": "Appointment Reminder",
+      "message": "Hi {{patient_name}}, your follow-up with {{doctor_name}} at {{clinic_name}} is tomorrow, {{follow_up_date}}.\n\nPlease confirm your visit using the button below.",
+      "placeholders": [
+        "patient_name",
+        "doctor_name",
+        "clinic_name",
+        "follow_up_date"
+      ],
+      "component_parameters": [
+        "patient_name",
+        "doctor_name",
+        "clinic_name",
+        "follow_up_date"
+      ],
+      "actions": [
+        { "type": "QUICK_REPLY", "title": "Confirm Appointment", "id": "confirm_appointment" },
+        { "type": "QUICK_REPLY", "title": "Reschedule", "id": "reschedule" }
+      ],
+      "notes": "Primary WF1 day-before template with Quick Reply buttons. WF1 maps {{1}} patient, {{2}} doctor, {{3}} clinic, {{4}} follow-up date. WF6 handles button taps and queue creation on confirm.",
+      "twilio_content_env": "TWILIO_CONTENT_FOLLOWUP_CONFIRMATION"
+    },
+    {
       "id": "followup_day_before",
       "workflow": "workflow-1-followup-reminder",
-      "trigger": "Day-before follow-up appointment reminder",
+      "trigger": "Day-before follow-up appointment reminder (plain text fallback)",
       "category": "UTILITY",
       "twilio_friendly_name": "followup_day_before_v1",
       "header_text": "Reminder",

@@ -1244,7 +1244,8 @@
       });
       $('refresh').addEventListener('click', loadVisits);
       $('empty-refresh').addEventListener('click', loadVisits);
-      ['visit-date', 'status-filter', 'search'].forEach(id => $(id).addEventListener('input', renderQueue));
+      $('visit-date').addEventListener('change', loadVisits);
+      ['status-filter', 'search'].forEach(id => $(id).addEventListener('input', renderQueue));
       document.querySelectorAll('.journey-step').forEach(step => {
         step.addEventListener('click', () => jumpTo(step.dataset.jump));
       });
@@ -1478,6 +1479,7 @@
       let query = sb
         .from('patient_visits')
         .select('*, patient:patients(id, patient_code, name, phone, dob, sex, follow_up_required, follow_up_date, notes)')
+        .eq('visit_date', $('visit-date').value || todayISO())
         .order('checked_in_at', { ascending: false })
         .limit(200);
       if (state.activeClinicId) query = query.eq('clinic_id', state.activeClinicId);

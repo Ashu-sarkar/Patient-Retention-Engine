@@ -61,6 +61,7 @@ docs/                      architecture and setup notes
 - Twilio Content SIDs for proactive templates:
   - `TWILIO_CONTENT_WELCOME`
   - `TWILIO_CONTENT_FOLLOW_UP_REMINDER`
+  - `TWILIO_CONTENT_FOLLOWUP_CONFIRMATION`
   - `TWILIO_CONTENT_SAME_DAY_REMINDER`
   - `TWILIO_CONTENT_MISSED_RECOVERY`
   - `TWILIO_CONTENT_MISSED_NUDGE`

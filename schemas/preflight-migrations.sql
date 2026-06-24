@@ -1272,3 +1272,41 @@ END;
 $$;
 
 NOTIFY pgrst, 'reload schema';
+
+-- Follow-up WhatsApp confirmation: prevent duplicate active visits per patient per day
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM public.patient_visits pv
+    WHERE pv.visit_status NOT IN ('cancelled', 'no_show')
+    GROUP BY pv.patient_id, pv.visit_date
+    HAVING COUNT(*) > 1
+  ) THEN
+    WITH ranked AS (
+      SELECT pv.id,
+             ROW_NUMBER() OVER (
+               PARTITION BY pv.patient_id, pv.visit_date
+               ORDER BY pv.checked_in_at ASC NULLS LAST, pv.created_at ASC, pv.id ASC
+             ) AS rn
+      FROM public.patient_visits pv
+      WHERE pv.visit_status NOT IN ('cancelled', 'no_show')
+    )
+    UPDATE public.patient_visits pv
+       SET visit_status = 'cancelled',
+           staff_notes = trim(both ' ' from COALESCE(pv.staff_notes, '') || ' [deduped before idx_patient_visits_patient_date_active]'),
+           updated_at = NOW()
+     WHERE pv.id IN (SELECT id FROM ranked WHERE rn > 1);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_indexes
+    WHERE schemaname = 'public'
+      AND tablename = 'patient_visits'
+      AND indexname = 'idx_patient_visits_patient_date_active'
+  ) THEN
+    CREATE UNIQUE INDEX idx_patient_visits_patient_date_active
+      ON public.patient_visits (patient_id, visit_date)
+      WHERE visit_status NOT IN ('cancelled', 'no_show');
+  END IF;
+END$$;

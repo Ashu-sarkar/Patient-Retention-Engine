@@ -23,6 +23,8 @@ function includes(haystack, needle, label) {
 }
 
 includes(dashboard, 'function minFollowUpDate()', 'dashboard follow-up minimum helper');
+includes(dashboard, ".eq('visit_date', $('visit-date').value || todayISO())", 'queue query filters by selected visit date');
+includes(dashboard, "$('visit-date').addEventListener('change', loadVisits)", 'visit date change refetches queue');
 includes(dashboard, 'const visitNext = state.selected?.visit_date ? addDaysISO(state.selected.visit_date, 1) : today;', 'visit+today minimum calculation');
 includes(dashboard, 'return visitNext > today ? visitNext : today;', 'follow-up min must never be before today');
 includes(dashboard, 'function validateFollowUp(payload)', 'shared follow-up validation');

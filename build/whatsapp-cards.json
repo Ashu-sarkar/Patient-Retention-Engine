@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-26T17:25:52.847Z",
+  "generated_at": "2026-06-24T19:41:22.951Z",
   "cards": [
     {
       "id": "patient_onboarding",
@@ -260,6 +260,56 @@
         }
       },
       "notes": "Medicine course completion message. Requires course-end scheduling workflow before runtime use."
+    },
+    {
+      "id": "followup_confirmation",
+      "friendly_name": "followup_confirmation_v1",
+      "category": "UTILITY",
+      "workflow": "workflow-1-followup-reminder",
+      "twilio_content_env": "TWILIO_CONTENT_FOLLOWUP_CONFIRMATION",
+      "variables": {
+        "1": "Priya",
+        "2": "Dr. Mehta",
+        "3": "Mehta Clinic",
+        "4": "Fri, 30 May"
+      },
+      "variable_map": {
+        "1": "patient_name",
+        "2": "doctor_name",
+        "3": "clinic_name",
+        "4": "follow_up_date"
+      },
+      "body": "Hi {{1}}, your follow-up with {{2}} at {{3}} is tomorrow, {{4}}.\n\nPlease confirm your visit using the button below.",
+      "content_api_payload": {
+        "friendly_name": "followup_confirmation_v1",
+        "language": "en",
+        "variables": {
+          "1": "Priya",
+          "2": "Dr. Mehta",
+          "3": "Mehta Clinic",
+          "4": "Fri, 30 May"
+        },
+        "types": {
+          "whatsapp/card": {
+            "header_text": "Appointment Reminder",
+            "body": "Hi {{1}}, your follow-up with {{2}} at {{3}} is tomorrow, {{4}}.\n\nPlease confirm your visit using the button below.",
+            "footer": "vAItalcare support",
+            "actions": [
+              {
+                "type": "QUICK_REPLY",
+                "title": "Confirm Appointment",
+                "id": "confirm_appointment"
+              },
+              {
+                "type": "QUICK_REPLY",
+                "title": "Reschedule",
+                "id": "reschedule"
+              }
+            ]
+          }
+        }
+      },
+      "notes": "Primary WF1 day-before template with Quick Reply buttons. WF1 maps {{1}} patient, {{2}} doctor, {{3}} clinic, {{4}} follow-up date. WF6 handles button taps and queue creation on confirm."
     },
     {
       "id": "followup_day_before",

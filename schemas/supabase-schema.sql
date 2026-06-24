@@ -395,6 +395,9 @@ CREATE INDEX IF NOT EXISTS idx_patient_visits_patient_id ON public.patient_visit
 CREATE INDEX IF NOT EXISTS idx_patient_visits_doctor_profile ON public.patient_visits (doctor_profile_id);
 CREATE INDEX IF NOT EXISTS idx_patient_visits_queue
   ON public.patient_visits (visit_date DESC, visit_status, lower(trim(clinic_name)), lower(trim(doctor_name)));
+CREATE UNIQUE INDEX IF NOT EXISTS idx_patient_visits_patient_date_active
+  ON public.patient_visits (patient_id, visit_date)
+  WHERE visit_status NOT IN ('cancelled', 'no_show');
 
 DROP TRIGGER IF EXISTS trg_patient_visits_updated_at ON public.patient_visits;
 CREATE TRIGGER trg_patient_visits_updated_at

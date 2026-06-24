@@ -126,6 +126,7 @@ const TP = {
   wf5       : '+919000000015',// WF5 reactivation seed
   wf6_multi : '+919000000016',// WF6 same phone across clinics
   wf6_ambig : '+919000000018',// WF6 ambiguous same phone without message history
+  wf6_queue : '+919000000021',// WF6 WhatsApp confirm → queue entry
   wf7       : '+919000000099',// WF7 direct welcome test
   wf9_multi : '+919000000017',// WF9 duplicate SID across clinics
   wf1_multi : '+919000000019',// Cron same phone across clinics
@@ -398,7 +399,7 @@ async function cleanup() {
   const phones = [
     `+91${TP.wf11_new}`, `+91${TP.wf11_sql}`,
     `+91${TP.wf11_multi}`,
-    TP.wf6, TP.wf6_multi, TP.wf6_ambig, TP.wf7, TP.wf9_multi, TP.wf1_multi,
+    TP.wf6, TP.wf6_multi, TP.wf6_ambig, TP.wf6_queue, TP.wf7, TP.wf9_multi, TP.wf1_multi,
     TP.wf1, TP.wf2, TP.wf3, TP.wf4, TP.wf5,
     `+91${TP.e2e}`,
   ];
@@ -422,6 +423,15 @@ function twilioMsg(fromPhone, text, extra = {}) {
     NumMedia  : extra.NumMedia || '0',
     ...extra,
   };
+}
+
+function twilioButtonMsg(fromPhone, buttonText, buttonPayload, extra = {}) {
+  return twilioMsg(fromPhone, buttonText, {
+    ButtonText: buttonText,
+    ButtonPayload: buttonPayload,
+    MessageSid: extra.MessageSid || `SM${String(buttonPayload || 'button').replace(/[^a-z0-9]/gi, '').padEnd(32, '0').slice(0, 32)}`,
+    ...extra,
+  });
 }
 
 function twilioStatus(messageSid, status, extra = {}) {
@@ -498,6 +508,45 @@ async function main() {
       const rows = await pgQuery(`SELECT 1 FROM public.${table} LIMIT 1`);
       assert(Array.isArray(rows), `${table} table missing or inaccessible`);
     }
+  });
+
+  await test('1.6  patient_visits active-date unique index exists', async () => {
+    const rows = await pgQuery(
+      `SELECT indexname
+       FROM pg_indexes
+       WHERE schemaname = 'public'
+         AND tablename = 'patient_visits'
+         AND indexname = 'idx_patient_visits_patient_date_active'`
+    );
+    assert(rows.length === 1, 'Run npm run preflight to apply idx_patient_visits_patient_date_active');
+  });
+
+  await test('1.7  duplicate active patient_visits on same day are rejected', async () => {
+    const phone = '+919000000171';
+    await pgQuery('DELETE FROM public.patients WHERE phone = $1', [phone]);
+    const patient = await seedPatient(phone, { name: 'Index Dedup Patient', follow_up_date: date(7) });
+    const visitDate = date(7);
+    const baseVisit = {
+      patient_id      : patient.id,
+      clinic_id         : patient.clinic_id,
+      clinic_name       : patient.clinic_name,
+      doctor_name       : patient.doctor_name,
+      visit_date        : visitDate,
+      visit_status      : 'waiting',
+      chief_complaint   : 'Follow-up consultation',
+      staff_notes       : 'Test visit',
+    };
+    await sbInsert('patient_visits', baseVisit);
+    let threw = false;
+    try {
+      await sbInsert('patient_visits', { ...baseVisit, staff_notes: 'Duplicate test' });
+    } catch (error) {
+      threw = true;
+      assert(/unique|duplicate key/i.test(String(error.message)),
+        `Expected unique violation, got ${error.message}`);
+    }
+    assert(threw, 'Expected duplicate active visit insert to fail');
+    await pgQuery('DELETE FROM public.patients WHERE phone = $1', [phone]);
   });
 
   // ── §2  WF12 — Hospital Boarding ─────────────────────────────────────────
@@ -1019,6 +1068,83 @@ async function main() {
       `Older clinic patient should remain untouched, got ${alphaAfter?.response_status}`);
   });
 
+  await test('4.5c POST confirm button with follow_up_date → patient_visits queue row created', async () => {
+    await pgQuery('DELETE FROM public.patients WHERE phone = $1', [TP.wf6_queue]);
+    const followUp = date(2);
+    const patient = await seedPatient(TP.wf6_queue, {
+      name              : 'WF6 Queue Button Patient',
+      follow_up_required: 'Yes',
+      follow_up_date    : followUp,
+      status            : 'pending',
+      message_count     : 1,
+    });
+    await sleep(300);
+
+    const { status } = await whTwilio('feedback-listener',
+      twilioButtonMsg(TP.wf6_queue, 'Confirm Appointment', 'confirm_appointment', {
+        MessageSid: 'SMWF6CONFIRMBTN00000000000000001',
+      }));
+    assert([200, 202].includes(status), `Expected 200, got ${status}`);
+    await sleep(3000);
+
+    const pat = await getPatient(TP.wf6_queue);
+    assert(pat?.response_status === 'confirmed', `Expected confirmed, got ${pat?.response_status}`);
+    const visits = await getVisitsByPatient(patient.id);
+    const queued = visits.find((v) => formatDateValue(v.visit_date) === followUp && v.visit_status === 'waiting');
+    assert(queued, `Expected waiting visit on ${followUp}, got ${JSON.stringify(visits)}`);
+    assert(String(queued.staff_notes || '').includes('WhatsApp'), 'staff_notes should record WhatsApp confirmation');
+  });
+
+  await test('4.5d duplicate confirm does not create a second active visit', async () => {
+    const followUp = date(2);
+    const pat = await getPatient(TP.wf6_queue);
+    assert(pat, 'Patient from 4.5c should exist');
+    const before = await getVisitsByPatient(pat.id);
+    const activeBefore = before.filter((v) => formatDateValue(v.visit_date) === followUp
+      && !['cancelled', 'no_show'].includes(v.visit_status));
+    assert(activeBefore.length === 1, 'Setup expects exactly one active visit before duplicate confirm');
+
+    const { status } = await whTwilio('feedback-listener',
+      twilioButtonMsg(TP.wf6_queue, 'Confirm Appointment', 'confirm_appointment', {
+        MessageSid: 'SMWF6CONFIRMBTN00000000000000002',
+      }));
+    assert([200, 202].includes(status), `Expected 200, got ${status}`);
+    await sleep(2500);
+
+    const after = await getVisitsByPatient(pat.id);
+    const activeAfter = after.filter((v) => formatDateValue(v.visit_date) === followUp
+      && !['cancelled', 'no_show'].includes(v.visit_status));
+    assert(activeAfter.length === 1, `Expected one active visit after duplicate confirm, got ${activeAfter.length}`);
+  });
+
+  await test('4.5e POST reschedule button → cancelled with no queue visit', async () => {
+    const phone = '+919000000172';
+    await pgQuery('DELETE FROM public.patients WHERE phone = $1', [phone]);
+    const followUp = date(3);
+    const patient = await seedPatient(phone, {
+      name              : 'WF6 Reschedule Button Patient',
+      follow_up_required: 'Yes',
+      follow_up_date    : followUp,
+      status            : 'pending',
+      message_count     : 1,
+    });
+    await sleep(300);
+
+    const { status } = await whTwilio('feedback-listener',
+      twilioButtonMsg(phone, 'Reschedule', 'reschedule', {
+        MessageSid: 'SMWF6RESCHEDULE0000000000000001',
+      }));
+    assert([200, 202].includes(status), `Expected 200, got ${status}`);
+    await sleep(2500);
+
+    const pat = await getPatient(phone);
+    assert(pat?.response_status === 'cancelled', `Expected cancelled, got ${pat?.response_status}`);
+    const visits = await getVisitsByPatient(patient.id);
+    const queued = visits.find((v) => formatDateValue(v.visit_date) === followUp);
+    assert(!queued, 'Reschedule should not create a patient_visits row');
+    await pgQuery('DELETE FROM public.patients WHERE phone = $1', [phone]);
+  });
+
   await test('4.6  WF9 Twilio status callback → message_logs delivery_status updates', async () => {
     const pat = await getPatient(TP.wf6);
     assert(pat?.id, 'Seed patient missing for status callback test');
@@ -1244,6 +1370,12 @@ async function main() {
       [TP.wf2, date(0)]
     );
     assert(rows.length > 0, 'WF2 SQL would find 0 patients');
+  });
+
+  await test('5.2b WF2 filter excludes confirmed patients for same-day reminders', async () => {
+    const wf2 = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'workflows', 'workflow-2-sameday-reminder.json'), 'utf8'));
+    const code = wf2.nodes.find((n) => n.name === "Filter Today's Appointments").parameters.jsCode;
+    assert(code.includes("response_status === 'confirmed'"), 'WF2 must skip confirmed patients');
   });
 
   await test('5.3  WF3 — patient with past follow_up_date (not completed/inactive) is queryable', async () => {

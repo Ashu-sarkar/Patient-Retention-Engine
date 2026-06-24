@@ -29,7 +29,8 @@ This writes `build/whatsapp-cards.json` with Twilio-ready card bodies, variable 
 | `TWILIO_CONTENT_MEDICINE_AFTERNOON_DOSE` | `medicine_afternoon_dose_v1` | Afternoon medicine dose reminder | `{{1}}` patient, `{{2}}` clinic, `{{3}}` doctor, `{{4}}` medicine, `{{5}}` timing |
 | `TWILIO_CONTENT_MEDICINE_EVENING_DOSE` | `medicine_evening_dose_v1` | Evening medicine dose reminder | `{{1}}` patient, `{{2}}` clinic, `{{3}}` medicine, `{{4}}` timing |
 | `TWILIO_CONTENT_MEDICINE_COURSE_COMPLETE` | `medicine_course_complete_v1` | Medicine course completion milestone | `{{1}}` patient, `{{2}}` doctor |
-| `TWILIO_CONTENT_FOLLOW_UP_REMINDER` | `followup_day_before_v1` | Day-before follow-up reminder | `{{1}}` patient, `{{2}}` clinic, `{{3}}` doctor, `{{4}}` follow-up date |
+| `TWILIO_CONTENT_FOLLOWUP_CONFIRMATION` | `followup_confirmation_v1` | Day-before follow-up with Confirm / Reschedule Quick Reply buttons | `{{1}}` patient, `{{2}}` doctor, `{{3}}` clinic, `{{4}}` follow-up date |
+| `TWILIO_CONTENT_FOLLOW_UP_REMINDER` | `followup_day_before_v1` | Day-before follow-up reminder (plain text fallback) | `{{1}}` patient, `{{2}}` clinic, `{{3}}` doctor, `{{4}}` follow-up date |
 | `TWILIO_CONTENT_SAME_DAY_REMINDER` | `same_day_morning_reminder_v1` | Same-day morning visit reminder | `{{1}}` patient, `{{2}}` doctor, `{{3}}` clinic |
 
 Create or dry-run these in Twilio:
@@ -61,6 +62,13 @@ The push script writes `build/twilio-template-push-results.json`. After creation
 WF6 auto-replies and WF8 admin alerts use Twilio `Body` messages. Patient-facing free-form replies should only be sent inside the 24-hour WhatsApp customer service window.
 
 ## Response Keywords
+
+WF6 also handles Twilio Quick Reply button taps from the `followup_confirmation_v1` template:
+
+- Confirm button (`ButtonPayload=confirm_appointment`) → `confirmed` and queue entry for `follow_up_date`
+- Reschedule button (`ButtonPayload=reschedule`) → `cancelled`
+
+Keyword fallbacks (when patients reply with text instead of tapping a button):
 
 - Confirmed: `yes`, `confirm`, `confirmed`, `will come`, `coming`, `ok`, `okay`, `sure`
 - Cancelled/reschedule: `no`, `cancel`, `reschedule`, `postpone`, `change date`
