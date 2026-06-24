@@ -337,7 +337,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ status: 'success', id: $('Insert Hospital Row').first().json.id, hospital_name: $('Insert Hospital Row').first().json.hospital_name, facility_type: $('Insert Hospital Row').first().json.facility_type, city: $('Insert Hospital Row').first().json.city, doctor_name: $('Insert Hospital Row').first().json.doctor_name, doctor_count: $('Validate Hospital Form').all().length, message: 'Listing saved successfully.' }) }}",
+        "responseBody": "={{ { status: 'success', id: $('Insert Hospital Row').first().json.id, hospital_name: $('Insert Hospital Row').first().json.hospital_name, facility_type: $('Insert Hospital Row').first().json.facility_type, city: $('Insert Hospital Row').first().json.city, doctor_name: $('Insert Hospital Row').first().json.doctor_name, doctor_count: $('Validate Hospital Form').all().length, message: 'Listing saved successfully.' } }}",
         "options": {
           "responseCode": 200
         }
@@ -397,7 +397,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ status: 'error', message: 'Validation failed', errors: $('Validate Hospital Form').first().json._errors }) }}",
+        "responseBody": "={{ { status: 'error', message: 'Validation failed', errors: $('Validate Hospital Form').first().json._errors } }}",
         "options": {
           "responseCode": 400
         }
@@ -413,7 +413,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Create one Supabase Auth user per validated doctor. Passwords are used only in this server-side Admin API call.\nconst supabaseUrl = String($env.SUPABASE_URL || '').replace(/\\/+$/, '');\nconst serviceRoleKey = String($env.SUPABASE_SERVICE_ROLE_KEY || '');\nif (!supabaseUrl || !serviceRoleKey) throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required for doctor account creation');\n\nconst output = [];\nfor (const item of $input.all()) {\n  const data = item.json;\n  const password = data._password;\n  if (!password) throw new Error('Password missing for ' + data.login_username);\n\n  const payload = {\n    email: data.auth_email,\n    password,\n    email_confirm: true,\n    user_metadata: {\n      login_username: data.login_username,\n      role: 'doctor',\n      doctor_name: data.doctor_name,\n      clinic_name: data.hospital_name,\n    },\n  };\n\n  const response = await fetch(supabaseUrl + '/auth/v1/admin/users', {\n    method: 'POST',\n    headers: {\n      apikey: serviceRoleKey,\n      Authorization: 'Bearer ' + serviceRoleKey,\n      'Content-Type': 'application/json',\n    },\n    body: JSON.stringify(payload),\n  });\n\n  let authUser = {};\n  try { authUser = await response.json(); } catch (_) {}\n  const duplicate = response.status === 422 || /already|registered|exists/i.test(JSON.stringify(authUser));\n  if (!response.ok && !duplicate) {\n    throw new Error('Could not create dashboard account for username ' + data.login_username);\n  }\n\n  if (duplicate) {\n    const lookup = await fetch(supabaseUrl + '/auth/v1/admin/users?email=' + encodeURIComponent(data.auth_email), {\n      headers: { apikey: serviceRoleKey, Authorization: 'Bearer ' + serviceRoleKey },\n    });\n    let lookupBody = {};\n    try { lookupBody = await lookup.json(); } catch (_) {}\n    const users = Array.isArray(lookupBody.users) ? lookupBody.users : (Array.isArray(lookupBody) ? lookupBody : []);\n    authUser = users.find(user => String(user.email || '').toLowerCase() === data.auth_email) || authUser;\n  }\n\n  if (!authUser.id) throw new Error('Dashboard account exists but could not resolve auth user id for ' + data.login_username);\n  const { _password, ...safeData } = data;\n  output.push({ json: { ...safeData, auth_user_id: authUser.id } });\n}\nreturn output;"
+        "jsCode": "// Create one Supabase Auth user per validated doctor. Passwords are used only in this server-side Admin API call.\ntry {\n  const supabaseUrl = String($env.SUPABASE_URL || '').replace(/\\/+$/, '');\n  const serviceRoleKey = String($env.SUPABASE_SERVICE_ROLE_KEY || '');\n  if (!supabaseUrl || !serviceRoleKey) {\n    return [{ json: { _auth_failed: true, _errors: ['SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required for doctor account creation'] } }];\n  }\n\n  const output = [];\n  for (const item of $input.all()) {\n    const data = item.json;\n    const password = data._password;\n    if (!password) {\n      return [{ json: { _auth_failed: true, _errors: ['Password missing for ' + data.login_username] } }];\n    }\n\n    const payload = {\n      email: data.auth_email,\n      password,\n      email_confirm: true,\n      user_metadata: {\n        login_username: data.login_username,\n        role: 'doctor',\n        doctor_name: data.doctor_name,\n        clinic_name: data.hospital_name,\n      },\n    };\n\n    const response = await fetch(supabaseUrl + '/auth/v1/admin/users', {\n      method: 'POST',\n      headers: {\n        apikey: serviceRoleKey,\n        Authorization: 'Bearer ' + serviceRoleKey,\n        'Content-Type': 'application/json',\n      },\n      body: JSON.stringify(payload),\n    });\n\n    let authUser = {};\n    try { authUser = await response.json(); } catch (_) {}\n    const duplicate = response.status === 422 || /already|registered|exists/i.test(JSON.stringify(authUser));\n    if (!response.ok && !duplicate) {\n      const detail = authUser.msg || authUser.message || authUser.error_description || JSON.stringify(authUser).slice(0, 240);\n      return [{ json: { _auth_failed: true, _errors: ['Could not create dashboard account for username ' + data.login_username + ': ' + detail] } }];\n    }\n\n    if (duplicate) {\n      const lookup = await fetch(supabaseUrl + '/auth/v1/admin/users?email=' + encodeURIComponent(data.auth_email), {\n        headers: { apikey: serviceRoleKey, Authorization: 'Bearer ' + serviceRoleKey },\n      });\n      let lookupBody = {};\n      try { lookupBody = await lookup.json(); } catch (_) {}\n      const users = Array.isArray(lookupBody.users) ? lookupBody.users : (Array.isArray(lookupBody) ? lookupBody : []);\n      authUser = users.find(user => String(user.email || '').toLowerCase() === data.auth_email) || authUser;\n    }\n\n    if (!authUser.id) {\n      return [{ json: { _auth_failed: true, _errors: ['Dashboard account exists but could not resolve auth user id for ' + data.login_username] } }];\n    }\n    const { _password, ...safeData } = data;\n    output.push({ json: { ...safeData, auth_user_id: authUser.id } });\n  }\n  return output;\n} catch (err) {\n  return [{ json: { _auth_failed: true, _errors: [String(err.message || err)] } }];\n}"
       },
       "id": "12121212-1212-1212-1212-000000000015",
       "name": "Create Doctor Auth Users",
@@ -422,6 +422,55 @@
       "position": [
         900,
         200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "cond-auth-ok",
+              "leftValue": "={{ $json._auth_failed }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "12121212-1212-1212-1212-000000000016",
+      "name": "Auth Failed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: 'error', message: 'Hospital boarding failed', errors: $json._errors || ['Doctor account setup failed'] } }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "12121212-1212-1212-1212-000000000017",
+      "name": "Respond 400 Boarding Failed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1220,
+        420
       ]
     }
   ],
@@ -570,6 +619,24 @@
     },
     "Create Doctor Auth Users": {
       "main": [
+        [
+          {
+            "node": "Auth Failed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Failed?": {
+      "main": [
+        [
+          {
+            "node": "Respond 400 Boarding Failed",
+            "type": "main",
+            "index": 0
+          }
+        ],
         [
           {
             "node": "Insert Hospital Row",

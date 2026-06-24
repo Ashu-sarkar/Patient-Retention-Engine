@@ -853,31 +853,63 @@ form.addEventListener('submit', async function (e) {
     login_username: primary.login_username || '',
     consultation_hours: $('consultation_hours').value.trim(),
   };
-  const body = new URLSearchParams(payload);
+
+  function normalizePhone(value) {
+    const raw = String(value || '').trim().replace(/\s+/g, '');
+    if (/^[0-9]{10}$/.test(raw)) return '+91' + raw;
+    return raw;
+  }
+  payload.contact_phone = normalizePhone(payload.contact_phone);
+  const doctorsForSubmit = JSON.parse(payload.doctors_json || '[]').map(doctor => ({
+    ...doctor,
+    doctor_phone: doctor.doctor_phone ? normalizePhone(doctor.doctor_phone) : '',
+  }));
+  payload.doctors_json = JSON.stringify(doctorsForSubmit);
+  if (doctorsForSubmit[0]) {
+    payload.doctor_phone = doctorsForSubmit[0].doctor_phone || '';
+  }
+
+  async function readWebhookResponse(res) {
+    const text = await res.text().catch(() => '');
+    if (!text.trim()) return { data: {}, text };
+    let data;
+    try {
+      data = JSON.parse(text);
+      if (typeof data === 'string') {
+        try { data = JSON.parse(data); } catch (_) { data = {}; }
+      }
+    } catch (_) {
+      data = {};
+    }
+    return { data, text };
+  }
 
   const ctrl = new AbortController();
   const timeoutId = setTimeout(() => ctrl.abort(), 20000);
   try {
     const res = await fetch(WEBHOOK_URL, {
       method: 'POST',
-      body,
+      body: new URLSearchParams(payload),
       signal: ctrl.signal,
     });
 
+    const { data, text } = await readWebhookResponse(res);
+
     if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      let parsed = null;
-      try { parsed = JSON.parse(text); } catch (_) {}
-      const detail = parsed && Array.isArray(parsed.errors) && parsed.errors.length
-        ? parsed.errors.join(', ')
-        : (parsed && parsed.message) || (text ? text.slice(0, 180) : '');
+      const detail = Array.isArray(data.errors) && data.errors.length
+        ? data.errors.join(', ')
+        : (data.message || (text ? text.slice(0, 220) : ''));
       throw new Error(detail || `HTTP ${res.status}`);
     }
 
-    let data = {};
-    try { data = await res.json(); } catch (_) {}
     if (data.status !== 'success') {
-      throw new Error(data.message || 'The intake server returned an empty or unexpected response.');
+      const detail = (Array.isArray(data.errors) && data.errors.length && data.errors.join(', '))
+        || data.message
+        || (text && text.length < 400 ? text : '');
+      throw new Error(
+        detail
+        || 'The onboarding server did not confirm success. Check n8n WF12 executions — common causes are missing SUPABASE_SERVICE_ROLE_KEY on Railway, a duplicate dashboard username, or a database error.'
+      );
     }
 
     $('js-sum-hospital').textContent = data.hospital_name || payload.hospital_name;
