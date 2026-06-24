@@ -194,6 +194,7 @@ CREATE OR REPLACE FUNCTION public.hash_intake_token(p_token TEXT)
 RETURNS TEXT
 LANGUAGE SQL
 IMMUTABLE
+SET search_path = public, extensions
 AS $$
   SELECT encode(digest(coalesce(p_token, ''), 'sha256'), 'hex')
 $$;
@@ -206,7 +207,7 @@ CREATE OR REPLACE FUNCTION public.create_clinic_intake_token(
 RETURNS TABLE(id UUID, clinic_id UUID, token TEXT, label TEXT, expires_at TIMESTAMPTZ)
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 DECLARE
   raw_token TEXT;
@@ -241,7 +242,7 @@ CREATE OR REPLACE FUNCTION public.resolve_public_intake_token(p_token TEXT)
 RETURNS TABLE(clinic_id UUID, hospital_name TEXT, doctor_name TEXT)
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 DECLARE
   token_row public.clinic_intake_tokens%ROWTYPE;
@@ -268,17 +269,42 @@ BEGIN
    WHERE id = token_row.id;
 
   RETURN QUERY
-  SELECT DISTINCT
-    hb.clinic_id,
-    hb.hospital_name,
-    hb.doctor_name
-  FROM public.hospital_boarding hb
-  JOIN public.clinics c ON c.id = hb.clinic_id
-  WHERE hb.clinic_id = token_row.clinic_id
-    AND c.status = 'active'
-    AND hb.hospital_name IS NOT NULL AND trim(hb.hospital_name) <> ''
-    AND hb.doctor_name   IS NOT NULL AND trim(hb.doctor_name)   <> ''
-  ORDER BY hb.hospital_name, hb.doctor_name;
+  WITH clinic_row AS (
+    SELECT c.id, c.name
+      FROM public.clinics c
+     WHERE c.id = token_row.clinic_id
+       AND c.status = 'active'
+  ),
+  boarding_docs AS (
+    SELECT DISTINCT
+      hb.clinic_id,
+      COALESCE(NULLIF(trim(hb.hospital_name), ''), cr.name) AS hospital_name,
+      hb.doctor_name
+    FROM public.hospital_boarding hb
+    JOIN clinic_row cr ON cr.id = hb.clinic_id
+    WHERE hb.doctor_name IS NOT NULL AND trim(hb.doctor_name) <> ''
+  ),
+  profile_docs AS (
+    SELECT DISTINCT
+      dp.clinic_id,
+      cr.name AS hospital_name,
+      dp.doctor_name
+    FROM public.doctor_profiles dp
+    JOIN clinic_row cr ON cr.id = dp.clinic_id
+    WHERE dp.doctor_name IS NOT NULL AND trim(dp.doctor_name) <> ''
+  ),
+  combined AS (
+    SELECT * FROM boarding_docs
+    UNION
+    SELECT * FROM profile_docs
+     WHERE NOT EXISTS (SELECT 1 FROM boarding_docs)
+  )
+  SELECT combined.clinic_id, combined.hospital_name, combined.doctor_name
+    FROM combined
+  UNION ALL
+  SELECT cr.id, cr.name, 'Clinic Doctor'::text
+    FROM clinic_row cr
+   WHERE NOT EXISTS (SELECT 1 FROM combined);
 END;
 $$;
 

@@ -348,6 +348,7 @@
 /* ═══ CONFIG ═══ */
 const DEFAULT_SUPABASE_URL = 'https://crsdccqseuhnimoxxeky.supabase.co';
 const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNyc2RjY3FzZXVobmltb3h4ZWt5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMjc1NzQsImV4cCI6MjA5MTkwMzU3NH0.3iz7x2JQj3qn6KI8JS3tjxV9vaBsN-mL6xDTvmJMDxA';
+const DEFAULT_PATIENT_FORM_BASE_URL = 'https://vaitalcare-patient.vercel.app';
 
 const $ = id => document.getElementById(id);
 const readStored = k => { try { return localStorage.getItem(k) || ''; } catch (_) { return ''; } };
@@ -361,7 +362,7 @@ function runtimeConfig() {
     supabaseAnonKey: g.supabaseAnonKey || readStored('vaitalcare.supabaseAnonKey') || DEFAULT_SUPABASE_ANON_KEY,
     patientFormBaseUrl:
       params.get('patientFormBaseUrl') || g.patientFormBaseUrl ||
-      readStored('vaitalcare.patientFormBaseUrl') || '',
+      readStored('vaitalcare.patientFormBaseUrl') || DEFAULT_PATIENT_FORM_BASE_URL,
   };
 }
 
@@ -427,7 +428,7 @@ async function enterApp(user) {
   $('login-screen').classList.add('hidden');
   $('app').classList.remove('hidden');
   $('who').textContent = (user?.email || '').replace(`@${AUTH_USERNAME_EMAIL_DOMAIN}`, '');
-  $('form-base').value = CFG.patientFormBaseUrl || location.origin;
+  $('form-base').value = CFG.patientFormBaseUrl || DEFAULT_PATIENT_FORM_BASE_URL;
   await Promise.all([loadOverview(), loadClinics()]);
 }
 
@@ -752,7 +753,7 @@ $('form-base').addEventListener('change', () => {
 });
 
 function buildScanUrl(token) {
-  const base = ($('form-base').value.trim() || location.origin).replace(/\/+$/, '');
+  const base = ($('form-base').value.trim() || DEFAULT_PATIENT_FORM_BASE_URL).replace(/\/+$/, '');
   return `${base}/#/i/${token}`;
 }
 

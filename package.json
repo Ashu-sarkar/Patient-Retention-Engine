@@ -21,6 +21,7 @@
     "test:wf6-button-confirmation": "node tests/wf6-button-confirmation-static.test.js",
     "test:medicine-schedule": "node tests/medicine-schedule-builder.test.js",
     "test:admin-console": "node tests/admin-console-static.test.js",
+    "test:admin-qr-token": "node tests/admin-console-qr-token.mjs",
     "test:production-cleanup-e2e": "python3 scripts/cleanup-and-production-e2e.py",
     "deploy:workflows:production": "python3 scripts/deploy-workflows-production.py",
     "test:production-browser": "node tests/browser-production-e2e.mjs",

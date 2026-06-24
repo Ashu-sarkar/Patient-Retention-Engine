@@ -42,6 +42,7 @@ includes(admin, "rpc('admin_set_token_status'", 'token disable/enable wired to R
 includes(admin, "rpc('admin_seed_dummy_patients'", 'demo seed wired to RPC');
 includes(admin, "rpc('admin_clear_dummy_patients'", 'demo clear wired to RPC');
 includes(admin, '/#/i/${token}', 'QR encodes hash-fragment intake token URL');
+includes(admin, "const DEFAULT_PATIENT_FORM_BASE_URL = 'https://vaitalcare-patient.vercel.app'", 'admin defaults QR base URL to production patient form');
 includes(admin, './vendor/qrcode.min.js', 'vendored offline QR library is referenced');
 includes(admin, 'qrcode(0,', 'QR is rendered client-side from the vendored library');
 includes(admin, "toDataURL('image/png')", 'QR can be downloaded as PNG');

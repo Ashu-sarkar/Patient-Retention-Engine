@@ -9,6 +9,7 @@ Run these commands from the **repo root** after copying `.env.example` → `.env
 | Patient form | https://vaitalcare-patient.vercel.app/ |
 | Hospital form | https://vaitalcare-hospital.vercel.app/ |
 | Doctor dashboard | https://vaitalcare-doctor.vercel.app/ |
+| Admin console | https://vaitalcare-admin.vercel.app/ |
 | n8n (Railway) | https://vaitalcare-production.up.railway.app |
 
 ---

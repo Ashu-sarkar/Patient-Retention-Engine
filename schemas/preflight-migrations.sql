@@ -1340,3 +1340,124 @@ DROP TRIGGER IF EXISTS trg_medicine_reminder_schedule_updated_at ON public.medic
 CREATE TRIGGER trg_medicine_reminder_schedule_updated_at
   BEFORE UPDATE ON public.medicine_reminder_schedule
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+-- ── pgcrypto + intake token RPCs (Supabase keeps extension in extensions schema) ──
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+CREATE OR REPLACE FUNCTION public.hash_intake_token(p_token TEXT)
+RETURNS TEXT
+LANGUAGE SQL
+IMMUTABLE
+SET search_path = public, extensions
+AS $$
+  SELECT encode(digest(coalesce(p_token, ''), 'sha256'), 'hex')
+$$;
+
+CREATE OR REPLACE FUNCTION public.create_clinic_intake_token(
+  p_clinic_id UUID,
+  p_label TEXT DEFAULT 'Primary QR',
+  p_expires_at TIMESTAMPTZ DEFAULT NULL
+)
+RETURNS TABLE(id UUID, clinic_id UUID, token TEXT, label TEXT, expires_at TIMESTAMPTZ)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+DECLARE
+  raw_token TEXT;
+BEGIN
+  IF NOT (
+    public.current_user_is_platform_admin()
+    OR public.current_user_has_clinic_role(p_clinic_id, ARRAY['clinic_admin'])
+  ) THEN
+    RAISE EXCEPTION 'not authorized to create intake tokens';
+  END IF;
+
+  raw_token := encode(gen_random_bytes(32), 'hex');
+
+  RETURN QUERY
+  WITH inserted AS (
+    INSERT INTO public.clinic_intake_tokens (clinic_id, token_hash, label, expires_at, created_by)
+    VALUES (
+      p_clinic_id,
+      public.hash_intake_token(raw_token),
+      COALESCE(NULLIF(trim(p_label), ''), 'Primary QR'),
+      p_expires_at,
+      auth.uid()
+    )
+    RETURNING clinic_intake_tokens.id, clinic_intake_tokens.clinic_id, clinic_intake_tokens.label, clinic_intake_tokens.expires_at
+  )
+  SELECT inserted.id, inserted.clinic_id, raw_token, inserted.label, inserted.expires_at
+  FROM inserted;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.resolve_public_intake_token(p_token TEXT)
+RETURNS TABLE(clinic_id UUID, hospital_name TEXT, doctor_name TEXT)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+DECLARE
+  token_row public.clinic_intake_tokens%ROWTYPE;
+BEGIN
+  IF p_token IS NULL OR p_token !~ '^[a-f0-9]{64}$' THEN
+    RETURN;
+  END IF;
+
+  SELECT *
+    INTO token_row
+    FROM public.clinic_intake_tokens
+   WHERE token_hash = public.hash_intake_token(p_token)
+     AND status = 'active'
+     AND (expires_at IS NULL OR expires_at > NOW())
+   LIMIT 1;
+
+  IF NOT FOUND THEN
+    RETURN;
+  END IF;
+
+  UPDATE public.clinic_intake_tokens
+     SET last_used_at = NOW(),
+         use_count = use_count + 1
+   WHERE id = token_row.id;
+
+  RETURN QUERY
+  WITH clinic_row AS (
+    SELECT c.id, c.name
+      FROM public.clinics c
+     WHERE c.id = token_row.clinic_id
+       AND c.status = 'active'
+  ),
+  boarding_docs AS (
+    SELECT DISTINCT
+      hb.clinic_id,
+      COALESCE(NULLIF(trim(hb.hospital_name), ''), cr.name) AS hospital_name,
+      hb.doctor_name
+    FROM public.hospital_boarding hb
+    JOIN clinic_row cr ON cr.id = hb.clinic_id
+    WHERE hb.doctor_name IS NOT NULL AND trim(hb.doctor_name) <> ''
+  ),
+  profile_docs AS (
+    SELECT DISTINCT
+      dp.clinic_id,
+      cr.name AS hospital_name,
+      dp.doctor_name
+    FROM public.doctor_profiles dp
+    JOIN clinic_row cr ON cr.id = dp.clinic_id
+    WHERE dp.doctor_name IS NOT NULL AND trim(dp.doctor_name) <> ''
+  ),
+  combined AS (
+    SELECT * FROM boarding_docs
+    UNION
+    SELECT * FROM profile_docs
+     WHERE NOT EXISTS (SELECT 1 FROM boarding_docs)
+  )
+  SELECT combined.clinic_id, combined.hospital_name, combined.doctor_name
+    FROM combined
+  UNION ALL
+  SELECT cr.id, cr.name, 'Clinic Doctor'::text
+    FROM clinic_row cr
+   WHERE NOT EXISTS (SELECT 1 FROM combined);
+END;
+$$;
