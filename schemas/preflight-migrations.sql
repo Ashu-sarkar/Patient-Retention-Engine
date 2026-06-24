@@ -1310,3 +1310,33 @@ BEGIN
       WHERE visit_status NOT IN ('cancelled', 'no_show');
   END IF;
 END$$;
+
+-- Medicine journey / standalone reminder schedule (v2)
+CREATE TABLE IF NOT EXISTS public.medicine_reminder_schedule (
+  id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  clinic_id         UUID        NOT NULL REFERENCES public.clinics (id) ON DELETE CASCADE,
+  patient_id        UUID        NOT NULL REFERENCES public.patients (id) ON DELETE CASCADE,
+  prescription_id   UUID        NOT NULL REFERENCES public.prescriptions (id) ON DELETE CASCADE,
+  medicine_name     TEXT        NOT NULL,
+  course_days       INTEGER     NOT NULL,
+  course_start_date DATE        NOT NULL,
+  scheduled_date    DATE        NOT NULL,
+  send_slot         TEXT        NOT NULL CHECK (send_slot IN ('morning','afternoon','evening')),
+  template_id       TEXT        NOT NULL,
+  message_type      TEXT        NOT NULL,
+  content_env_key   TEXT        NOT NULL,
+  status            TEXT        NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','sent','failed','skipped')),
+  sent_at           TIMESTAMPTZ,
+  error_message     TEXT,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (prescription_id, message_type, scheduled_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_medicine_reminder_schedule_due
+  ON public.medicine_reminder_schedule (scheduled_date, send_slot, status);
+
+DROP TRIGGER IF EXISTS trg_medicine_reminder_schedule_updated_at ON public.medicine_reminder_schedule;
+CREATE TRIGGER trg_medicine_reminder_schedule_updated_at
+  BEFORE UPDATE ON public.medicine_reminder_schedule
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();

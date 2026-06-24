@@ -39,6 +39,7 @@ function sampleFor(name) {
     city: 'Bangalore',
     reminder_detail: 'Your follow-up is scheduled for tomorrow at 10:30 AM.',
     follow_up_date: 'Fri, 30 May',
+    course_days: '7',
     medicine_name: 'Metformin',
     dosage: '1 tablet',
     timing: 'before breakfast',

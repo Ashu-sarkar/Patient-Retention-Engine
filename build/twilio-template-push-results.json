@@ -1,24 +1,15 @@
 {
-  "generated_at": "2026-06-24T20:16:18.083Z",
-  "cards": [
+  "pushed_at": "2026-06-24T20:17:49.815Z",
+  "dry_run": false,
+  "submit_approval": true,
+  "results": [
     {
       "id": "clinic_patient_welcome",
+      "env": "TWILIO_CONTENT_CLINIC_PATIENT_WELCOME",
       "friendly_name": "clinic_patient_welcome",
-      "category": "UTILITY",
-      "workflow": "workflow-7-new-patient",
-      "twilio_content_env": "TWILIO_CONTENT_CLINIC_PATIENT_WELCOME",
-      "variables": {
-        "1": "Priya",
-        "2": "Dr. Mehta",
-        "3": "Mehta Clinic"
-      },
-      "variable_map": {
-        "1": "patient_name",
-        "2": "doctor_name",
-        "3": "clinic_name"
-      },
-      "body": "Hi {{1}},\n\nYou're now in {{2}}'s queue at {{3}}.\n\nWe'll send your prescription and any care updates to this number. See you inside.",
-      "content_api_payload": {
+      "status": "created",
+      "sid": "HXfcce647a8dea9ae4928024dedd52e42a",
+      "payload": {
         "friendly_name": "clinic_patient_welcome",
         "language": "en",
         "variables": {
@@ -34,28 +25,22 @@
           }
         }
       },
-      "notes": "v2 welcome after QR intake (WF7). {{1}} patient, {{2}} doctor, {{3}} clinic."
+      "approval_status": "received",
+      "approval": {
+        "allow_category_change": true,
+        "category": "UTILITY",
+        "content_type": "whatsapp/card",
+        "name": "clinic_patient_welcome",
+        "rejection_reason": "",
+        "status": "received"
+      }
     },
     {
       "id": "hospital_onboarding",
-      "friendly_name": "hospital_onboarding",
-      "category": "UTILITY",
-      "workflow": "workflow-12-hospital-boarding",
-      "twilio_content_env": "TWILIO_CONTENT_HOSPITAL_ONBOARDING",
-      "variables": {
-        "1": "City Hospital",
-        "2": "General Hospital",
-        "3": "Dr. Mehta",
-        "4": "Bangalore"
-      },
-      "variable_map": {
-        "1": "hospital_name",
-        "2": "facility_type",
-        "3": "doctor_name",
-        "4": "city"
-      },
-      "body": "Hi {{1}}, your onboarding for {{2}} is complete. We have registered {{3}} as the primary contact and {{4}} as the facility location. Reply CONFIRM if this is correct or EDIT if you need changes.",
-      "content_api_payload": {
+      "env": "TWILIO_CONTENT_HOSPITAL_ONBOARDING",
+      "status": "exists",
+      "sid": "HXad188747f9e9e777ce878ec671eac66e",
+      "payload": {
         "friendly_name": "hospital_onboarding",
         "language": "en",
         "variables": {
@@ -71,25 +56,14 @@
             "footer": "vAItalcare support"
           }
         }
-      },
-      "notes": ""
+      }
     },
     {
       "id": "prescription_delivery",
-      "friendly_name": "prescription_delivery",
-      "category": "UTILITY",
-      "workflow": "prescription-delivery-edge",
-      "twilio_content_env": "TWILIO_CONTENT_PRESCRIPTION_DELIVERY",
-      "variables": {
-        "1": "Priya",
-        "2": "Dr. Mehta"
-      },
-      "variable_map": {
-        "1": "patient_name",
-        "2": "doctor_name"
-      },
-      "body": "Hi {{1}}, your prescription from {{2}} is attached.\n\nPlease take your medicines as prescribed — the timings are listed inside.\n\nIf you have any questions, call us at the clinic.\n\nTake care.",
-      "content_api_payload": {
+      "env": "TWILIO_CONTENT_PRESCRIPTION_DELIVERY",
+      "status": "exists",
+      "sid": "HXa7e5a02d15ce2457344a352e11dba665",
+      "payload": {
         "friendly_name": "prescription_delivery",
         "language": "en",
         "variables": {
@@ -103,27 +77,15 @@
             "footer": "vAItalcare support"
           }
         }
-      },
-      "notes": "PDF sent via MediaUrl after template. {{1}} patient, {{2}} doctor."
+      }
     },
     {
       "id": "prescription_with_followup",
+      "env": "TWILIO_CONTENT_PRESCRIPTION_WITH_FOLLOWUP",
       "friendly_name": "prescription_with_followup",
-      "category": "UTILITY",
-      "workflow": "prescription-delivery-edge",
-      "twilio_content_env": "TWILIO_CONTENT_PRESCRIPTION_WITH_FOLLOWUP",
-      "variables": {
-        "1": "Priya",
-        "2": "Dr. Mehta",
-        "3": "Fri, 30 May"
-      },
-      "variable_map": {
-        "1": "patient_name",
-        "2": "doctor_name",
-        "3": "follow_up_date"
-      },
-      "body": "Hi {{1}}, your prescription from {{2}} is attached.\n\n{{2}} would like to see you again on {{3}}. We'll remind you before then.\n\nFollow your medicines in the meantime. It makes a real difference.",
-      "content_api_payload": {
+      "status": "created",
+      "sid": "HX5f61eb06935e60325fe01cdda95dd3e6",
+      "payload": {
         "friendly_name": "prescription_with_followup",
         "language": "en",
         "variables": {
@@ -139,26 +101,23 @@
           }
         }
       },
-      "notes": ""
+      "approval_status": "received",
+      "approval": {
+        "allow_category_change": true,
+        "category": "UTILITY",
+        "content_type": "whatsapp/card",
+        "name": "prescription_with_followup",
+        "rejection_reason": "",
+        "status": "received"
+      }
     },
     {
       "id": "prescription_journey_start",
+      "env": "TWILIO_CONTENT_PRESCRIPTION_JOURNEY_START",
       "friendly_name": "prescription_journey_start",
-      "category": "UTILITY",
-      "workflow": "prescription-delivery-edge",
-      "twilio_content_env": "TWILIO_CONTENT_PRESCRIPTION_JOURNEY_START",
-      "variables": {
-        "1": "Priya",
-        "2": "Dr. Mehta",
-        "3": "7"
-      },
-      "variable_map": {
-        "1": "patient_name",
-        "2": "doctor_name",
-        "3": "course_days"
-      },
-      "body": "Hi {{1}}, your prescription from {{2}} is attached.\n\nYour health journey starts today.\n\n{{2}} has prescribed a {{3}}-day course. Each day you take your medicine, you're one step closer to feeling like yourself again.\n\nCall us at the clinic if you have any questions.",
-      "content_api_payload": {
+      "status": "created",
+      "sid": "HXb5d58ce57500c4c82b0ca86ca6f192f8",
+      "payload": {
         "friendly_name": "prescription_journey_start",
         "language": "en",
         "variables": {
@@ -174,24 +133,23 @@
           }
         }
       },
-      "notes": ""
+      "approval_status": "received",
+      "approval": {
+        "allow_category_change": true,
+        "category": "UTILITY",
+        "content_type": "whatsapp/card",
+        "name": "prescription_journey_start",
+        "rejection_reason": "",
+        "status": "received"
+      }
     },
     {
       "id": "medicine_journey_day1_morning",
+      "env": "TWILIO_CONTENT_MEDICINE_JOURNEY_DAY1_MORNING",
       "friendly_name": "medicine_journey_day1_morning",
-      "category": "UTILITY",
-      "workflow": "workflow-14-medicine-journey",
-      "twilio_content_env": "TWILIO_CONTENT_MEDICINE_JOURNEY_DAY1_MORNING",
-      "variables": {
-        "1": "Priya",
-        "2": "Metformin"
-      },
-      "variable_map": {
-        "1": "patient_name",
-        "2": "medicine_name"
-      },
-      "body": "Good morning {{1}}.\n\nDay 1 of your health journey — time for your {{2}} before breakfast.\n\nThe first step is always the most important. You've got this.",
-      "content_api_payload": {
+      "status": "created",
+      "sid": "HX3c8763c75596dcda2a11b25553d79258",
+      "payload": {
         "friendly_name": "medicine_journey_day1_morning",
         "language": "en",
         "variables": {
@@ -206,26 +164,23 @@
           }
         }
       },
-      "notes": ""
+      "approval_status": "received",
+      "approval": {
+        "allow_category_change": true,
+        "category": "UTILITY",
+        "content_type": "whatsapp/card",
+        "name": "medicine_journey_day1_morning",
+        "rejection_reason": "",
+        "status": "received"
+      }
     },
     {
       "id": "medicine_journey_day1_evening",
+      "env": "TWILIO_CONTENT_MEDICINE_JOURNEY_DAY1_EVENING",
       "friendly_name": "medicine_journey_day1_evening",
-      "category": "UTILITY",
-      "workflow": "workflow-14-medicine-journey",
-      "twilio_content_env": "TWILIO_CONTENT_MEDICINE_JOURNEY_DAY1_EVENING",
-      "variables": {
-        "1": "Priya",
-        "2": "Metformin",
-        "3": "Dr. Mehta"
-      },
-      "variable_map": {
-        "1": "patient_name",
-        "2": "medicine_name",
-        "3": "doctor_name"
-      },
-      "body": "Good evening {{1}}.\n\n{{2}} after dinner tonight — and that's Day 1 done.\n\nHow are you feeling so far? Keep going — {{3}} is rooting for you.",
-      "content_api_payload": {
+      "status": "created",
+      "sid": "HXe4f958138c1c761637950f3997422f6d",
+      "payload": {
         "friendly_name": "medicine_journey_day1_evening",
         "language": "en",
         "variables": {
@@ -241,26 +196,23 @@
           }
         }
       },
-      "notes": ""
+      "approval_status": "received",
+      "approval": {
+        "allow_category_change": true,
+        "category": "UTILITY",
+        "content_type": "whatsapp/card",
+        "name": "medicine_journey_day1_evening",
+        "rejection_reason": "",
+        "status": "received"
+      }
     },
     {
       "id": "medicine_journey_midpoint",
+      "env": "TWILIO_CONTENT_MEDICINE_JOURNEY_MIDPOINT",
       "friendly_name": "medicine_journey_midpoint",
-      "category": "UTILITY",
-      "workflow": "workflow-14-medicine-journey",
-      "twilio_content_env": "TWILIO_CONTENT_MEDICINE_JOURNEY_MIDPOINT",
-      "variables": {
-        "1": "Priya",
-        "2": "Mehta Clinic",
-        "3": "7"
-      },
-      "variable_map": {
-        "1": "patient_name",
-        "2": "clinic_name",
-        "3": "course_days"
-      },
-      "body": "Hi {{1}}, {{2}} checking in.\n\nYou're halfway through your {{3}}-day course — great going.\n\nThis is exactly where most people start feeling the difference. Keep your medicines consistent and your health takes care of itself.",
-      "content_api_payload": {
+      "status": "created",
+      "sid": "HX6005921e939a867231cc61308ee9f7c2",
+      "payload": {
         "friendly_name": "medicine_journey_midpoint",
         "language": "en",
         "variables": {
@@ -276,26 +228,23 @@
           }
         }
       },
-      "notes": ""
+      "approval_status": "received",
+      "approval": {
+        "allow_category_change": true,
+        "category": "UTILITY",
+        "content_type": "whatsapp/card",
+        "name": "medicine_journey_midpoint",
+        "rejection_reason": "",
+        "status": "received"
+      }
     },
     {
       "id": "medicine_journey_daily",
+      "env": "TWILIO_CONTENT_MEDICINE_JOURNEY_DAILY",
       "friendly_name": "medicine_journey_daily",
-      "category": "UTILITY",
-      "workflow": "workflow-14-medicine-journey",
-      "twilio_content_env": "TWILIO_CONTENT_MEDICINE_JOURNEY_DAILY",
-      "variables": {
-        "1": "Priya",
-        "2": "Metformin",
-        "3": "Dr. Mehta"
-      },
-      "variable_map": {
-        "1": "patient_name",
-        "2": "medicine_name",
-        "3": "doctor_name"
-      },
-      "body": "Good morning {{1}}.\n\nTime for your {{2}} — another day, another step forward.\n\nHow do you think the journey is going? {{3}}'s clinic is with you all the way.",
-      "content_api_payload": {
+      "status": "created",
+      "sid": "HX0b8f77a7b12ef5bd88eca5cd9e2d64e8",
+      "payload": {
         "friendly_name": "medicine_journey_daily",
         "language": "en",
         "variables": {
@@ -311,28 +260,23 @@
           }
         }
       },
-      "notes": ""
+      "approval_status": "received",
+      "approval": {
+        "allow_category_change": true,
+        "category": "UTILITY",
+        "content_type": "whatsapp/card",
+        "name": "medicine_journey_daily",
+        "rejection_reason": "",
+        "status": "received"
+      }
     },
     {
       "id": "medicine_journey_last_day",
+      "env": "TWILIO_CONTENT_MEDICINE_JOURNEY_LAST_DAY",
       "friendly_name": "medicine_journey_last_day",
-      "category": "UTILITY",
-      "workflow": "workflow-14-medicine-journey",
-      "twilio_content_env": "TWILIO_CONTENT_MEDICINE_JOURNEY_LAST_DAY",
-      "variables": {
-        "1": "Priya",
-        "2": "7",
-        "3": "Dr. Mehta",
-        "4": "Metformin"
-      },
-      "variable_map": {
-        "1": "patient_name",
-        "2": "course_days",
-        "3": "doctor_name",
-        "4": "medicine_name"
-      },
-      "body": "Good morning {{1}}.\n\nLast day of your {{2}}-day course — just this dose and you've done it.\n\n{{3}} will be pleased to hear you stayed consistent. Take your {{4}} as prescribed and rest well today.",
-      "content_api_payload": {
+      "status": "created",
+      "sid": "HX7071bd2ef050394edc7e8c25e4368deb",
+      "payload": {
         "friendly_name": "medicine_journey_last_day",
         "language": "en",
         "variables": {
@@ -349,26 +293,23 @@
           }
         }
       },
-      "notes": ""
+      "approval_status": "received",
+      "approval": {
+        "allow_category_change": true,
+        "category": "UTILITY",
+        "content_type": "whatsapp/card",
+        "name": "medicine_journey_last_day",
+        "rejection_reason": "",
+        "status": "received"
+      }
     },
     {
       "id": "medicine_journey_complete",
+      "env": "TWILIO_CONTENT_MEDICINE_JOURNEY_COMPLETE",
       "friendly_name": "medicine_journey_complete",
-      "category": "UTILITY",
-      "workflow": "workflow-14-medicine-journey",
-      "twilio_content_env": "TWILIO_CONTENT_MEDICINE_JOURNEY_COMPLETE",
-      "variables": {
-        "1": "Priya",
-        "2": "7",
-        "3": "Dr. Mehta"
-      },
-      "variable_map": {
-        "1": "patient_name",
-        "2": "course_days",
-        "3": "doctor_name"
-      },
-      "body": "Hi {{1}}, you've completed your full {{2}}-day course prescribed by {{3}}.\n\nThat takes real commitment — well done.\n\nIf you're feeling much better, that's great. If anything still feels off, call the clinic and {{3}} will take another look.",
-      "content_api_payload": {
+      "status": "created",
+      "sid": "HX04bbc6cc1bec4ce3ae6d1fdec872ed87",
+      "payload": {
         "friendly_name": "medicine_journey_complete",
         "language": "en",
         "variables": {
@@ -384,26 +325,23 @@
           }
         }
       },
-      "notes": ""
+      "approval_status": "received",
+      "approval": {
+        "allow_category_change": true,
+        "category": "UTILITY",
+        "content_type": "whatsapp/card",
+        "name": "medicine_journey_complete",
+        "rejection_reason": "",
+        "status": "received"
+      }
     },
     {
       "id": "medicine_reminder_morning",
+      "env": "TWILIO_CONTENT_MEDICINE_REMINDER_MORNING",
       "friendly_name": "medicine_reminder_morning",
-      "category": "UTILITY",
-      "workflow": "workflow-14-medicine-journey",
-      "twilio_content_env": "TWILIO_CONTENT_MEDICINE_REMINDER_MORNING",
-      "variables": {
-        "1": "Priya",
-        "2": "Metformin",
-        "3": "Dr. Mehta"
-      },
-      "variable_map": {
-        "1": "patient_name",
-        "2": "medicine_name",
-        "3": "doctor_name"
-      },
-      "body": "Good morning {{1}}.\n\nTime for your {{2}} — please take it before breakfast, as {{3}} prescribed.\n\nSmall habits. Steady health.",
-      "content_api_payload": {
+      "status": "created",
+      "sid": "HX48a3ddb18faf2f0e6ff2de57bf64616b",
+      "payload": {
         "friendly_name": "medicine_reminder_morning",
         "language": "en",
         "variables": {
@@ -419,26 +357,23 @@
           }
         }
       },
-      "notes": ""
+      "approval_status": "received",
+      "approval": {
+        "allow_category_change": true,
+        "category": "UTILITY",
+        "content_type": "whatsapp/card",
+        "name": "medicine_reminder_morning",
+        "rejection_reason": "",
+        "status": "received"
+      }
     },
     {
       "id": "medicine_reminder_afternoon",
+      "env": "TWILIO_CONTENT_MEDICINE_REMINDER_AFTERNOON",
       "friendly_name": "medicine_reminder_afternoon",
-      "category": "UTILITY",
-      "workflow": "workflow-14-medicine-journey",
-      "twilio_content_env": "TWILIO_CONTENT_MEDICINE_REMINDER_AFTERNOON",
-      "variables": {
-        "1": "Priya",
-        "2": "Metformin",
-        "3": "Mehta Clinic"
-      },
-      "variable_map": {
-        "1": "patient_name",
-        "2": "medicine_name",
-        "3": "clinic_name"
-      },
-      "body": "Hi {{1}}, your {{2}} is due after lunch today.\n\n{{3}} checking in. Keep at it.",
-      "content_api_payload": {
+      "status": "created",
+      "sid": "HX8016337b01d9001419f5b10d9144331c",
+      "payload": {
         "friendly_name": "medicine_reminder_afternoon",
         "language": "en",
         "variables": {
@@ -454,24 +389,23 @@
           }
         }
       },
-      "notes": ""
+      "approval_status": "received",
+      "approval": {
+        "allow_category_change": true,
+        "category": "UTILITY",
+        "content_type": "whatsapp/card",
+        "name": "medicine_reminder_afternoon",
+        "rejection_reason": "",
+        "status": "received"
+      }
     },
     {
       "id": "medicine_reminder_night",
+      "env": "TWILIO_CONTENT_MEDICINE_REMINDER_NIGHT",
       "friendly_name": "medicine_reminder_night",
-      "category": "UTILITY",
-      "workflow": "workflow-14-medicine-journey",
-      "twilio_content_env": "TWILIO_CONTENT_MEDICINE_REMINDER_NIGHT",
-      "variables": {
-        "1": "Priya",
-        "2": "Metformin"
-      },
-      "variable_map": {
-        "1": "patient_name",
-        "2": "medicine_name"
-      },
-      "body": "Good evening {{1}}.\n\nDon't forget your {{2}} after dinner tonight.\n\nRest well — you're doing the right things.",
-      "content_api_payload": {
+      "status": "created",
+      "sid": "HX28b6e8b44088c4685e68a615b5ce8951",
+      "payload": {
         "friendly_name": "medicine_reminder_night",
         "language": "en",
         "variables": {
@@ -486,26 +420,23 @@
           }
         }
       },
-      "notes": ""
+      "approval_status": "received",
+      "approval": {
+        "allow_category_change": true,
+        "category": "UTILITY",
+        "content_type": "whatsapp/card",
+        "name": "medicine_reminder_night",
+        "rejection_reason": "",
+        "status": "received"
+      }
     },
     {
       "id": "followup_reminder_advance",
+      "env": "TWILIO_CONTENT_FOLLOWUP_REMINDER_ADVANCE",
       "friendly_name": "followup_reminder_advance",
-      "category": "UTILITY",
-      "workflow": "workflow-1-followup-reminder",
-      "twilio_content_env": "TWILIO_CONTENT_FOLLOWUP_REMINDER_ADVANCE",
-      "variables": {
-        "1": "Priya",
-        "2": "Dr. Mehta",
-        "3": "Fri, 30 May"
-      },
-      "variable_map": {
-        "1": "patient_name",
-        "2": "doctor_name",
-        "3": "follow_up_date"
-      },
-      "body": "Hi {{1}},\n\nYour follow-up with {{2}} is coming up on {{3}}.\n\nThis visit matters for your health. We'll remind you again the morning before.\n\nPlease confirm using the button below.",
-      "content_api_payload": {
+      "status": "created",
+      "sid": "HX336b03cf07aa60151a6d740758727fc7",
+      "payload": {
         "friendly_name": "followup_reminder_advance",
         "language": "en",
         "variables": {
@@ -533,26 +464,23 @@
           }
         }
       },
-      "notes": "WF1 primary template with Confirm/Reschedule buttons. WF6 handles taps and queue creation."
+      "approval_status": "received",
+      "approval": {
+        "allow_category_change": true,
+        "category": "UTILITY",
+        "content_type": "whatsapp/card",
+        "name": "followup_reminder_advance",
+        "rejection_reason": "",
+        "status": "received"
+      }
     },
     {
       "id": "followup_reminder_day_of",
+      "env": "TWILIO_CONTENT_FOLLOWUP_REMINDER_DAY_OF",
       "friendly_name": "followup_reminder_day_of",
-      "category": "UTILITY",
-      "workflow": "workflow-2-sameday-reminder",
-      "twilio_content_env": "TWILIO_CONTENT_FOLLOWUP_REMINDER_DAY_OF",
-      "variables": {
-        "1": "Priya",
-        "2": "Dr. Mehta",
-        "3": "Mehta Clinic"
-      },
-      "variable_map": {
-        "1": "patient_name",
-        "2": "doctor_name",
-        "3": "clinic_name"
-      },
-      "body": "Good morning {{1}}.\n\nYour follow-up with {{2}} is today.\n\n{{3}} is open. {{2}} is expecting you. See you soon.",
-      "content_api_payload": {
+      "status": "created",
+      "sid": "HXb8166c934d8998c21a434689bbb4e615",
+      "payload": {
         "friendly_name": "followup_reminder_day_of",
         "language": "en",
         "variables": {
@@ -568,24 +496,23 @@
           }
         }
       },
-      "notes": ""
+      "approval_status": "received",
+      "approval": {
+        "allow_category_change": true,
+        "category": "UTILITY",
+        "content_type": "whatsapp/card",
+        "name": "followup_reminder_day_of",
+        "rejection_reason": "",
+        "status": "received"
+      }
     },
     {
       "id": "patient_health_check",
+      "env": "TWILIO_CONTENT_PATIENT_HEALTH_CHECK",
       "friendly_name": "patient_health_check",
-      "category": "UTILITY",
-      "workflow": "workflow-4-health-check",
-      "twilio_content_env": "TWILIO_CONTENT_PATIENT_HEALTH_CHECK",
-      "variables": {
-        "1": "Priya",
-        "2": "Mehta Clinic"
-      },
-      "variable_map": {
-        "1": "patient_name",
-        "2": "clinic_name"
-      },
-      "body": "Hi {{1}}, this is {{2}} — just checking in.\n\nIt's been a few days since your visit. We hope you're feeling better.\n\nIf you need anything, call us at the clinic anytime.",
-      "content_api_payload": {
+      "status": "created",
+      "sid": "HXac8c20e3fc3af1db4ae715290b715d40",
+      "payload": {
         "friendly_name": "patient_health_check",
         "language": "en",
         "variables": {
@@ -600,22 +527,23 @@
           }
         }
       },
-      "notes": ""
+      "approval_status": "received",
+      "approval": {
+        "allow_category_change": true,
+        "category": "UTILITY",
+        "content_type": "whatsapp/card",
+        "name": "patient_health_check",
+        "rejection_reason": "",
+        "status": "received"
+      }
     },
     {
       "id": "missed_followup_recovery_1",
+      "env": "TWILIO_CONTENT_MISSED_FOLLOWUP_RECOVERY_1",
       "friendly_name": "missed_followup_recovery_1",
-      "category": "UTILITY",
-      "workflow": "workflow-3-missed-appointment",
-      "twilio_content_env": "TWILIO_CONTENT_MISSED_FOLLOWUP_RECOVERY_1",
-      "variables": {
-        "1": "Priya"
-      },
-      "variable_map": {
-        "1": "patient_name"
-      },
-      "body": "Hi {{1}}, we noticed you couldn't make it today. We hope everything is okay.\n\nWhenever you're ready, call us at the clinic and we'll find a time that works for you.",
-      "content_api_payload": {
+      "status": "created",
+      "sid": "HXb0be660afc178b5c9f4c7753de2f1f0c",
+      "payload": {
         "friendly_name": "missed_followup_recovery_1",
         "language": "en",
         "variables": {
@@ -629,26 +557,23 @@
           }
         }
       },
-      "notes": ""
+      "approval_status": "received",
+      "approval": {
+        "allow_category_change": true,
+        "category": "UTILITY",
+        "content_type": "whatsapp/card",
+        "name": "missed_followup_recovery_1",
+        "rejection_reason": "",
+        "status": "received"
+      }
     },
     {
       "id": "missed_followup_recovery_2",
+      "env": "TWILIO_CONTENT_MISSED_FOLLOWUP_RECOVERY_2",
       "friendly_name": "missed_followup_recovery_2",
-      "category": "UTILITY",
-      "workflow": "workflow-3-missed-appointment",
-      "twilio_content_env": "TWILIO_CONTENT_MISSED_FOLLOWUP_RECOVERY_2",
-      "variables": {
-        "1": "Priya",
-        "2": "Mehta Clinic",
-        "3": "Dr. Mehta"
-      },
-      "variable_map": {
-        "1": "patient_name",
-        "2": "clinic_name",
-        "3": "doctor_name"
-      },
-      "body": "Hi {{1}}, {{2}} checking in again.\n\n{{3}} still has your visit in mind. It's worth coming in before too long.\n\nCall us at the clinic whenever you're ready — we'll sort a time for you.",
-      "content_api_payload": {
+      "status": "created",
+      "sid": "HX644fc75ae8a0711c20a1ed06f3df3171",
+      "payload": {
         "friendly_name": "missed_followup_recovery_2",
         "language": "en",
         "variables": {
@@ -664,26 +589,23 @@
           }
         }
       },
-      "notes": ""
+      "approval_status": "received",
+      "approval": {
+        "allow_category_change": true,
+        "category": "UTILITY",
+        "content_type": "whatsapp/card",
+        "name": "missed_followup_recovery_2",
+        "rejection_reason": "",
+        "status": "received"
+      }
     },
     {
       "id": "followup_booking_confirmed",
+      "env": "TWILIO_CONTENT_FOLLOWUP_BOOKING_CONFIRMED",
       "friendly_name": "followup_booking_confirmed",
-      "category": "UTILITY",
-      "workflow": "workflow-6-feedback-listener",
-      "twilio_content_env": "TWILIO_CONTENT_FOLLOWUP_BOOKING_CONFIRMED",
-      "variables": {
-        "1": "Priya",
-        "2": "Dr. Mehta",
-        "3": "Fri, 30 May"
-      },
-      "variable_map": {
-        "1": "patient_name",
-        "2": "doctor_name",
-        "3": "follow_up_date"
-      },
-      "body": "Hi {{1}}, your follow-up with {{2}} is confirmed for {{3}}.\n\n{{2}} will be ready for you. We'll send a reminder the evening before.\n\nSee you then.",
-      "content_api_payload": {
+      "status": "created",
+      "sid": "HXe82da289eefbd22aae367c2392b1d5d6",
+      "payload": {
         "friendly_name": "followup_booking_confirmed",
         "language": "en",
         "variables": {
@@ -699,26 +621,23 @@
           }
         }
       },
-      "notes": ""
+      "approval_status": "received",
+      "approval": {
+        "allow_category_change": true,
+        "category": "UTILITY",
+        "content_type": "whatsapp/card",
+        "name": "followup_booking_confirmed",
+        "rejection_reason": "",
+        "status": "received"
+      }
     },
     {
       "id": "followup_rescheduled_confirmed",
+      "env": "TWILIO_CONTENT_FOLLOWUP_RESCHEDULED_CONFIRMED",
       "friendly_name": "followup_rescheduled_confirmed",
-      "category": "UTILITY",
-      "workflow": "workflow-6-feedback-listener",
-      "twilio_content_env": "TWILIO_CONTENT_FOLLOWUP_RESCHEDULED_CONFIRMED",
-      "variables": {
-        "1": "Priya",
-        "2": "Dr. Mehta",
-        "3": "Fri, 30 May"
-      },
-      "variable_map": {
-        "1": "patient_name",
-        "2": "doctor_name",
-        "3": "follow_up_date"
-      },
-      "body": "Hi {{1}}, no problem at all — your visit with {{2}} has been moved to {{3}}.\n\nWe'll remind you the morning before.\n\nSee you soon.",
-      "content_api_payload": {
+      "status": "created",
+      "sid": "HX16e95c7287f9b44bd1997baa6b9e89cd",
+      "payload": {
         "friendly_name": "followup_rescheduled_confirmed",
         "language": "en",
         "variables": {
@@ -734,7 +653,15 @@
           }
         }
       },
-      "notes": "Sent when patient taps Reschedule; staff follows up to set new date. follow_up_date may be TBD placeholder until rescheduled."
+      "approval_status": "received",
+      "approval": {
+        "allow_category_change": true,
+        "category": "UTILITY",
+        "content_type": "whatsapp/card",
+        "name": "followup_rescheduled_confirmed",
+        "rejection_reason": "",
+        "status": "received"
+      }
     }
   ]
 }

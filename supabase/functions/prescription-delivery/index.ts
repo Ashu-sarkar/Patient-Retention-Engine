@@ -108,6 +108,114 @@ function summariseMedicines(medicines: Medicine[]) {
     .slice(0, 900) || 'As listed in your prescription PDF';
 }
 
+function parseCourseDays(duration: string) {
+  const match = String(duration || '').match(/(\d+)/);
+  return match ? Math.max(1, parseInt(match[1], 10)) : 1;
+}
+
+function maxCourseDays(medicines: Medicine[]) {
+  if (!medicines.length) return 1;
+  return Math.max(...medicines.map((m) => parseCourseDays(m.duration || '')));
+}
+
+function formatFollowUpDate(date: string, tz = 'Asia/Kolkata') {
+  return new Date(`${date}T12:00:00`).toLocaleDateString('en-IN', {
+    timeZone: tz,
+    weekday: 'short',
+    day: '2-digit',
+    month: 'short',
+  });
+}
+
+function addDaysISO(isoDate: string, offset: number) {
+  const d = new Date(`${isoDate}T12:00:00`);
+  d.setDate(d.getDate() + offset);
+  return d.toISOString().slice(0, 10);
+}
+
+function timingSlot(timing: string) {
+  const text = String(timing || '');
+  if (/empty stomach|before breakfast|after breakfast/i.test(text)) return 'morning';
+  if (/before lunch|after lunch/i.test(text)) return 'afternoon';
+  if (/evening|before dinner|after dinner|bedtime/i.test(text)) return 'evening';
+  return 'morning';
+}
+
+function buildJourneyScheduleRows(input: {
+  clinicId: string;
+  patientId: string;
+  prescriptionId: string;
+  medicineName: string;
+  courseDays: number;
+  courseStartDate: string;
+}) {
+  const rows: Record<string, unknown>[] = [];
+  const push = (messageType: string, envKey: string, scheduledDate: string, sendSlot: string) => {
+    rows.push({
+      clinic_id: input.clinicId,
+      patient_id: input.patientId,
+      prescription_id: input.prescriptionId,
+      medicine_name: input.medicineName,
+      course_days: input.courseDays,
+      course_start_date: input.courseStartDate,
+      scheduled_date: scheduledDate,
+      send_slot: sendSlot,
+      template_id: messageType,
+      message_type: messageType,
+      content_env_key: envKey,
+      status: 'pending',
+    });
+  };
+  const { courseDays, courseStartDate } = input;
+  if (courseDays < 3) return rows;
+  push('medicine_journey_day1_morning', 'TWILIO_CONTENT_MEDICINE_JOURNEY_DAY1_MORNING', addDaysISO(courseStartDate, 1), 'morning');
+  push('medicine_journey_day1_evening', 'TWILIO_CONTENT_MEDICINE_JOURNEY_DAY1_EVENING', addDaysISO(courseStartDate, 1), 'evening');
+  push('medicine_journey_midpoint', 'TWILIO_CONTENT_MEDICINE_JOURNEY_MIDPOINT', addDaysISO(courseStartDate, Math.ceil(courseDays / 2)), 'morning');
+  for (let day = 2; day < courseDays; day += 1) {
+    push('medicine_journey_daily', 'TWILIO_CONTENT_MEDICINE_JOURNEY_DAILY', addDaysISO(courseStartDate, day), 'morning');
+  }
+  push('medicine_journey_last_day', 'TWILIO_CONTENT_MEDICINE_JOURNEY_LAST_DAY', addDaysISO(courseStartDate, courseDays), 'morning');
+  push('medicine_journey_complete', 'TWILIO_CONTENT_MEDICINE_JOURNEY_COMPLETE', addDaysISO(courseStartDate, courseDays), 'evening');
+  return rows;
+}
+
+function buildStandaloneScheduleRows(input: {
+  clinicId: string;
+  patientId: string;
+  prescriptionId: string;
+  medicines: Medicine[];
+  courseStartDate: string;
+}) {
+  const rows: Record<string, unknown>[] = [];
+  for (const med of input.medicines) {
+    const days = parseCourseDays(med.duration || '');
+    const slot = timingSlot(med.timing || '');
+    const messageType = `medicine_reminder_${slot === 'evening' ? 'night' : slot}`;
+    const envKey = slot === 'morning'
+      ? 'TWILIO_CONTENT_MEDICINE_REMINDER_MORNING'
+      : slot === 'afternoon'
+      ? 'TWILIO_CONTENT_MEDICINE_REMINDER_AFTERNOON'
+      : 'TWILIO_CONTENT_MEDICINE_REMINDER_NIGHT';
+    for (let day = 1; day <= days; day += 1) {
+      rows.push({
+        clinic_id: input.clinicId,
+        patient_id: input.patientId,
+        prescription_id: input.prescriptionId,
+        medicine_name: clean(med.medicine_name, 180),
+        course_days: days,
+        course_start_date: input.courseStartDate,
+        scheduled_date: addDaysISO(input.courseStartDate, day),
+        send_slot: slot,
+        template_id: messageType,
+        message_type: `${messageType}:${clean(med.medicine_name, 80)}:${day}`,
+        content_env_key: envKey,
+        status: 'pending',
+      });
+    }
+  }
+  return rows;
+}
+
 function parseTwilioResponse(text: string): Record<string, string> {
   const out: Record<string, string> = {};
   for (const part of text.split('&')) {
@@ -189,8 +297,10 @@ Deno.serve(async (req) => {
   const twilioSid = Deno.env.get('TWILIO_ACCOUNT_SID') || '';
   const twilioToken = Deno.env.get('TWILIO_AUTH_TOKEN') || '';
   const twilioFrom = Deno.env.get('TWILIO_WHATSAPP_FROM') || '';
-  const contentSid = Deno.env.get('TWILIO_CONTENT_PRESCRIPTION_DELIVERY') || '';
   const statusCallback = Deno.env.get('TWILIO_STATUS_CALLBACK_URL') || '';
+  const contentDelivery = Deno.env.get('TWILIO_CONTENT_PRESCRIPTION_DELIVERY') || '';
+  const contentWithFollowUp = Deno.env.get('TWILIO_CONTENT_PRESCRIPTION_WITH_FOLLOWUP') || '';
+  const contentJourneyStart = Deno.env.get('TWILIO_CONTENT_PRESCRIPTION_JOURNEY_START') || '';
 
   if (!supabaseUrl || !supabaseAnonKey || !serviceKey || !internalSecret) {
     return jsonResponse(req, 500, { error: 'Prescription delivery gateway is not configured' });
@@ -288,17 +398,49 @@ Deno.serve(async (req) => {
   const clinicName = clean(clinic.name, 180) || 'our clinic';
   const medicines = (Array.isArray(prescription.medicines) ? prescription.medicines : []) as Medicine[];
   const medicineSummary = summariseMedicines(medicines);
+  const courseDays = maxCourseDays(medicines);
+  const primaryMedicine = [...medicines].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))[0];
+  const primaryMedicineName = clean(primaryMedicine?.medicine_name, 180) || 'your medicine';
   const shortPdfLink = await buildShortPdfLink(supabaseUrl, internalSecret, prescription.id, prescription.clinic_id);
   const followUpDate = clean(prescription.follow_up_date, 40);
-  const followUpText = prescription.follow_up_required === 'Yes' && followUpDate
-    ? `Follow-up date: ${followUpDate}.`
-    : 'No follow-up date has been scheduled.';
-  const messageBody =
-    `Hi ${patientName}, your prescription from today's visit with ${doctorName} is ready. ` +
-    `Open prescription: ${shortPdfLink}. ${followUpText} ` +
-    'Please show this at any pharmacy - all dosage timings are listed inside.';
-
+  const followUpDisplay = followUpDate ? formatFollowUpDate(followUpDate) : '';
+  const hasFollowUp = prescription.follow_up_required === 'Yes' && !!followUpDate;
   const scheduledDate = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const courseStartDate = scheduledDate;
+
+  let contentSid = contentDelivery;
+  let contentVariables: Record<string, string> = {
+    '1': patientName,
+    '2': doctorName,
+  };
+  let messageType = 'prescription_delivery';
+
+  if (courseDays >= 3 && contentJourneyStart) {
+    contentSid = contentJourneyStart;
+    messageType = 'prescription_journey_start';
+    contentVariables = {
+      '1': patientName,
+      '2': doctorName,
+      '3': String(courseDays),
+    };
+  } else if (hasFollowUp && contentWithFollowUp) {
+    contentSid = contentWithFollowUp;
+    messageType = 'prescription_with_followup';
+    contentVariables = {
+      '1': patientName,
+      '2': doctorName,
+      '3': followUpDisplay,
+    };
+  } else if (!contentDelivery) {
+    contentSid = contentWithFollowUp || contentJourneyStart || '';
+  }
+
+  const messageBody =
+    messageType === 'prescription_journey_start'
+      ? `Hi ${patientName}, your prescription from ${doctorName} is attached. Your ${courseDays}-day health journey starts today.`
+      : messageType === 'prescription_with_followup'
+      ? `Hi ${patientName}, your prescription from ${doctorName} is attached. Follow-up on ${followUpDisplay}.`
+      : `Hi ${patientName}, your prescription from ${doctorName} is attached.`;
 
   // Atomic claim to prevent double-send races (e.g. the dashboard retrying, or the Edge
   // runtime re-invoking on timeout). Flip to 'queued' only if the row is still in the exact
@@ -325,15 +467,22 @@ Deno.serve(async (req) => {
         from: twilioFrom,
         toPhone: phone,
         contentSid,
-        contentVariables: {
-          '1': patientName,
-          '2': doctorName,
-          '3': shortPdfLink,
-          '4': followUpText,
-        },
+        contentVariables,
         statusCallback: statusCallback || undefined,
       })
     : { ok: false, status: 0, json: {}, text: 'No content template configured' };
+
+  if (twilioResult.ok && pdfUrl) {
+    await sendTwilioWhatsApp({
+      accountSid: twilioSid,
+      authToken: twilioToken,
+      from: twilioFrom,
+      toPhone: phone,
+      body: `Prescription attachment for ${patientName}.`,
+      mediaUrl: pdfUrl,
+      statusCallback: statusCallback || undefined,
+    });
+  }
 
   // 2) Fallback: attach PDF directly when template fails (works inside 24h session window)
   if (!twilioResult.ok) {
@@ -366,14 +515,38 @@ Deno.serve(async (req) => {
 
   await supabase.from('prescriptions').update({ delivery_status: 'sent' }).eq('id', prescription.id);
 
+  const scheduleRows = courseDays >= 3
+    ? buildJourneyScheduleRows({
+        clinicId: prescription.clinic_id,
+        patientId: prescription.patient_id,
+        prescriptionId: prescription.id,
+        medicineName: primaryMedicineName,
+        courseDays,
+        courseStartDate,
+      })
+    : buildStandaloneScheduleRows({
+        clinicId: prescription.clinic_id,
+        patientId: prescription.patient_id,
+        prescriptionId: prescription.id,
+        medicines,
+        courseStartDate,
+      });
+
+  if (scheduleRows.length > 0) {
+    await admin.from('medicine_reminder_schedule').upsert(scheduleRows, {
+      onConflict: 'prescription_id,message_type,scheduled_date',
+      ignoreDuplicates: true,
+    });
+  }
+
   await admin.from('message_logs').insert({
     clinic_id: prescription.clinic_id,
     patient_id: prescription.patient_id,
     patient_name: patientName,
     phone,
     workflow_name: 'prescription-delivery-edge',
-    message_type: 'prescription_pdf',
-    message_sent: messageBody,
+    message_type: messageType,
+    message_sent: `${messageBody} ${medicineSummary}`.slice(0, 2000),
     sent_at: new Date().toISOString(),
     scheduled_date: scheduledDate,
     delivery_status: 'sent',

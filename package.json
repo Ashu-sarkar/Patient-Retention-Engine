@@ -19,6 +19,7 @@
     "test:production-e2e": "node tests/run-production-e2e.js",
     "test:dashboard": "node tests/doctor-dashboard-static.test.js",
     "test:wf6-button-confirmation": "node tests/wf6-button-confirmation-static.test.js",
+    "test:medicine-schedule": "node tests/medicine-schedule-builder.test.js",
     "test:admin-console": "node tests/admin-console-static.test.js",
     "test:production-cleanup-e2e": "python3 scripts/cleanup-and-production-e2e.py",
     "deploy:workflows:production": "python3 scripts/deploy-workflows-production.py",

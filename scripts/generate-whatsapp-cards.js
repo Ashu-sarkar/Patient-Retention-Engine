@@ -24,6 +24,7 @@ function sampleFor(name) {
     patient_name: 'Priya',
     doctor_name: 'Dr. Mehta',
     visit_detail: 'Your visit date is 2026-05-26.',
+    course_days: '7',
     clinic_name: 'Mehta Clinic',
     hospital_name: 'City Hospital',
     facility_type: 'General Hospital',

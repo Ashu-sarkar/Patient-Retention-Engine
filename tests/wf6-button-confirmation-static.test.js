@@ -51,16 +51,16 @@ function classifyInbound({ body = '', buttonText = '', buttonPayload = '' } = {}
 }
 
 const templates = JSON.parse(fs.readFileSync(path.join(root, 'message-templates', 'templates.json'), 'utf8'));
-const confirmationTemplate = templates.templates.find((t) => t.id === 'followup_confirmation');
-assert(confirmationTemplate, 'followup_confirmation template must exist');
-assert(Array.isArray(confirmationTemplate.actions) && confirmationTemplate.actions.length === 2, 'followup_confirmation must define two Quick Reply actions');
-assert(confirmationTemplate.twilio_content_env === 'TWILIO_CONTENT_FOLLOWUP_CONFIRMATION', 'followup_confirmation env var');
+const confirmationTemplate = templates.templates.find((t) => t.id === 'followup_reminder_advance');
+assert(confirmationTemplate, 'followup_reminder_advance template must exist');
+assert(Array.isArray(confirmationTemplate.actions) && confirmationTemplate.actions.length === 2, 'followup_reminder_advance must define two Quick Reply actions');
+assert(confirmationTemplate.twilio_content_env === 'TWILIO_CONTENT_FOLLOWUP_REMINDER_ADVANCE', 'followup_reminder_advance env var');
 
 const wf1 = loadWorkflow('workflow-1-followup-reminder.json');
 const wf2 = loadWorkflow('workflow-2-sameday-reminder.json');
 const wf6 = loadWorkflow('workflow-6-feedback-listener.json');
 
-includes(nodeCode(wf1, 'Filter Tomorrow Follow-ups'), 'TWILIO_CONTENT_FOLLOWUP_CONFIRMATION', 'WF1 prefers confirmation template SID');
+includes(nodeCode(wf1, 'Filter Tomorrow Follow-ups'), 'TWILIO_CONTENT_FOLLOWUP_REMINDER_ADVANCE', 'WF1 uses v2 advance reminder template');
 includes(nodeCode(wf2, "Filter Today's Appointments"), "response_status === 'confirmed'", 'WF2 skips confirmed patients');
 
 const parseCode = nodeCode(wf6, 'Parse and Classify Message');
@@ -71,7 +71,8 @@ includes(parseCode, '_button_triggered', 'WF6 parse exposes button flag');
 const prepareCode = nodeCode(wf6, 'Prepare Reply');
 includes(prepareCode, '_should_create_queue_entry', 'WF6 prepare sets queue flag');
 includes(prepareCode, '_follow_up_date', 'WF6 prepare passes follow_up_date');
-includes(prepareCode, "We've added you to the queue", 'WF6 confirmed auto-reply mentions queue');
+includes(prepareCode, 'TWILIO_CONTENT_FOLLOWUP_BOOKING_CONFIRMED', 'WF6 prepare uses booking confirmed template');
+includes(prepareCode, '_content_sid', 'WF6 prepare exposes content template SID');
 
 const wf6NodeNames = wf6.nodes.map((n) => n.name);
 for (const required of [
@@ -95,9 +96,9 @@ includes(fs.readFileSync(path.join(root, 'schemas', 'preflight-migrations.sql'),
 includes(fs.readFileSync(path.join(root, 'schemas', 'supabase-schema.sql'), 'utf8'),
   'idx_patient_visits_patient_date_active', 'reference schema defines active visit unique index');
 includes(fs.readFileSync(path.join(root, '.env.example'), 'utf8'),
-  'TWILIO_CONTENT_FOLLOWUP_CONFIRMATION', '.env.example documents confirmation template SID');
+  'TWILIO_CONTENT_FOLLOWUP_REMINDER_ADVANCE', '.env.example documents advance reminder template SID');
 includes(fs.readFileSync(path.join(root, 'docker-compose.yml'), 'utf8'),
-  'TWILIO_CONTENT_FOLLOWUP_CONFIRMATION', 'docker-compose passes confirmation template SID');
+  'TWILIO_CONTENT_CLINIC_PATIENT_WELCOME', 'docker-compose passes v2 welcome template SID');
 
 assert(classifyInbound({ buttonText: 'Confirm Appointment', buttonPayload: 'confirm_appointment' }) === 'confirmed', 'button confirm payload');
 assert(classifyInbound({ buttonText: 'Reschedule', buttonPayload: 'reschedule' }) === 'cancelled', 'button reschedule payload');

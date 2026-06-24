@@ -69,6 +69,16 @@ for (const key of required) {
 }
 
 const contentSidKeys = [
+  'TWILIO_CONTENT_FOLLOWUP_REMINDER_ADVANCE',
+  'TWILIO_CONTENT_FOLLOWUP_REMINDER_DAY_OF',
+  'TWILIO_CONTENT_PATIENT_HEALTH_CHECK',
+  'TWILIO_CONTENT_MISSED_FOLLOWUP_RECOVERY_1',
+  'TWILIO_CONTENT_MISSED_FOLLOWUP_RECOVERY_2',
+  'TWILIO_CONTENT_FOLLOWUP_BOOKING_CONFIRMED',
+  'TWILIO_CONTENT_FOLLOWUP_RESCHEDULED_CONFIRMED',
+];
+
+const legacyContentSidKeys = [
   'TWILIO_CONTENT_WELCOME',
   'TWILIO_CONTENT_FOLLOW_UP_REMINDER',
   'TWILIO_CONTENT_FOLLOWUP_CONFIRMATION',
@@ -80,21 +90,35 @@ const contentSidKeys = [
 ];
 
 const simplifiedContentSidKeys = [
+  'TWILIO_CONTENT_CLINIC_PATIENT_WELCOME',
   'TWILIO_CONTENT_PATIENT_ONBOARDING',
   'TWILIO_CONTENT_HOSPITAL_ONBOARDING',
   'TWILIO_CONTENT_PATIENT_REMINDER',
   'TWILIO_CONTENT_MEDICINE_REMINDER',
   'TWILIO_CONTENT_PRESCRIPTION_DELIVERY',
+  'TWILIO_CONTENT_PRESCRIPTION_WITH_FOLLOWUP',
+  'TWILIO_CONTENT_PRESCRIPTION_JOURNEY_START',
+  'TWILIO_CONTENT_MEDICINE_JOURNEY_DAY1_MORNING',
+  'TWILIO_CONTENT_MEDICINE_JOURNEY_DAY1_EVENING',
+  'TWILIO_CONTENT_MEDICINE_JOURNEY_MIDPOINT',
+  'TWILIO_CONTENT_MEDICINE_JOURNEY_DAILY',
+  'TWILIO_CONTENT_MEDICINE_JOURNEY_LAST_DAY',
+  'TWILIO_CONTENT_MEDICINE_JOURNEY_COMPLETE',
+  'TWILIO_CONTENT_MEDICINE_REMINDER_MORNING',
+  'TWILIO_CONTENT_MEDICINE_REMINDER_AFTERNOON',
+  'TWILIO_CONTENT_MEDICINE_REMINDER_NIGHT',
 ];
 
-const hasSimplifiedTemplateSet = simplifiedContentSidKeys.some(key => !isMissing(env[key]));
 const hasPatientOnboardingTemplate =
+  !isMissing(env.TWILIO_CONTENT_CLINIC_PATIENT_WELCOME) ||
   !isMissing(env.TWILIO_CONTENT_PATIENT_ONBOARDING) ||
   !isMissing(env.TWILIO_CONTENT_WELCOME);
 
 if (!hasPatientOnboardingTemplate) {
-  errors.push('TWILIO_CONTENT_PATIENT_ONBOARDING or TWILIO_CONTENT_WELCOME is required for patient onboarding WhatsApp templates.');
+  errors.push('TWILIO_CONTENT_CLINIC_PATIENT_WELCOME, TWILIO_CONTENT_PATIENT_ONBOARDING, or TWILIO_CONTENT_WELCOME is required for patient onboarding WhatsApp templates.');
 }
+
+const hasSimplifiedTemplateSet = simplifiedContentSidKeys.some(key => !isMissing(env[key]));
 
 for (const key of contentSidKeys) {
   if (isMissing(env[key])) {
@@ -103,6 +127,12 @@ for (const key of contentSidKeys) {
     }
   } else if (!/^HX[a-f0-9]{32}$/i.test(env[key])) {
     warnings.push(`${key} does not look like a Twilio Content SID (expected HX...).`);
+  }
+}
+
+for (const key of legacyContentSidKeys) {
+  if (!isMissing(env[key])) {
+    warnings.push(`${key} is a legacy v1 template SID. Prefer the v2 TWILIO_CONTENT_* keys documented in docs/whatsapp-templates-v2-logic.md.`);
   }
 }
 

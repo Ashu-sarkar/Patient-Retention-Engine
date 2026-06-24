@@ -1,0 +1,118 @@
+{
+  "name": "WF14 — Medicine Journey Reminders",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8,13,20 * * *"
+            }
+          ]
+        }
+      },
+      "id": "14141414-1414-1414-1414-000000000002",
+      "name": "Medicine Slots Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 380]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT s.*, p.name AS patient_name, p.phone, p.doctor_name, p.clinic_name FROM public.medicine_reminder_schedule s JOIN public.patients p ON p.id = s.patient_id WHERE s.scheduled_date = CURRENT_DATE AND s.status = 'pending' AND COALESCE(p.is_demo, FALSE) = FALSE",
+        "options": {}
+      },
+      "id": "14141414-1414-1414-1414-000000000003",
+      "name": "Read Due Medicine Reminders",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [460, 380],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_SUPABASE_POSTGRES",
+          "name": "Supabase DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const tz = $env.TIMEZONE || 'Asia/Kolkata';\nconst hour = parseInt(new Date().toLocaleString('en-GB', { timeZone: tz, hour: '2-digit', hour12: false }), 10);\nlet slot = 'morning';\nif (hour >= 12 && hour < 17) slot = 'afternoon';\nelse if (hour >= 17) slot = 'evening';\nconst todayStr = new Date().toLocaleDateString('en-CA', { timeZone: tz });\nconst items = $input.all().filter(item => item.json.id && item.json.send_slot === slot);\nif (!items.length) return [{ json: { _skip: true, reason: `No ${slot} medicine reminders due`, slot, todayStr } }];\nfunction envSid(key) { return ($env[key] || '').trim(); }\nfunction varsFor(row) {\n  const patient = row.patient_name || 'there';\n  const doctor = row.doctor_name || $env.DEFAULT_DOCTOR_NAME || 'your doctor';\n  const clinic = row.clinic_name || $env.DEFAULT_CLINIC_NAME || 'our clinic';\n  const medicine = row.medicine_name || 'your medicine';\n  const courseDays = String(row.course_days || '');\n  const template = row.template_id || '';\n  if (template.includes('day1_morning') || template.includes('reminder_night')) return { '1': patient, '2': medicine };\n  if (template.includes('last_day')) return { '1': patient, '2': courseDays, '3': doctor, '4': medicine };\n  if (template.includes('day1_evening') || template.includes('reminder_morning') || template.includes('journey_daily')) return { '1': patient, '2': medicine, '3': doctor };\n  if (template.includes('midpoint')) return { '1': patient, '2': clinic, '3': courseDays };\n  if (template.includes('complete')) return { '1': patient, '2': courseDays, '3': doctor };\n  if (template.includes('reminder_afternoon')) return { '1': patient, '2': medicine, '3': clinic };\n  return { '1': patient, '2': medicine };\n}\nconst mapped = items.map(item => {\n  const row = item.json;\n  const sid = envSid(row.content_env_key);\n  const phone = row.phone;\n  if (!sid || !phone || !/^\\+[1-9]\\d{6,14}$/.test(phone)) return { json: { ...row, _skip: true, reason: 'Missing template SID or phone' } };\n  return { json: { ...row, _skip: false, _workflow: 'workflow-14-medicine-journey', _message_type: row.message_type, _scheduled_date: todayStr, _to_phone: 'whatsapp:' + phone, _content_sid: sid, _content_variables: JSON.stringify(varsFor(row)), _schedule_id: row.id } };\n}).filter(item => !item.json._skip);\nif (!mapped.length) return [{ json: { _skip: true, reason: `No valid ${slot} medicine reminders due`, slot, todayStr } }];\nreturn mapped;"
+      },
+      "id": "14141414-1414-1414-1414-000000000004",
+      "name": "Prepare Medicine Sends",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 380]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [{ "id": "skip-wf14", "leftValue": "={{ $json._skip }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true" } }],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "14141414-1414-1414-1414-000000000005",
+      "name": "Skip if Nothing Due",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 380]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.twilio.com/2010-04-01/Accounts/' + $env.TWILIO_ACCOUNT_SID + '/Messages.json' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "From", "value": "={{ $env.TWILIO_WHATSAPP_FROM }}" },
+            { "name": "To", "value": "={{ $json._to_phone }}" },
+            { "name": "ContentSid", "value": "={{ $json._content_sid }}" },
+            { "name": "ContentVariables", "value": "={{ $json._content_variables }}" },
+            { "name": "StatusCallback", "value": "={{ $env.TWILIO_STATUS_CALLBACK_URL || \"\" }}" }
+          ]
+        },
+        "options": { "retry": { "maxTries": 2, "waitBetweenTries": 15000 } }
+      },
+      "id": "14141414-1414-1414-1414-000000000006",
+      "name": "Send Medicine Reminder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 280],
+      "credentials": { "httpBasicAuth": { "id": "REPLACE_TWILIO_BASIC_AUTH", "name": "Twilio Basic Auth" } },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=UPDATE public.medicine_reminder_schedule SET status = 'sent', sent_at = NOW(), updated_at = NOW() WHERE id = '{{ $('Prepare Medicine Sends').item.json._schedule_id }}'",
+        "options": {}
+      },
+      "id": "14141414-1414-1414-1414-000000000007",
+      "name": "Mark Schedule Sent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1340, 280],
+      "credentials": { "postgres": { "id": "REPLACE_SUPABASE_POSTGRES", "name": "Supabase DB" } }
+    }
+  ],
+  "connections": {
+    "Medicine Slots Trigger": { "main": [[{ "node": "Read Due Medicine Reminders", "type": "main", "index": 0 }]] },
+    "Read Due Medicine Reminders": { "main": [[{ "node": "Prepare Medicine Sends", "type": "main", "index": 0 }]] },
+    "Prepare Medicine Sends": { "main": [[{ "node": "Skip if Nothing Due", "type": "main", "index": 0 }]] },
+    "Skip if Nothing Due": { "main": [[], [{ "node": "Send Medicine Reminder", "type": "main", "index": 0 }]] },
+    "Send Medicine Reminder": { "main": [[{ "node": "Mark Schedule Sent", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1", "timezone": "Asia/Kolkata", "errorWorkflow": "workflow-8-error-handler" },
+  "versionId": "14141414-1414-1414-1414-141414141414",
+  "id": "wf14-medicine-journey",
+  "meta": { "templateCredsSetupCompleted": false },
+  "tags": [{ "id": "tag-patient-retention", "name": "patient-retention" }]
+}
