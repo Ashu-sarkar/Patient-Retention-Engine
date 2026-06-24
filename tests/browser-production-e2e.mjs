@@ -7,9 +7,36 @@
  *   node tests/browser-production-e2e.mjs
  *
  * Env: HEADED=1 to show browser.
+ * Optional: SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY to auto-seed clinic QR token after hospital boarding.
  */
 
 import { chromium } from 'playwright';
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+function parseEnv(filePath) {
+  try {
+    return Object.fromEntries(
+      fs.readFileSync(filePath, 'utf8')
+        .split('\n')
+        .filter(l => l.trim() && !l.startsWith('#') && l.includes('='))
+        .map(l => {
+          const i = l.indexOf('=');
+          return [l.slice(0, i).trim(), l.slice(i + 1).trim()];
+        })
+    );
+  } catch {
+    return {};
+  }
+}
+
+const env = { ...parseEnv(path.join(__dirname, '..', '.env')), ...process.env };
+const SB_URL = env.SUPABASE_URL || '';
+const SB_KEY = env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 const PHONE = process.env.E2E_PHONE_RAW || '9685722570';
 const HOSPITAL = process.env.E2E_HOSPITAL || 'VaitalCare E2E Hospital';
@@ -20,6 +47,58 @@ const DASHBOARD_URL = process.env.DOCTOR_DASHBOARD_URL || '';
 const DOCTOR_USERNAME = process.env.E2E_DOCTOR_USERNAME || 'browser.doctor';
 const DOCTOR_PASSWORD = process.env.E2E_DOCTOR_PASSWORD || 'BrowserPass123';
 const HEADED = process.env.HEADED === '1' || process.env.HEADED === 'true';
+
+function newIntakeToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+function tokenHash(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+async function sbGet(table, qs = '') {
+  const res = await fetch(`${SB_URL}/rest/v1/${table}?${qs}`, {
+    headers: {
+      apikey: SB_KEY,
+      Authorization: `Bearer ${SB_KEY}`,
+    },
+  });
+  return res.json().catch(() => []);
+}
+
+async function sbPost(table, body, qs = '') {
+  const res = await fetch(`${SB_URL}/rest/v1/${table}${qs ? `?${qs}` : ''}`, {
+    method: 'POST',
+    headers: {
+      apikey: SB_KEY,
+      Authorization: `Bearer ${SB_KEY}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation',
+    },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`${table} insert failed (${res.status}): ${JSON.stringify(json).slice(0, 200)}`);
+  return json;
+}
+
+async function seedIntakeTokenForHospital(hospitalName) {
+  if (!SB_URL || !SB_KEY) return process.env.E2E_INTAKE_TOKEN || '';
+  const rows = await sbGet(
+    'hospital_boarding',
+    `hospital_name=eq.${encodeURIComponent(hospitalName)}&select=clinic_id&order=created_at.desc&limit=1`
+  );
+  const clinicId = rows[0]?.clinic_id;
+  if (!clinicId) return '';
+  const token = newIntakeToken();
+  await sbPost('clinic_intake_tokens', {
+    clinic_id: clinicId,
+    token_hash: tokenHash(token),
+    label: 'Browser E2E QR',
+    status: 'active',
+  });
+  return token;
+}
 
 function todayISO() {
   return new Date().toISOString().split('T')[0];
@@ -90,38 +169,44 @@ async function main() {
     console.log(hospOk ? '✅ Hospital form success screen' : '❌ Hospital form did not show success');
 
     console.log('\n── Patient form (production) ──');
-    await page.goto(`${PATIENT_URL}?hospital=${encodeURIComponent(HOSPITAL)}`, {
-      waitUntil: 'networkidle',
-      timeout: 60000,
-    });
-    await page.waitForTimeout(2000);
-    await fillIfPresent(page, 'patient_name', 'Browser E2E Patient');
-    await fillIfPresent(page, 'phone_number', PHONE);
-    await fillIfPresent(page, 'dob', '1992-05-20');
-    await selectIfPresent(page, 'sex', 'Male');
-    const hSel = page.locator('#hospital_name');
-    if (await hSel.count()) {
-      const opts = await hSel.locator('option').allTextContents();
-      const match = opts.find(o => o.toLowerCase().includes(HOSPITAL.toLowerCase().split(' ')[0]));
-      if (match) await hSel.selectOption({ label: match });
-      else if (opts.length > 1) await hSel.selectOption({ index: 1 });
+    const browserHospital = `${HOSPITAL} Browser`;
+    const intakeToken = await seedIntakeTokenForHospital(browserHospital);
+    if (!intakeToken) {
+      console.log('❌ Patient form skipped — set SUPABASE_* in .env or E2E_INTAKE_TOKEN for clinic QR URL');
+      results.push(['patient-form', 'skip']);
+    } else {
+      const patientUrl = `${PATIENT_URL.replace(/\/$/, '')}/#/i/${intakeToken}`;
+      await page.goto(patientUrl, {
+        waitUntil: 'networkidle',
+        timeout: 60000,
+      });
+      await page.waitForTimeout(2000);
+      await fillIfPresent(page, 'patient_name', 'Browser E2E Patient');
+      await fillIfPresent(page, 'phone_number', PHONE);
+      await fillIfPresent(page, 'dob', '1992-05-20');
+      await selectIfPresent(page, 'sex', 'Male');
+      const dSel = page.locator('#doctor_name');
+      if (await dSel.count()) {
+        await page.waitForFunction(() => {
+          const sel = document.getElementById('doctor_name');
+          return sel && !sel.disabled && sel.options.length > 1;
+        }, { timeout: 15000 }).catch(() => {});
+      }
+      if (await dSel.count() && !(await dSel.isDisabled())) {
+        const dopts = await dSel.locator('option').allTextContents();
+        const dmatch = dopts.find(o => o.includes('Ashu') || o.includes('E2E') || o.includes('Browser'));
+        if (dmatch) await dSel.selectOption({ label: dmatch });
+        else if (dopts.length > 1) await dSel.selectOption({ index: 1 });
+      }
+      await fillIfPresent(page, 'visit_date', todayISO());
+      await selectIfPresent(page, 'follow_up_required', 'No');
+      await page.locator('#submit, button[type="submit"]').first().click();
+      await page.waitForSelector('.success-screen.show, #success-screen.show', { timeout: 45000 }).catch(() => {});
+      const codeVisible = await page.locator('#js-code-value, .code-value').count();
+      const patOk = await page.locator('.success-screen.show, #success-screen.show').count() > 0;
+      results.push(['patient-form', patOk ? 'pass' : 'fail']);
+      console.log(patOk ? `✅ Patient form success${codeVisible ? ' (patient code shown)' : ''}` : '❌ Patient form failed');
     }
-    await page.waitForTimeout(500);
-    const dSel = page.locator('#doctor_name');
-    if (await dSel.count() && !(await dSel.isDisabled())) {
-      const dopts = await dSel.locator('option').allTextContents();
-      const dmatch = dopts.find(o => o.includes('Ashu') || o.includes('E2E') || o.includes('Sharma'));
-      if (dmatch) await dSel.selectOption({ label: dmatch });
-      else if (dopts.length > 1) await dSel.selectOption({ index: 1 });
-    }
-    await fillIfPresent(page, 'visit_date', todayISO());
-    await selectIfPresent(page, 'follow_up_required', 'No');
-    await page.locator('#submit, button[type="submit"]').first().click();
-    await page.waitForSelector('.success-screen.show, #success-screen.show', { timeout: 45000 }).catch(() => {});
-    const codeVisible = await page.locator('#js-code-value, .code-value').count();
-    const patOk = await page.locator('.success-screen.show, #success-screen.show').count() > 0;
-    results.push(['patient-form', patOk ? 'pass' : 'fail']);
-    console.log(patOk ? `✅ Patient form success${codeVisible ? ' (patient code shown)' : ''}` : '❌ Patient form failed');
 
     if (DASHBOARD_URL) {
       console.log('\n── Doctor dashboard (username/password) ──');

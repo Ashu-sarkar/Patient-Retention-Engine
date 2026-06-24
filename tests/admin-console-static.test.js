@@ -103,8 +103,13 @@ for (const [file, label] of [
   includes(wf, 'COALESCE(p.is_demo, FALSE) = FALSE', `${label} excludes demo patients from messaging`);
 }
 
-// ── Patient form supports path-based intake token in addition to hash ───────
+// ── Patient form is token-only (no public clinic directory dropdown) ─────────
 includes(patientForm, "location.pathname || '').match(/\\/i\\/([a-f0-9]{64})", 'patient form parses path-based token');
+includes(patientForm, 'resolve_public_intake_token', 'patient form resolves clinic from intake token');
+includes(patientForm, "clinic_mode:        'clinic_qr'", 'patient form submits clinic_qr mode');
+assert(!patientForm.includes('get_public_hospital_list'), 'patient form must not load public hospital directory');
+assert(!patientForm.includes('shared_qr'), 'patient form must not support shared_qr mode');
+assert(!patientForm.includes('id="hospital_name"'), 'patient form must not expose hospital dropdown');
 
 // ── Hospital onboarding supports multiple doctors + secure password handling ──
 includes(hospitalForm, 'id="doctor_count"', 'hospital form collects doctor count');

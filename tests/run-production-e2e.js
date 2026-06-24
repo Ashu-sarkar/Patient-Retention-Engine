@@ -369,13 +369,15 @@ async function main() {
     sex: 'Male',
     hospital_name: HOSPITAL,
     doctor_name: DOCTOR,
-    clinic_mode: 'shared_qr',
+    intake_token: intakeToken,
+    clinic_mode: 'clinic_qr',
     visit_date: today(0),
     follow_up_required: 'No',
     follow_up_date: '',
   };
 
   await test('3.1  Valid intake (URL-encoded like patient form)', async () => {
+    assert(intakeToken, 'intake token missing — run test 2.4 first');
     const patBefore = await getPatient();
     patientId = patBefore?.id;
     const { status, json } = curlForm('patient-form-intake', baseIntake);
@@ -450,19 +452,16 @@ async function main() {
     assert(n >= 1, `expected ≥1 waiting visit for ${HOSPITAL}/${DOCTOR} today, got ${n}`);
   });
 
-  await test('4.3  get_public_hospital_list includes E2E hospital', async () => {
+  await test('4.3  resolve_public_intake_token returns doctors for seeded QR', async () => {
     const anon = SB_ANON_KEY;
     assert(anon, 'SUPABASE_ANON_KEY required');
-    const res = await fetch(`${SB_URL}/rest/v1/rpc/get_public_hospital_list`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: anon },
-    });
-    const list = await res.json();
-    assert(Array.isArray(list), `unexpected RPC response: ${JSON.stringify(list)}`);
-    const names = list.map(r => r.hospital_name || r.name || r.clinic_name).filter(Boolean);
-    const found = names.some(n => String(n).toLowerCase() === HOSPITAL.toLowerCase())
-      || list.some(r => Object.values(r).some(v => String(v).toLowerCase() === HOSPITAL.toLowerCase()));
-    assert(found, `hospital not in public list. Sample: ${JSON.stringify(list.slice(0, 5))}`);
+    assert(intakeToken, 'intake token missing');
+    const res = await sbRpc('resolve_public_intake_token', { p_token: intakeToken }, anon);
+    assert(res.ok, `resolve failed (${res.status}): ${JSON.stringify(res.json)}`);
+    assert(Array.isArray(res.json) && res.json.length > 0, `no doctors for token: ${JSON.stringify(res.json)}`);
+    const doctors = res.json.map(r => r.doctor_name).filter(Boolean);
+    assert(doctors.some(d => String(d).includes('Ashu') || String(d) === DOCTOR),
+      `expected ${DOCTOR} in token doctors, got ${JSON.stringify(doctors)}`);
   });
 
   section('Summary');

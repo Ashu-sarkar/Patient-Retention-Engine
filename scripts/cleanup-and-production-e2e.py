@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import secrets
 import ssl
 import sys
 import urllib.error
@@ -74,6 +75,32 @@ def column_exists(cur, table: str, column: str) -> bool:
         (table, column),
     )
     return cur.fetchone() is not None
+
+
+def seed_intake_token(cur, clinic_id: str, label: str = "Cleanup E2E QR") -> str:
+    token = secrets.token_hex(32)
+    cur.execute(
+        """
+        INSERT INTO public.clinic_intake_tokens (clinic_id, token_hash, label, status)
+        VALUES (%s::uuid, public.hash_intake_token(%s), %s, 'active')
+        """,
+        (clinic_id, token, label),
+    )
+    return token
+
+
+def get_boarding_clinic_id(cur, hospital: str) -> str | None:
+    cur.execute(
+        """
+        SELECT clinic_id::text
+        FROM public.hospital_boarding
+        WHERE lower(trim(hospital_name)) = lower(trim(%s))
+        ORDER BY created_at DESC LIMIT 1
+        """,
+        (hospital,),
+    )
+    row = cur.fetchone()
+    return row[0] if row else None
 
 
 def cleanup_data(cur) -> None:
@@ -243,8 +270,10 @@ def main() -> int:
         "hospital_name": HOSPITAL,
         "doctor_name": DOCTOR,
         "visit_date": today(0),
-        "clinic_mode": "shared_qr",
+        "clinic_mode": "clinic_qr",
+        "intake_token": "",
     }
+    intake_token = {"value": ""}
 
     print("\n── §1 Infrastructure ──")
     def infra_healthz() -> None:
@@ -324,6 +353,17 @@ def main() -> int:
     test("2.2 Boarding row in Supabase", hospital_row)
     test("2.3 Invalid facility_type → 400", hospital_invalid)
 
+    def seed_qr_token() -> None:
+        with db_connect(env) as conn, conn.cursor() as cur:
+            clinic_id = get_boarding_clinic_id(cur, HOSPITAL)
+            assert_ok(clinic_id, "clinic_id missing after hospital boarding")
+            token = seed_intake_token(cur, clinic_id)
+            conn.commit()
+        intake_token["value"] = token
+        intake["intake_token"] = token
+
+    test("2.4 Seed clinic QR token for patient intake", seed_qr_token)
+
     print("\n── §3 Patient registration (WF11) ──")
     visit_id = {"value": None}
 
@@ -392,7 +432,7 @@ def main() -> int:
             row = cur.fetchone()
         assert_ok(row and "Updated" in row[0], f"name not updated: {row}")
 
-    test("3.1 Valid patient intake (shared_qr)", patient_happy)
+    test("3.1 Valid patient intake (clinic QR token)", patient_happy)
     test("3.2 Patient + visit rows in Supabase", patient_db)
     test("3.3 Future visit_date → 400", patient_future_date)
     test("3.4 Invalid phone → 400", patient_bad_phone)

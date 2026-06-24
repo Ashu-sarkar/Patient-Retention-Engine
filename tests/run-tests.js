@@ -347,6 +347,20 @@ async function getHospitalBoarding(hospitalName) {
   return rows[0] || null;
 }
 
+function newIntakeToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+async function seedClinicIntakeToken(clinicId, label = 'Test QR') {
+  const token = newIntakeToken();
+  await pgQuery(
+    `INSERT INTO public.clinic_intake_tokens (clinic_id, token_hash, label, status)
+     VALUES ($1::uuid, public.hash_intake_token($2), $3, 'active')`,
+    [clinicId, token, label]
+  );
+  return token;
+}
+
 async function getLatestVisitByPatient(patientId) {
   const rows = await pgQuery(
     'SELECT * FROM public.patient_visits WHERE patient_id = $1::uuid ORDER BY checked_in_at DESC LIMIT 1',
@@ -670,7 +684,16 @@ async function main() {
   // ── §3  WF11 — QR Form Intake ────────────────────────────────────────────
   section('§3  WF11 — QR Form Intake  (POST /webhook/patient-form-intake)');
 
-  // Base valid payload — must match a boarded hospital/doctor from §2 (shared_qr mode)
+  const primaryBoarding = await getHospitalBoarding(HF.primaryHospital);
+  assert(primaryBoarding?.clinic_id, 'Primary clinic_id missing — run §2 hospital boarding first');
+  const primaryIntakeToken = await seedClinicIntakeToken(primaryBoarding.clinic_id, 'Test primary QR');
+
+  const secondaryBoarding = await getHospitalBoarding(HF.secondaryHospital);
+  const secondaryIntakeToken = secondaryBoarding?.clinic_id
+    ? await seedClinicIntakeToken(secondaryBoarding.clinic_id, 'Test secondary QR')
+    : '';
+
+  // Base valid payload — clinic resolved from intake_token (QR flow)
   const BASE = {
     patient_name     : 'Test Patient Alpha',
     phone_number     : TP.wf11_new,          // 10 digits, no +91
@@ -678,6 +701,8 @@ async function main() {
     sex              : 'Male',
     hospital_name    : HF.primaryHospital,
     doctor_name      : HF.doctor,
+    intake_token     : primaryIntakeToken,
+    clinic_mode      : 'clinic_qr',
     visit_date       : date(-1),             // yesterday
   };
 
@@ -718,11 +743,11 @@ async function main() {
       'No system_log from WF11 — check Supabase credentials are set in n8n');
   });
 
-  await test('2.5  Validation: unknown hospital/doctor → 400 with clinic resolution error', async () => {
+  await test('2.5  Validation: invalid token or unknown doctor → 400 with clinic resolution error', async () => {
     const { status, json } = await wh('patient-form-intake', 'POST', {
       ...BASE,
       phone_number: '9000099990',
-      hospital_name: 'Nonexistent Hospital XYZ',
+      intake_token: '0'.repeat(64),
       doctor_name: 'Dr Nobody',
     });
     assert(status === 400, `Expected 400, got ${status}`);
@@ -783,6 +808,7 @@ async function main() {
   });
 
   await test('2.11b Same phone can register independently at two clinics', async () => {
+    assert(secondaryIntakeToken, 'Secondary intake token missing — run §2.2b first');
     const phone = `+91${TP.wf11_multi}`;
     await pgQuery('DELETE FROM public.patients WHERE phone = $1', [phone]);
 
@@ -790,13 +816,16 @@ async function main() {
       ...BASE,
       patient_name: 'Multi Clinic Alpha Patient',
       phone_number: TP.wf11_multi,
+      intake_token: primaryIntakeToken,
       hospital_name: HF.primaryHospital,
     };
     const beta = {
       ...BASE,
       patient_name: 'Multi Clinic Beta Patient',
       phone_number: TP.wf11_multi,
+      intake_token: secondaryIntakeToken,
       hospital_name: HF.secondaryHospital,
+      doctor_name: secondaryBoarding?.doctor_name || HF.doctor,
     };
 
     const first = await wh('patient-form-intake', 'POST', alpha);
@@ -1487,6 +1516,8 @@ async function main() {
       sex               : 'Female',
       hospital_name     : HF.primaryHospital,
       doctor_name       : HF.doctor,
+      intake_token      : primaryIntakeToken,
+      clinic_mode       : 'clinic_qr',
       visit_date        : date(-1),
     });
     assert(status === 200, `Form submit failed: ${status} ${JSON.stringify(json)}`);
@@ -1544,6 +1575,8 @@ async function main() {
       phone_number      : TP.e2e,
       hospital_name     : HF.primaryHospital,
       doctor_name       : HF.doctor,
+      intake_token      : primaryIntakeToken,
+      clinic_mode       : 'clinic_qr',
       visit_date        : date(0),
     });
     assert(status === 200, `Re-reg failed: ${status} ${JSON.stringify(json)}`);

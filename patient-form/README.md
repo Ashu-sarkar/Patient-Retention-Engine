@@ -1,6 +1,8 @@
-# Patient Registration Form — QR Code Intake
+# Patient Registration Form — Clinic QR Intake
 
-A zero-dependency, mobile-first HTML form that clinic patients fill by scanning a QR code. Data is sent directly to an n8n webhook (WF11), which upserts the patient into Supabase by WhatsApp phone number, creates a `patient_visits` waiting-room row, and triggers the welcome WhatsApp message. Clinical context is captured later in the doctor dashboard, not on the patient intake form.
+A zero-dependency, mobile-first HTML form that clinic patients fill by scanning a **per-clinic QR code**. Each QR encodes an opaque intake token; the form resolves that token to the clinic and its doctors, then posts patient details to n8n (WF11).
+
+Data is sent to WF11, which upserts the patient into Supabase by WhatsApp phone number, creates a `patient_visits` waiting-room row, and triggers the welcome WhatsApp message. Clinical context is captured later in the doctor dashboard, not on the patient intake form.
 
 ---
 
@@ -10,27 +12,48 @@ A zero-dependency, mobile-first HTML form that clinic patients fill by scanning 
 |-------------|-------|
 | n8n running with WF11 active | WF11 must be **activated** before deploying |
 | Public HTTPS URL for n8n | Needed for the webhook URL in `index.html` |
+| Admin console QR for each clinic | Generate per-clinic tokens from **Admin → Generate clinic QR** |
 | Vercel or Netlify account | Free tier is fine |
 
 ---
 
-## Step 1 — Configure the Form
+## How clinic routing works
 
-Open `patient-form/index.html` and update the two config blocks near the top of the `<script>` section:
+1. Platform admin onboards a clinic (hospital boarding form / WF12).
+2. Admin opens the platform console and generates a QR for that clinic.
+3. Patient scans the QR → browser opens the patient form with `#/i/<64-char-token>`.
+4. Form calls `resolve_public_intake_token` and loads doctors for that clinic only.
+5. Patient selects a doctor and submits; WF11 validates the token server-side and creates the visit.
 
-```js
-// 1. Replace with your real n8n public webhook URL
-const WEBHOOK_URL = 'https://your-n8n-domain.com/webhook/patient-form-intake';
+There is **no hospital dropdown** on the public form. Clinic identity always comes from the QR token.
 
-// 2. Replace with your real hospitals and their doctors
-const HOSPITALS = {
-  'City Hospital':    ['Dr. Sharma', 'Dr. Mehta', 'Dr. Patel', 'Dr. Divya Rai Shukla'],
-  'General Hospital': ['Dr. Kumar', 'Dr. Patel', 'Dr. Sharma'],
-  'Metro Clinic':     ['Dr. Mehta', 'Dr. Kumar'],
-};
+---
+
+## QR URL format
+
+Preferred (token stays in the URL fragment, not sent to static hosting logs):
+
+```text
+https://your-patient-form.vercel.app/#/i/<64-char-hex-token>
 ```
 
-> **Do not** add `+91` to the webhook URL or phone numbers.  
+Also supported (path rewrite via `patient-form/vercel.json`):
+
+```text
+https://your-patient-form.vercel.app/i/<64-char-hex-token>
+```
+
+Generate tokens and printable QR images from the **platform admin console** (`admin-console/index.html` → **Generate clinic QR**).
+
+---
+
+## Step 1 — Configure the form
+
+Open `patient-form/index.html` and set the webhook target in the `<script>` section (or override at runtime via `window.VAITALCARE_CONFIG` / localStorage).
+
+Production deployments use the Vercel proxy path `/api/patient-form-intake` by default.
+
+> **Do not** add `+91` to phone numbers in the form.  
 > WF11 automatically prepends `+91` before saving to Supabase.
 
 ---
@@ -40,135 +63,67 @@ const HOSPITALS = {
 ### Option A — Vercel (recommended)
 
 ```bash
-# Install Vercel CLI (one-time)
 npm install -g vercel
-
-# From the patient-form/ directory
 cd patient-form
 vercel --prod
 ```
 
-Vercel detects `index.html` and deploys as a static site. Free plan gives HTTPS automatically.
+Set the **Patient form base URL** in the admin console to this deployed URL when generating QRs.
 
-### Option B — Netlify (drag & drop — no CLI needed)
+### Option B — Netlify drag & drop
 
 1. Go to [app.netlify.com](https://app.netlify.com)
-2. Drag the `patient-form/` folder onto the **"Deploy manually"** drop zone
-3. Done — you get a `https://xxx.netlify.app` URL
-
-### Option C — Netlify CLI
-
-```bash
-npm install -g netlify-cli
-cd patient-form
-netlify deploy --prod --dir .
-```
+2. Drag the `patient-form/` folder onto **Deploy manually**
 
 ---
 
-## Step 3 — Test Before Generating the QR Code
+## Step 3 — Test with a clinic QR
 
-Open the deployed URL in your phone browser and submit a test entry:
+1. Onboard a test clinic (hospital boarding form).
+2. In the admin console, generate a QR for that clinic.
+3. Open the scan URL on your phone.
+4. Confirm the header badge shows the clinic name and the doctor dropdown lists that clinic's doctors.
+5. Submit a test patient and verify WF11 + Supabase rows.
+
+Example test values:
 
 - Patient Name: `Test Patient`
 - Phone: `9876543210`
-- Hospital: *(select any)*
-- Doctor: *(select any)*
+- Doctor: *(select from clinic list)*
 - Visit Date: *(today)*
-- Follow-up: `No`
-
-Check n8n → WF11 executions and Supabase `public.patients` plus `public.patient_visits` to confirm the patient and visit queue record were created.
 
 ---
 
-## Step 4 — Generate QR Codes
-
-Each hospital/clinic can have its own QR code that pre-fills the hospital dropdown.
-
-### URL format
-
-```
-https://your-form.vercel.app/?hospital=City+Hospital
-https://your-form.vercel.app/?hospital=General+Hospital
-https://your-form.vercel.app/?hospital=Metro+Clinic
-```
-
-The `hospital` URL param must match a key in the `HOSPITALS` config exactly (case-insensitive match is applied automatically).
-
-### Free QR Code generators
-
-| Tool | URL |
-|------|-----|
-| QR Code Generator | https://www.qr-code-generator.com |
-| QRCode Monkey | https://www.qrcodemonkey.com |
-| GoQR.me | https://goqr.me |
-
-**Recommended settings:**
-- Format: SVG or PNG 1000×1000 px
-- Error correction: **M** or **H** (for clinic print)
-- Test scan before printing
-
-### Bulk QR code for all hospitals (one QR)
-
-```
-https://your-form.vercel.app/
-```
-
-Leave out the `?hospital=` param — staff will select the hospital from the dropdown manually.
-
----
-
-## Step 5 — Activate WF11 in n8n
+## Step 4 — Activate WF11 in n8n
 
 1. Open n8n → **Workflows** → `WF11 — QR Form Intake`
-2. Set credentials on the three Postgres nodes → your Supabase connection
-3. Click **Activate** (toggle in the top-right)
-4. Copy the **Production Webhook URL** shown on the `Webhook — Form Intake` node
-5. Paste it as `WEBHOOK_URL` in `index.html` (must start with `https://`)
-6. Redeploy the form
+2. Set credentials on Postgres nodes → your Supabase connection
+3. Click **Activate**
+4. Redeploy the patient form if you changed the webhook URL
 
-> **Order matters**: Activate WF11 and WF7 **before** deploying the QR form in the clinic.
+> **Order matters**: Activate WF11 and WF7 **before** printing clinic QRs.
 
 ---
 
-## Environment Flow
+## Environment flow
 
-```
-Patient scans QR
+```text
+Patient scans clinic QR (#/i/<token>)
       │
       ▼
-index.html  (POST JSON)
-      │
-      ▼  https://n8n.your-domain.com/webhook/patient-form-intake
+index.html
+  │  resolve_public_intake_token → clinic + doctors
+  │  POST intake_token + doctor + patient fields
+      ▼
 WF11 — QR Form Intake
-      │  validates identity/routing fields
-      │  generates PAT-XXXX code
-      ├──► Supabase public.patients  (identity upsert by phone)
-      ├──► Supabase public.patient_visits  (new waiting queue row)
-      │
-      └──► WF7 — New Patient Welcome (async HTTP call)
-                  │
-                  └──► Twilio WhatsApp: welcome message to patient
+  │  validates token server-side
+  │  generates patient code
+  ├──► Supabase public.patients
+  ├──► Supabase public.patient_visits
+  └──► WF7 — welcome WhatsApp
 
 Doctor dashboard
-      │
-      └──► Updates public.patient_visits with chief complaint, symptoms duration,
-           allergies, current medicines, existing conditions, and vitals notes.
-```
-
----
-
-## URL Parameters Reference
-
-| Param | Description | Example |
-|-------|-------------|---------|
-| `hospital` | Pre-fills and locks hospital dropdown | `?hospital=City+Hospital` |
-| `clinic` | Alias for `hospital` | `?clinic=Metro+Clinic` |
-| `title` | Display label in the header badge | `?title=City+Hospital+Wing+B` |
-
-Combine them:
-```
-https://your-form.vercel.app/?hospital=City+Hospital&title=City+Hospital+%E2%80%94+Wing+B
+  └──► Updates visit clinical context after check-in
 ```
 
 ---
@@ -177,8 +132,8 @@ https://your-form.vercel.app/?hospital=City+Hospital&title=City+Hospital+%E2%80%
 
 | Problem | Fix |
 |---------|-----|
-| Form shows "Something went wrong" | Check WF11 is activated; check n8n URL in `WEBHOOK_URL`; check CORS — n8n webhook allows `*` by default |
-| Doctor dropdown stays disabled | The `hospital` URL param must exactly match a key in `HOSPITALS` (case-insensitive) |
-| `patient_code` or `visit_id` not shown on success | WF11 should return both after a successful patient upsert and visit insert |
-| Form loads but is blank on some Android phones | Ensure the hosting URL is HTTPS — HTTP blocks `fetch()` on Android Chrome |
-| Webhook returns 400 | A required field is missing; check browser Network tab → response body for the list of errors |
+| Form says "Invalid clinic QR" | Open via admin-generated QR URL; bare `/` has no token |
+| Doctor dropdown stays on "Loading doctors…" | Token inactive/expired, or clinic has no doctors in boarding/profiles |
+| Form shows "Something went wrong" | Check WF11 is activated; check webhook URL and CORS |
+| Webhook returns 400 on `intake_token` | Token missing or malformed; rescan the clinic QR |
+| `patient_code` not shown on success | WF11 should return `{ status: "success", patient_code, visit_id }` |
