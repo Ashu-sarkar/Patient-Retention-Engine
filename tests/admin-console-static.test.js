@@ -32,6 +32,7 @@ includes(admin, "rpc('admin_list_clinics')", 'clinic listing wired to gated RPC'
 includes(admin, "rpc('admin_get_clinic_details'", 'clinic detail view wired to gated RPC');
 includes(admin, "rpc('admin_get_platform_overview')", 'platform overview wired to gated RPC');
 includes(admin, "rpc('admin_get_operations_overview')", 'operations overview wired to gated RPC');
+includes(admin, "rpc('admin_get_platform_issues')", 'platform issues wired to gated RPC');
 includes(admin, "rpc('admin_get_security_support_overview')", 'security/support overview wired to gated RPC');
 includes(admin, "rpc('admin_update_clinic_admin_settings'", 'manual clinic SaaS settings wired to gated RPC');
 includes(admin, 'Manual payment status', 'admin can manually track payment status');
@@ -61,6 +62,12 @@ includes(migration, "payment_status IN ('not_started','trial','paid','due','over
 includes(migration, 'FUNCTION public.admin_update_clinic_admin_settings', 'manual clinic admin settings RPC');
 includes(migration, 'FUNCTION public.admin_get_platform_overview', 'platform overview RPC');
 includes(migration, 'FUNCTION public.admin_get_operations_overview', 'operations overview RPC');
+includes(admin, 'data-tab="issues"', 'issues tab present');
+includes(admin, 'id="panel-issues"', 'issues panel present');
+includes(admin, "$('clinic-detail-card').addEventListener('submit'", 'clinic settings form uses delegated submit handler');
+
+includes(migration, 'FUNCTION public.admin_get_platform_issues', 'platform issues RPC');
+includes(migration, 'health_issues', 'clinic details include health issues');
 includes(migration, 'FUNCTION public.admin_get_security_support_overview', 'security/support overview RPC');
 includes(migration, 'ADD COLUMN IF NOT EXISTS is_demo', 'is_demo tagging columns');
 includes(migration, 'DROP FUNCTION IF EXISTS public.admin_create_clinic', 'admin_create_clinic is removed (onboarding owns registration)');

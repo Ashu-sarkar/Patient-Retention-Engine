@@ -272,14 +272,129 @@ BEGIN
     'stats', jsonb_build_object(
       'patient_count',      (SELECT COUNT(*) FROM public.patients p WHERE p.clinic_id = c.id),
       'demo_patient_count', (SELECT COUNT(*) FROM public.patients p WHERE p.clinic_id = c.id AND p.is_demo),
+      'real_patient_count', (SELECT COUNT(*) FROM public.patients p WHERE p.clinic_id = c.id AND COALESCE(p.is_demo, FALSE) = FALSE),
       'total_visits',       (SELECT COUNT(*) FROM public.patient_visits pv WHERE pv.clinic_id = c.id),
       'visits_today',       (SELECT COUNT(*) FROM public.patient_visits pv WHERE pv.clinic_id = c.id AND pv.visit_date = CURRENT_DATE),
+      'visits_7d',          (SELECT COUNT(*) FROM public.patient_visits pv WHERE pv.clinic_id = c.id AND pv.visit_date >= CURRENT_DATE - 6),
+      'patients_7d',        (SELECT COUNT(*) FROM public.patients p WHERE p.clinic_id = c.id AND p.created_at >= NOW() - INTERVAL '7 days'),
       'last_visit_at',      (SELECT MAX(pv.checked_in_at) FROM public.patient_visits pv WHERE pv.clinic_id = c.id),
       'prescriptions',      (SELECT COUNT(*) FROM public.prescriptions pr WHERE pr.clinic_id = c.id),
       'active_tokens',      (SELECT COUNT(*) FROM public.clinic_intake_tokens t WHERE t.clinic_id = c.id AND t.status = 'active' AND (t.expires_at IS NULL OR t.expires_at > NOW())),
       'total_token_uses',   (SELECT COALESCE(SUM(t.use_count), 0) FROM public.clinic_intake_tokens t WHERE t.clinic_id = c.id),
       'last_token_used_at', (SELECT MAX(t.last_used_at) FROM public.clinic_intake_tokens t WHERE t.clinic_id = c.id)
-    )
+    ),
+    'messaging', jsonb_build_object(
+      'sent_24h',       (SELECT COUNT(*) FROM public.message_logs ml WHERE ml.clinic_id = c.id AND ml.sent_at >= NOW() - INTERVAL '24 hours'),
+      'failed_24h',     (SELECT COUNT(*) FROM public.message_logs ml WHERE ml.clinic_id = c.id AND ml.sent_at >= NOW() - INTERVAL '24 hours' AND ml.delivery_status IN ('failed','undelivered')),
+      'sent_7d',        (SELECT COUNT(*) FROM public.message_logs ml WHERE ml.clinic_id = c.id AND ml.sent_at >= NOW() - INTERVAL '7 days'),
+      'failed_7d',      (SELECT COUNT(*) FROM public.message_logs ml WHERE ml.clinic_id = c.id AND ml.sent_at >= NOW() - INTERVAL '7 days' AND ml.delivery_status IN ('failed','undelivered')),
+      'last_sent_at',   (SELECT MAX(ml.sent_at) FROM public.message_logs ml WHERE ml.clinic_id = c.id)
+    ),
+    'health_issues', COALESCE((
+      SELECT jsonb_agg(issue ORDER BY (issue->>'severity_rank')::int DESC)
+      FROM (
+        SELECT jsonb_build_object(
+          'severity', 'critical', 'severity_rank', 3, 'code', 'no_active_qr',
+          'message', 'No active intake QR — patients cannot self-register via scan'
+        ) AS issue
+        WHERE NOT EXISTS (
+          SELECT 1 FROM public.clinic_intake_tokens t
+          WHERE t.clinic_id = c.id AND t.status = 'active'
+            AND (t.expires_at IS NULL OR t.expires_at > NOW())
+        )
+        UNION ALL
+        SELECT jsonb_build_object(
+          'severity', 'high', 'severity_rank', 2, 'code', 'missing_doctor_whatsapp',
+          'message', 'Doctor missing WhatsApp phone — dashboard login unavailable'
+        )
+        WHERE EXISTS (
+          SELECT 1 FROM public.hospital_boarding hb
+          WHERE hb.clinic_id = c.id
+            AND public.normalized_whatsapp_phone(hb.doctor_phone) IS NULL
+        )
+        UNION ALL
+        SELECT jsonb_build_object(
+          'severity', 'high', 'severity_rank', 2, 'code', 'doctor_not_signed_in',
+          'message', 'Doctor account created but has not signed in yet'
+        )
+        WHERE EXISTS (
+          SELECT 1 FROM public.hospital_boarding hb
+          WHERE hb.clinic_id = c.id AND hb.auth_user_id IS NULL
+        )
+        UNION ALL
+        SELECT jsonb_build_object(
+          'severity', 'high', 'severity_rank', 2, 'code', 'payment_overdue',
+          'message', 'Payment overdue or failed — manual follow-up required'
+        )
+        WHERE EXISTS (
+          SELECT 1 FROM public.platform_clinic_admin_settings acs
+          WHERE acs.clinic_id = c.id
+            AND acs.payment_status IN ('overdue','payment_failed')
+        )
+        UNION ALL
+        SELECT jsonb_build_object(
+          'severity', 'warning', 'severity_rank', 1, 'code', 'payment_due',
+          'message', 'Payment due or past due date'
+        )
+        WHERE EXISTS (
+          SELECT 1 FROM public.platform_clinic_admin_settings acs
+          WHERE acs.clinic_id = c.id
+            AND (
+              acs.payment_status = 'due'
+              OR (acs.payment_due_date IS NOT NULL AND acs.payment_due_date < CURRENT_DATE AND acs.payment_status <> 'paid')
+            )
+        )
+        UNION ALL
+        SELECT jsonb_build_object(
+          'severity', 'warning', 'severity_rank', 1, 'code', 'lifecycle_restricted',
+          'message', 'Account lifecycle is ' || COALESCE(acs.lifecycle_status, 'active') || ' — may be limited'
+        )
+        FROM public.platform_clinic_admin_settings acs
+        WHERE acs.clinic_id = c.id
+          AND acs.lifecycle_status IN ('onboarding','paused','suspended')
+        UNION ALL
+        SELECT jsonb_build_object(
+          'severity', 'warning', 'severity_rank', 1, 'code', 'no_recent_visits',
+          'message', 'No patient visits in the last 14 days — clinic may be idle'
+        )
+        WHERE NOT EXISTS (
+          SELECT 1 FROM public.patient_visits pv
+          WHERE pv.clinic_id = c.id AND pv.visit_date >= CURRENT_DATE - 13
+        )
+        AND EXISTS (SELECT 1 FROM public.patients p WHERE p.clinic_id = c.id AND COALESCE(p.is_demo, FALSE) = FALSE)
+        UNION ALL
+        SELECT jsonb_build_object(
+          'severity', 'warning', 'severity_rank', 1, 'code', 'message_failures_7d',
+          'message', 'WhatsApp delivery failures in the last 7 days'
+        )
+        WHERE EXISTS (
+          SELECT 1 FROM public.message_logs ml
+          WHERE ml.clinic_id = c.id
+            AND ml.sent_at >= NOW() - INTERVAL '7 days'
+            AND ml.delivery_status IN ('failed','undelivered')
+        )
+      ) issues
+    ), '[]'::jsonb),
+    'recent_errors', COALESCE((
+      SELECT jsonb_agg(e ORDER BY e.timestamp DESC)
+      FROM (
+        SELECT sl.timestamp, sl.workflow_name, sl.log_level, sl.message
+        FROM public.system_logs sl
+        WHERE sl.clinic_id = c.id AND sl.log_level IN ('ERROR','WARN')
+        ORDER BY sl.timestamp DESC
+        LIMIT 8
+      ) e
+    ), '[]'::jsonb),
+    'recent_message_failures', COALESCE((
+      SELECT jsonb_agg(m ORDER BY m.sent_at DESC)
+      FROM (
+        SELECT ml.sent_at, ml.workflow_name, ml.patient_name, ml.phone, ml.delivery_status, ml.error_message
+        FROM public.message_logs ml
+        WHERE ml.clinic_id = c.id AND ml.delivery_status IN ('failed','undelivered')
+        ORDER BY ml.sent_at DESC
+        LIMIT 8
+      ) m
+    ), '[]'::jsonb)
   )
   INTO v_result
   FROM public.clinics c
@@ -426,10 +541,47 @@ BEGIN
         SELECT COUNT(*) FROM public.hospital_boarding hb
         WHERE public.normalized_whatsapp_phone(hb.doctor_phone) IS NULL
       ),
+      'doctors_not_signed_in', (
+        SELECT COUNT(*) FROM public.hospital_boarding hb WHERE hb.auth_user_id IS NULL
+      ),
+      'idle_clinics_14d', (
+        SELECT COUNT(*) FROM public.clinics c
+        WHERE EXISTS (SELECT 1 FROM public.patients p WHERE p.clinic_id = c.id AND COALESCE(p.is_demo, FALSE) = FALSE)
+          AND NOT EXISTS (
+            SELECT 1 FROM public.patient_visits pv
+            WHERE pv.clinic_id = c.id AND pv.visit_date >= CURRENT_DATE - 13
+          )
+      ),
       'workflow_errors_24h', (
         SELECT COUNT(*) FROM public.system_logs
         WHERE timestamp >= NOW() - INTERVAL '24 hours' AND log_level = 'ERROR'
       )
+    ),
+    'health_score', (
+      SELECT CASE
+        WHEN issue_count = 0 THEN 'healthy'
+        WHEN critical_count > 0 THEN 'critical'
+        WHEN issue_count > 3 THEN 'degraded'
+        ELSE 'attention'
+      END
+      FROM (
+        SELECT
+          (SELECT COUNT(*) FROM public.clinics c WHERE NOT EXISTS (
+            SELECT 1 FROM public.clinic_intake_tokens t
+            WHERE t.clinic_id = c.id AND t.status = 'active'
+              AND (t.expires_at IS NULL OR t.expires_at > NOW())
+          ))
+          + (SELECT COUNT(*) FROM public.platform_clinic_admin_settings WHERE payment_status IN ('overdue','payment_failed'))
+          + (SELECT COUNT(*) FROM public.system_logs WHERE timestamp >= NOW() - INTERVAL '24 hours' AND log_level = 'ERROR')
+          AS issue_count,
+          (SELECT COUNT(*) FROM public.clinics c WHERE NOT EXISTS (
+            SELECT 1 FROM public.clinic_intake_tokens t
+            WHERE t.clinic_id = c.id AND t.status = 'active'
+              AND (t.expires_at IS NULL OR t.expires_at > NOW())
+          ))
+          + (SELECT COUNT(*) FROM public.platform_clinic_admin_settings WHERE payment_status IN ('overdue','payment_failed'))
+          AS critical_count
+      ) s
     )
   )
   INTO v_result;
@@ -466,22 +618,187 @@ BEGIN
     'recent_errors', COALESCE((
       SELECT jsonb_agg(e ORDER BY e.timestamp DESC)
       FROM (
-        SELECT timestamp, workflow_name, message
-        FROM public.system_logs
-        WHERE log_level IN ('ERROR','WARN')
-        ORDER BY timestamp DESC
-        LIMIT 10
+        SELECT sl.timestamp, sl.workflow_name, sl.log_level, sl.message, sl.clinic_id,
+               c.name AS clinic_name
+        FROM public.system_logs sl
+        LEFT JOIN public.clinics c ON c.id = sl.clinic_id
+        WHERE sl.log_level IN ('ERROR','WARN')
+        ORDER BY sl.timestamp DESC
+        LIMIT 15
       ) e
     ), '[]'::jsonb),
     'message_failures', COALESCE((
       SELECT jsonb_agg(m ORDER BY m.sent_at DESC)
       FROM (
-        SELECT sent_at, workflow_name, patient_name, phone, delivery_status, error_message
-        FROM public.message_logs
-        WHERE delivery_status IN ('failed','undelivered')
-        ORDER BY sent_at DESC
-        LIMIT 10
+        SELECT ml.sent_at, ml.workflow_name, ml.patient_name, ml.phone, ml.delivery_status,
+               ml.error_message, ml.clinic_id, c.name AS clinic_name
+        FROM public.message_logs ml
+        LEFT JOIN public.clinics c ON c.id = ml.clinic_id
+        WHERE ml.delivery_status IN ('failed','undelivered')
+        ORDER BY ml.sent_at DESC
+        LIMIT 15
       ) m
+    ), '[]'::jsonb)
+  )
+  INTO v_result;
+
+  RETURN v_result;
+END;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- Admin: platform-wide issue feed for transparency and proactive detection
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.admin_get_platform_issues()
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_result JSONB;
+BEGIN
+  IF NOT public.current_user_is_platform_admin() THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+
+  SELECT jsonb_build_object(
+    'summary', jsonb_build_object(
+      'critical', (SELECT COUNT(*) FROM (
+        SELECT 1 FROM public.clinics c
+        WHERE NOT EXISTS (
+          SELECT 1 FROM public.clinic_intake_tokens t
+          WHERE t.clinic_id = c.id AND t.status = 'active'
+            AND (t.expires_at IS NULL OR t.expires_at > NOW())
+        )
+        UNION ALL
+        SELECT 1 FROM public.platform_clinic_admin_settings acs
+        WHERE acs.payment_status IN ('overdue','payment_failed')
+      ) x),
+      'warning', (SELECT COUNT(*) FROM (
+        SELECT 1 FROM public.platform_clinic_admin_settings acs
+        WHERE acs.payment_status = 'due'
+           OR (acs.payment_due_date IS NOT NULL AND acs.payment_due_date < CURRENT_DATE AND acs.payment_status <> 'paid')
+           OR acs.lifecycle_status IN ('onboarding','paused','suspended')
+        UNION ALL
+        SELECT 1 FROM public.hospital_boarding hb
+        WHERE public.normalized_whatsapp_phone(hb.doctor_phone) IS NULL
+        UNION ALL
+        SELECT 1 FROM public.hospital_boarding hb WHERE hb.auth_user_id IS NULL
+        UNION ALL
+        SELECT 1 FROM public.clinics c
+        WHERE EXISTS (SELECT 1 FROM public.patients p WHERE p.clinic_id = c.id AND COALESCE(p.is_demo, FALSE) = FALSE)
+          AND NOT EXISTS (
+            SELECT 1 FROM public.patient_visits pv
+            WHERE pv.clinic_id = c.id AND pv.visit_date >= CURRENT_DATE - 13
+          )
+      ) x),
+      'operational', (
+        SELECT COUNT(*) FROM public.system_logs
+        WHERE timestamp >= NOW() - INTERVAL '24 hours' AND log_level = 'ERROR'
+      ) + (
+        SELECT COUNT(*) FROM public.message_logs
+        WHERE sent_at >= NOW() - INTERVAL '24 hours' AND delivery_status IN ('failed','undelivered')
+      )
+    ),
+    'issues', COALESCE((
+      SELECT jsonb_agg(i ORDER BY (i->>'severity_rank')::int DESC, i->>'clinic_name')
+      FROM (
+        SELECT jsonb_build_object(
+          'severity', 'critical', 'severity_rank', 4, 'code', 'no_active_qr',
+          'clinic_id', c.id, 'clinic_name', c.name, 'clinic_code', c.code,
+          'message', 'No active intake QR — patients cannot self-register',
+          'action', 'Generate QR token'
+        ) AS i
+        FROM public.clinics c
+        WHERE NOT EXISTS (
+          SELECT 1 FROM public.clinic_intake_tokens t
+          WHERE t.clinic_id = c.id AND t.status = 'active'
+            AND (t.expires_at IS NULL OR t.expires_at > NOW())
+        )
+        UNION ALL
+        SELECT jsonb_build_object(
+          'severity', 'critical', 'severity_rank', 4, 'code', 'payment_failed',
+          'clinic_id', c.id, 'clinic_name', c.name, 'clinic_code', c.code,
+          'message', 'Payment ' || acs.payment_status || ' — billing follow-up required',
+          'action', 'Review payment status'
+        )
+        FROM public.clinics c
+        JOIN public.platform_clinic_admin_settings acs ON acs.clinic_id = c.id
+        WHERE acs.payment_status IN ('overdue','payment_failed')
+        UNION ALL
+        SELECT jsonb_build_object(
+          'severity', 'warning', 'severity_rank', 2, 'code', 'missing_doctor_whatsapp',
+          'clinic_id', hb.clinic_id, 'clinic_name', c.name, 'clinic_code', c.code,
+          'message', 'Doctor "' || hb.doctor_name || '" missing WhatsApp phone',
+          'action', 'Contact clinic to update onboarding'
+        )
+        FROM public.hospital_boarding hb
+        JOIN public.clinics c ON c.id = hb.clinic_id
+        WHERE public.normalized_whatsapp_phone(hb.doctor_phone) IS NULL
+        UNION ALL
+        SELECT jsonb_build_object(
+          'severity', 'warning', 'severity_rank', 2, 'code', 'doctor_not_signed_in',
+          'clinic_id', hb.clinic_id, 'clinic_name', c.name, 'clinic_code', c.code,
+          'message', 'Doctor "' || hb.doctor_name || '" has not signed in',
+          'action', 'Verify credentials were shared'
+        )
+        FROM public.hospital_boarding hb
+        JOIN public.clinics c ON c.id = hb.clinic_id
+        WHERE hb.auth_user_id IS NULL
+        UNION ALL
+        SELECT jsonb_build_object(
+          'severity', 'warning', 'severity_rank', 2, 'code', 'payment_due',
+          'clinic_id', c.id, 'clinic_name', c.name, 'clinic_code', c.code,
+          'message', 'Payment due' || CASE WHEN acs.payment_due_date IS NOT NULL THEN ' (due ' || acs.payment_due_date::text || ')' ELSE '' END,
+          'action', 'Review billing'
+        )
+        FROM public.clinics c
+        JOIN public.platform_clinic_admin_settings acs ON acs.clinic_id = c.id
+        WHERE acs.payment_status = 'due'
+           OR (acs.payment_due_date IS NOT NULL AND acs.payment_due_date < CURRENT_DATE AND acs.payment_status <> 'paid')
+        UNION ALL
+        SELECT jsonb_build_object(
+          'severity', 'warning', 'severity_rank', 2, 'code', 'lifecycle_restricted',
+          'clinic_id', c.id, 'clinic_name', c.name, 'clinic_code', c.code,
+          'message', 'Lifecycle status: ' || acs.lifecycle_status,
+          'action', 'Review account status'
+        )
+        FROM public.clinics c
+        JOIN public.platform_clinic_admin_settings acs ON acs.clinic_id = c.id
+        WHERE acs.lifecycle_status IN ('onboarding','paused','suspended')
+        UNION ALL
+        SELECT jsonb_build_object(
+          'severity', 'info', 'severity_rank', 1, 'code', 'idle_clinic',
+          'clinic_id', c.id, 'clinic_name', c.name, 'clinic_code', c.code,
+          'message', 'No visits in 14+ days despite having real patients',
+          'action', 'Check clinic engagement'
+        )
+        FROM public.clinics c
+        WHERE EXISTS (SELECT 1 FROM public.patients p WHERE p.clinic_id = c.id AND COALESCE(p.is_demo, FALSE) = FALSE)
+          AND NOT EXISTS (
+            SELECT 1 FROM public.patient_visits pv
+            WHERE pv.clinic_id = c.id AND pv.visit_date >= CURRENT_DATE - 13
+          )
+        UNION ALL
+        SELECT jsonb_build_object(
+          'severity', 'operational', 'severity_rank', 3, 'code', 'workflow_error',
+          'clinic_id', sl.clinic_id, 'clinic_name', COALESCE(sl.clinic_name, 'Platform'),
+          'clinic_code', sl.clinic_code,
+          'message', COALESCE(sl.message, 'Workflow error'),
+          'action', 'Check Operations tab',
+          'workflow_name', sl.workflow_name,
+          'timestamp', sl.timestamp
+        ) AS i
+        FROM (
+          SELECT sl.timestamp, sl.workflow_name, sl.message, sl.clinic_id, c.name AS clinic_name, c.code AS clinic_code
+          FROM public.system_logs sl
+          LEFT JOIN public.clinics c ON c.id = sl.clinic_id
+          WHERE sl.log_level = 'ERROR' AND sl.timestamp >= NOW() - INTERVAL '24 hours'
+          ORDER BY sl.timestamp DESC
+          LIMIT 10
+        ) sl
+      ) sub
     ), '[]'::jsonb)
   )
   INTO v_result;
@@ -781,6 +1098,7 @@ BEGIN
 END;
 $$;
 
+GRANT EXECUTE ON FUNCTION public.admin_get_platform_issues() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_list_clinics() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_get_clinic_details(UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_update_clinic_admin_settings(UUID, TEXT, TEXT, TEXT, TEXT, DATE, DATE, DATE, TEXT, TEXT) TO authenticated;
