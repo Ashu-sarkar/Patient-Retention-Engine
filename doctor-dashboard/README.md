@@ -84,7 +84,7 @@ cd doctor-dashboard
 npx vercel --prod
 ```
 
-If the project is still linked to the monorepo root, a root-level `vercel.json` rewrite serves the dashboard at `/` until Root Directory is corrected.
+If the project is still linked to the monorepo root (Root Directory = `.`), fix it in Vercel → Project Settings → General → **Root Directory** → `doctor-dashboard`, then redeploy. Each frontend (`admin-console`, `doctor-dashboard`, `patient-form`, `hospital-form`) must use its own folder as Root Directory.
 
 ## Workflow
 
