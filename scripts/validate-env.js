@@ -3,6 +3,11 @@
 
 const fs = require('fs');
 const path = require('path');
+const {
+  getRequiredProductionKeys,
+  isValidSid,
+  loadRegistry,
+} = require('./lib/twilio-content-sids');
 
 const repoRoot = path.join(__dirname, '..');
 const envPath = path.join(repoRoot, '.env');
@@ -68,46 +73,18 @@ for (const key of required) {
   if (isMissing(env[key])) errors.push(`${key} is missing or still a placeholder.`);
 }
 
-const contentSidKeys = [
-  'TWILIO_CONTENT_FOLLOWUP_REMINDER_ADVANCE',
-  'TWILIO_CONTENT_FOLLOWUP_REMINDER_DAY_OF',
-  'TWILIO_CONTENT_PATIENT_HEALTH_CHECK',
-  'TWILIO_CONTENT_MISSED_FOLLOWUP_RECOVERY_1',
-  'TWILIO_CONTENT_MISSED_FOLLOWUP_RECOVERY_2',
-  'TWILIO_CONTENT_FOLLOWUP_BOOKING_CONFIRMED',
-  'TWILIO_CONTENT_FOLLOWUP_RESCHEDULED_CONFIRMED',
-];
+const contentSidKeys = getRequiredProductionKeys();
 
-const legacyContentSidKeys = [
-  'TWILIO_CONTENT_WELCOME',
-  'TWILIO_CONTENT_FOLLOW_UP_REMINDER',
-  'TWILIO_CONTENT_FOLLOWUP_CONFIRMATION',
-  'TWILIO_CONTENT_SAME_DAY_REMINDER',
-  'TWILIO_CONTENT_MISSED_RECOVERY',
-  'TWILIO_CONTENT_MISSED_NUDGE',
-  'TWILIO_CONTENT_HEALTH_CHECK',
+const legacyContentSidKeys = Object.keys(loadRegistry().legacy_aliases || {}).concat([
   'TWILIO_CONTENT_REACTIVATION',
-];
-
-const simplifiedContentSidKeys = [
-  'TWILIO_CONTENT_CLINIC_PATIENT_WELCOME',
-  'TWILIO_CONTENT_PATIENT_ONBOARDING',
-  'TWILIO_CONTENT_HOSPITAL_ONBOARDING',
-  'TWILIO_CONTENT_PATIENT_REMINDER',
   'TWILIO_CONTENT_MEDICINE_REMINDER',
-  'TWILIO_CONTENT_PRESCRIPTION_DELIVERY',
-  'TWILIO_CONTENT_PRESCRIPTION_WITH_FOLLOWUP',
-  'TWILIO_CONTENT_PRESCRIPTION_JOURNEY_START',
-  'TWILIO_CONTENT_MEDICINE_JOURNEY_DAY1_MORNING',
-  'TWILIO_CONTENT_MEDICINE_JOURNEY_DAY1_EVENING',
-  'TWILIO_CONTENT_MEDICINE_JOURNEY_MIDPOINT',
-  'TWILIO_CONTENT_MEDICINE_JOURNEY_DAILY',
-  'TWILIO_CONTENT_MEDICINE_JOURNEY_LAST_DAY',
-  'TWILIO_CONTENT_MEDICINE_JOURNEY_COMPLETE',
-  'TWILIO_CONTENT_MEDICINE_REMINDER_MORNING',
-  'TWILIO_CONTENT_MEDICINE_REMINDER_AFTERNOON',
-  'TWILIO_CONTENT_MEDICINE_REMINDER_NIGHT',
-];
+  'TWILIO_CONTENT_MEDICINE_MORNING_DOSE',
+  'TWILIO_CONTENT_MEDICINE_AFTERNOON_DOSE',
+  'TWILIO_CONTENT_MEDICINE_EVENING_DOSE',
+  'TWILIO_CONTENT_MEDICINE_COURSE_COMPLETE',
+]);
+
+const simplifiedContentSidKeys = contentSidKeys;
 
 const hasPatientOnboardingTemplate =
   !isMissing(env.TWILIO_CONTENT_CLINIC_PATIENT_WELCOME) ||
@@ -130,15 +107,20 @@ for (const key of contentSidKeys) {
   }
 }
 
-for (const key of legacyContentSidKeys) {
-  if (!isMissing(env[key])) {
-    warnings.push(`${key} is a legacy v1 template SID. Prefer the v2 TWILIO_CONTENT_* keys documented in docs/whatsapp-templates-v2-logic.md.`);
+for (const key of simplifiedContentSidKeys) {
+  if (!isMissing(env[key]) && !isValidSid(env[key])) {
+    warnings.push(`${key} does not look like a Twilio Content SID (expected HX...).`);
   }
 }
 
-for (const key of simplifiedContentSidKeys) {
-  if (!isMissing(env[key]) && !/^HX[a-f0-9]{32}$/i.test(env[key])) {
-    warnings.push(`${key} does not look like a Twilio Content SID (expected HX...).`);
+const registry = loadRegistry();
+
+for (const key of legacyContentSidKeys) {
+  const primary = registry.legacy_aliases?.[key];
+  if (!isMissing(env[key]) && primary && env[key] !== env[primary]) {
+    warnings.push(`${key} should mirror ${primary} (${env[primary] || 'unset v2 SID'}).`);
+  } else if (!isMissing(env[key]) && !primary) {
+    warnings.push(`${key} is deprecated. Prefer v2 keys in message-templates/twilio-content-sids.json.`);
   }
 }
 

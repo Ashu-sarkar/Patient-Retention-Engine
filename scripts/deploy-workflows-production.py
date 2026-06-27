@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Push WF11/WF12 workflow fixes to production n8n and re-activate them."""
+"""Push messaging workflows to production n8n and re-activate them."""
 
 from __future__ import annotations
 
@@ -17,9 +17,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WF_DIR = ROOT / "workflows"
 TARGETS = {
+    "WF1 — Follow-up Reminder": "workflow-1-followup-reminder.json",
+    "WF2 — Same-day Reminder": "workflow-2-sameday-reminder.json",
+    "WF3 — Missed Appointment": "workflow-3-missed-appointment.json",
+    "WF4 — Health Check": "workflow-4-health-check.json",
+    "WF5 — Reactivation": "workflow-5-reactivation.json",
+    "WF6 — Feedback Listener": "workflow-6-feedback-listener.json",
     "WF7 — New Patient Welcome": "workflow-7-new-patient.json",
     "WF11 — QR Form Intake": "workflow-11-form-intake.json",
     "WF12 — Hospital / Clinic Boarding": "workflow-12-hospital-boarding.json",
+    "WF13 — Prescription Delivery": "workflow-13-prescription-delivery.json",
+    "WF14 — Medicine Journey Reminders": "workflow-14-medicine-journey.json",
 }
 
 

@@ -1,0 +1,143 @@
+{
+  "updated_at": "2026-06-27",
+  "description": "Canonical Twilio Content API SIDs (HX...) for v2 WhatsApp cards. Single source of truth for .env, Railway, and Supabase secrets.",
+  "templates": [
+    {
+      "id": "clinic_patient_welcome",
+      "env": "TWILIO_CONTENT_CLINIC_PATIENT_WELCOME",
+      "sid": "HXfcce647a8dea9ae4928024dedd52e42a",
+      "workflow": "workflow-7-new-patient"
+    },
+    {
+      "id": "hospital_onboarding",
+      "env": "TWILIO_CONTENT_HOSPITAL_ONBOARDING",
+      "sid": "HXad188747f9e9e777ce878ec671eac66e",
+      "workflow": "workflow-12-hospital-boarding"
+    },
+    {
+      "id": "prescription_delivery",
+      "env": "TWILIO_CONTENT_PRESCRIPTION_DELIVERY",
+      "sid": "HXa7e5a02d15ce2457344a352e11dba665",
+      "workflow": "workflow-13-prescription-delivery"
+    },
+    {
+      "id": "prescription_with_followup",
+      "env": "TWILIO_CONTENT_PRESCRIPTION_WITH_FOLLOWUP",
+      "sid": "HX5f61eb06935e60325fe01cdda95dd3e6",
+      "workflow": "prescription-delivery-edge"
+    },
+    {
+      "id": "prescription_journey_start",
+      "env": "TWILIO_CONTENT_PRESCRIPTION_JOURNEY_START",
+      "sid": "HXb5d58ce57500c4c82b0ca86ca6f192f8",
+      "workflow": "prescription-delivery-edge"
+    },
+    {
+      "id": "medicine_journey_day1_morning",
+      "env": "TWILIO_CONTENT_MEDICINE_JOURNEY_DAY1_MORNING",
+      "sid": "HX3c8763c75596dcda2a11b25553d79258",
+      "workflow": "workflow-14-medicine-journey"
+    },
+    {
+      "id": "medicine_journey_day1_evening",
+      "env": "TWILIO_CONTENT_MEDICINE_JOURNEY_DAY1_EVENING",
+      "sid": "HXe4f958138c1c761637950f3997422f6d",
+      "workflow": "workflow-14-medicine-journey"
+    },
+    {
+      "id": "medicine_journey_midpoint",
+      "env": "TWILIO_CONTENT_MEDICINE_JOURNEY_MIDPOINT",
+      "sid": "HX6005921e939a867231cc61308ee9f7c2",
+      "workflow": "workflow-14-medicine-journey"
+    },
+    {
+      "id": "medicine_journey_daily",
+      "env": "TWILIO_CONTENT_MEDICINE_JOURNEY_DAILY",
+      "sid": "HX0b8f77a7b12ef5bd88eca5cd9e2d64e8",
+      "workflow": "workflow-14-medicine-journey"
+    },
+    {
+      "id": "medicine_journey_last_day",
+      "env": "TWILIO_CONTENT_MEDICINE_JOURNEY_LAST_DAY",
+      "sid": "HX7071bd2ef050394edc7e8c25e4368deb",
+      "workflow": "workflow-14-medicine-journey"
+    },
+    {
+      "id": "medicine_journey_complete",
+      "env": "TWILIO_CONTENT_MEDICINE_JOURNEY_COMPLETE",
+      "sid": "HX04bbc6cc1bec4ce3ae6d1fdec872ed87",
+      "workflow": "workflow-14-medicine-journey"
+    },
+    {
+      "id": "medicine_reminder_morning",
+      "env": "TWILIO_CONTENT_MEDICINE_REMINDER_MORNING",
+      "sid": "HX48a3ddb18faf2f0e6ff2de57bf64616b",
+      "workflow": "workflow-14-medicine-journey"
+    },
+    {
+      "id": "medicine_reminder_afternoon",
+      "env": "TWILIO_CONTENT_MEDICINE_REMINDER_AFTERNOON",
+      "sid": "HX8016337b01d9001419f5b10d9144331c",
+      "workflow": "workflow-14-medicine-journey"
+    },
+    {
+      "id": "medicine_reminder_night",
+      "env": "TWILIO_CONTENT_MEDICINE_REMINDER_NIGHT",
+      "sid": "HX28b6e8b44088c4685e68a615b5ce8951",
+      "workflow": "workflow-14-medicine-journey"
+    },
+    {
+      "id": "followup_reminder_advance",
+      "env": "TWILIO_CONTENT_FOLLOWUP_REMINDER_ADVANCE",
+      "sid": "HX336b03cf07aa60151a6d740758727fc7",
+      "workflow": "workflow-1-followup-reminder"
+    },
+    {
+      "id": "followup_reminder_day_of",
+      "env": "TWILIO_CONTENT_FOLLOWUP_REMINDER_DAY_OF",
+      "sid": "HXb8166c934d8998c21a434689bbb4e615",
+      "workflow": "workflow-2-sameday-reminder"
+    },
+    {
+      "id": "patient_health_check",
+      "env": "TWILIO_CONTENT_PATIENT_HEALTH_CHECK",
+      "sid": "HXac8c20e3fc3af1db4ae715290b715d40",
+      "workflow": "workflow-4-health-check"
+    },
+    {
+      "id": "missed_followup_recovery_1",
+      "env": "TWILIO_CONTENT_MISSED_FOLLOWUP_RECOVERY_1",
+      "sid": "HXb0be660afc178b5c9f4c7753de2f1f0c",
+      "workflow": "workflow-3-missed-appointment"
+    },
+    {
+      "id": "missed_followup_recovery_2",
+      "env": "TWILIO_CONTENT_MISSED_FOLLOWUP_RECOVERY_2",
+      "sid": "HX644fc75ae8a0711c20a1ed06f3df3171",
+      "workflow": "workflow-3-missed-appointment"
+    },
+    {
+      "id": "followup_booking_confirmed",
+      "env": "TWILIO_CONTENT_FOLLOWUP_BOOKING_CONFIRMED",
+      "sid": "HXe82da289eefbd22aae367c2392b1d5d6",
+      "workflow": "workflow-6-feedback-listener"
+    },
+    {
+      "id": "followup_rescheduled_confirmed",
+      "env": "TWILIO_CONTENT_FOLLOWUP_RESCHEDULED_CONFIRMED",
+      "sid": "HX16e95c7287f9b44bd1997baa6b9e89cd",
+      "workflow": "workflow-6-feedback-listener"
+    }
+  ],
+  "legacy_aliases": {
+    "TWILIO_CONTENT_WELCOME": "TWILIO_CONTENT_CLINIC_PATIENT_WELCOME",
+    "TWILIO_CONTENT_PATIENT_ONBOARDING": "TWILIO_CONTENT_CLINIC_PATIENT_WELCOME",
+    "TWILIO_CONTENT_FOLLOW_UP_REMINDER": "TWILIO_CONTENT_FOLLOWUP_REMINDER_ADVANCE",
+    "TWILIO_CONTENT_FOLLOWUP_CONFIRMATION": "TWILIO_CONTENT_FOLLOWUP_REMINDER_ADVANCE",
+    "TWILIO_CONTENT_SAME_DAY_REMINDER": "TWILIO_CONTENT_FOLLOWUP_REMINDER_DAY_OF",
+    "TWILIO_CONTENT_MISSED_RECOVERY": "TWILIO_CONTENT_MISSED_FOLLOWUP_RECOVERY_1",
+    "TWILIO_CONTENT_MISSED_NUDGE": "TWILIO_CONTENT_MISSED_FOLLOWUP_RECOVERY_2",
+    "TWILIO_CONTENT_HEALTH_CHECK": "TWILIO_CONTENT_PATIENT_HEALTH_CHECK",
+    "TWILIO_CONTENT_PATIENT_REMINDER": "TWILIO_CONTENT_FOLLOWUP_REMINDER_ADVANCE"
+  }
+}
