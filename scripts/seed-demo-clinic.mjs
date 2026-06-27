@@ -95,12 +95,13 @@ function ok(msg) {
   console.log(`✅ ${msg}`);
 }
 
-async function sbFetch(endpoint, { token, method = 'GET', body, key = ANON_KEY } = {}) {
+async function sbFetch(endpoint, { token, method = 'GET', body, key = ANON_KEY, prefer } = {}) {
   const headers = {
     apikey: key,
     Authorization: `Bearer ${token || key}`,
     'Content-Type': 'application/json',
   };
+  if (prefer) headers.Prefer = prefer;
   const res = await fetch(`${SUPABASE_URL}${endpoint}`, {
     method,
     headers,
@@ -152,12 +153,78 @@ async function boardHospital() {
     body: form,
   });
   const text = await res.text();
-  let json;
-  try { json = JSON.parse(text); } catch { json = { _raw: text }; }
-  if (!res.ok || json.status !== 'success') {
-    fail(`Hospital boarding failed (${res.status}): ${JSON.stringify(json)}`);
+  let json = null;
+  try { json = text ? JSON.parse(text) : null; } catch { json = { _raw: text }; }
+  if (res.ok && json?.status === 'success') return { via: 'wf12', json };
+
+  console.warn(`⚠️  WF12 boarding unavailable (${res.status}${json?.errors ? ': ' + JSON.stringify(json.errors) : ''}) — seeding via Supabase directly`);
+  return seedHospitalDirect();
+}
+
+async function seedHospitalDirect() {
+  const slug = HOSPITAL_NAME.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48);
+  const code = slug.replace(/-/g, '').toUpperCase().slice(0, 10) || 'DEMOCLINIC';
+
+  let clinicRes = await sbFetch(
+    `/rest/v1/clinics?slug=eq.${encodeURIComponent(slug)}&select=id,name&limit=1`,
+    { key: SERVICE_KEY },
+  );
+  let clinicId = Array.isArray(clinicRes.json) ? clinicRes.json[0]?.id : null;
+
+  if (!clinicId) {
+    clinicRes = await sbFetch('/rest/v1/clinics', {
+      key: SERVICE_KEY,
+      method: 'POST',
+      prefer: 'return=representation',
+      body: { name: HOSPITAL_NAME, slug, code, status: 'active' },
+    });
+    if (!clinicRes.ok) {
+      const conflict = await sbFetch(
+        `/rest/v1/clinics?name=eq.${encodeURIComponent(HOSPITAL_NAME)}&select=id&limit=1`,
+        { key: SERVICE_KEY },
+      );
+      clinicId = Array.isArray(conflict.json) ? conflict.json[0]?.id : null;
+      if (!clinicId) fail(`Could not create clinic: ${JSON.stringify(clinicRes.json)}`);
+    } else {
+      const row = Array.isArray(clinicRes.json) ? clinicRes.json[0] : clinicRes.json;
+      clinicId = row?.id;
+    }
   }
-  return json;
+  if (!clinicId) fail('Could not resolve clinic_id after seed');
+
+  for (const doctor of DOCTORS) {
+    const existing = await sbFetch(
+      `/rest/v1/hospital_boarding?clinic_id=eq.${clinicId}&doctor_registration_number=eq.${encodeURIComponent(doctor.doctor_registration_number)}&select=id&limit=1`,
+      { key: SERVICE_KEY },
+    );
+    if (Array.isArray(existing.json) && existing.json.length > 0) continue;
+
+    const row = {
+      clinic_id: clinicId,
+      hospital_name: HOSPITAL_NAME,
+      facility_type: FACILITY_TYPE,
+      address: '23/4, Bellary Road, Hebbal, Bengaluru, Karnataka 560024',
+      city: 'Bengaluru',
+      contact_phone: '+919810000000',
+      admin_contact_name: 'Front Desk — Columbia Asia',
+      doctor_name: doctor.doctor_name,
+      doctor_qualification: doctor.doctor_qualification,
+      doctor_expertise: doctor.doctor_expertise,
+      doctor_registration_number: doctor.doctor_registration_number,
+      doctor_phone: doctor.doctor_phone,
+      login_username: doctor.login_username,
+      consultation_hours: 'Mon–Sat 8:00 AM – 8:00 PM, Sun 9:00 AM – 2:00 PM',
+    };
+    const ins = await sbFetch('/rest/v1/hospital_boarding', {
+      key: SERVICE_KEY,
+      method: 'POST',
+      prefer: 'return=representation',
+      body: row,
+    });
+    if (!ins.ok) fail(`hospital_boarding insert failed for ${doctor.doctor_name}: ${JSON.stringify(ins.json)}`);
+  }
+
+  return { via: 'direct', clinicId };
 }
 
 async function adminSignIn() {
@@ -243,11 +310,11 @@ async function main() {
     ok(`Hospital already onboarded (${boardingRows.length} doctor row(s))`);
   } else {
     console.log('Boarding hospital via WF12…');
-    await boardHospital();
-    await new Promise(r => setTimeout(r, 2000));
+    const result = await boardHospital();
+    await new Promise(r => setTimeout(r, 1500));
     boardingRows = await getExistingBoarding();
-    if (boardingRows.length === 0) fail('Hospital boarding completed but no rows found in Supabase');
-    ok(`Onboarded ${boardingRows.length} doctor(s)`);
+    if (boardingRows.length === 0) fail('Hospital seed completed but no rows found in Supabase');
+    ok(`Onboarded ${boardingRows.length} doctor(s) via ${result.via}`);
   }
 
   const clinicId = boardingRows[0]?.clinic_id;

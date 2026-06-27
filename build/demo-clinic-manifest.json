@@ -1,0 +1,14 @@
+{
+  "hospital_name": "Columbia Asia Hospital, Hebbal",
+  "clinic_id": "dc0cdad6-d995-4fdb-8dc3-d6965a265de5",
+  "intake_token": "8f574d06c5bc24e5c2d44da29acf8f6d5c0fb659807cc5601f875087c59292db",
+  "scan_url": "https://vaitalcare-patient.vercel.app/#/i/8f574d06c5bc24e5c2d44da29acf8f6d5c0fb659807cc5601f875087c59292db",
+  "doctors": [
+    "Dr. Priya Nair",
+    "Dr. Rajesh Kumar",
+    "Dr. Ananya Sharma",
+    "Dr. Vikram Mehta"
+  ],
+  "qr_png": "/Users/ashusarkar/Desktop/Matrix/VaitalCare/Patient-Retention-Engine/build/demo-clinic-qr.png",
+  "created_at": "2026-06-27T17:01:34.395Z"
+}
