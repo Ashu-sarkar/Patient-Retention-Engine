@@ -28,6 +28,8 @@
     "test:production-admin": "node tests/admin-console-production-e2e.mjs",
     "sync:prescription-secrets": "bash scripts/sync-prescription-delivery-secrets.sh",
     "bootstrap:platform-admin": "node scripts/bootstrap-platform-admin.js",
+    "seed:demo-clinic": "node scripts/seed-demo-clinic.mjs",
+    "test:demo-clinic": "node tests/demo-clinic-intake.test.mjs",
     "setup:dev-tools": "bash scripts/setup-dev-tools.sh",
     "test:playbook": "node production-test-playbook/verify.js",
     "smoke": "node tests/run-tests.js"
