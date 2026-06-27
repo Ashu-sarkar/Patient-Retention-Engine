@@ -9,6 +9,8 @@ This is the minimum data needed to launch the current stack:
   - Admin console URL: `https://vaitalcare-admin.vercel.app/` or `https://admin-console-eta-silk.vercel.app/` (**Vercel Root Directory must be `admin-console`** — not the repo root)
 
 > **Wrong app at admin URL?** If the admin URL shows the Doctor Dashboard, the Vercel project Root Directory is set to the repo root (or `doctor-dashboard`) instead of `admin-console`. In Vercel → Project → Settings → General → **Root Directory**, set `admin-console`, save, then redeploy. Do not rely on the repo-root `vercel.json` (removed) — each frontend has its own folder and `vercel.json`.
+>
+> After updating Root Directory, push a commit to `main` to trigger a fresh production deploy.
 
 - Backend:
   - Railway URL: `https://vaitalcare-production.up.railway.app`
