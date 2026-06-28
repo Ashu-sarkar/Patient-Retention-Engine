@@ -34,6 +34,7 @@
     "test:wa-templates-e2e": "node tests/run-wa-templates-e2e.js",
     "bootstrap:platform-admin": "node scripts/bootstrap-platform-admin.js",
     "seed:demo-clinic": "node scripts/seed-demo-clinic.mjs",
+    "seed:swastik-hospital": "node scripts/seed-swastik-hospital.mjs",
     "diagnose:doctor-login": "node scripts/doctor-login-diagnose.mjs",
     "test:demo-clinic": "node tests/demo-clinic-intake.test.mjs",
     "test:doctor-analytics": "node tests/doctor-analytics-static.test.js",

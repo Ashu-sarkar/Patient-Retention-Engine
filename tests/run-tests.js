@@ -802,6 +802,8 @@ async function main() {
     const updated = { ...BASE, patient_name: 'Test Patient Alpha Updated' };
     const { status, json } = await wh('patient-form-intake', 'POST', updated);
     assert(status === 200, `Expected 200, got ${status}: ${JSON.stringify(json)}`);
+    assert(json?.status === 'success', `Expected success JSON on duplicate same-day intake, got ${JSON.stringify(json)}`);
+    assert(json?.patient_code, 'Expected patient_code in duplicate intake response');
     await sleep(1200);
     const pat = await getPatient(`+91${TP.wf11_new}`);
     assert(pat?.name === 'Test Patient Alpha Updated', `Expected updated name, got "${pat?.name}"`);

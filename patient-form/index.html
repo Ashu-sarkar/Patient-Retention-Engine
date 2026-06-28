@@ -883,6 +883,69 @@ function showToast (msg, isError = false) {
    SUBMIT
    ═══════════════════════════════════════════════════════════════════ */
 let busy = false;
+let retryTimer;
+const SUBMIT_LABEL = submitBtn.innerHTML;
+
+function parseRateLimitWaitMs(message) {
+  const match = String(message || '').match(/too_many_requests:.*?(\d+)\s*seconds?/i);
+  return match ? Number(match[1]) * 1000 : 0;
+}
+
+function formatSubmitError(message) {
+  const raw = String(message || '').trim();
+  if (/too_many_requests/i.test(raw)) {
+    const waitMs = parseRateLimitWaitMs(raw);
+    if (waitMs > 0) {
+      return `Too many attempts. Please wait ${Math.ceil(waitMs / 1000)} seconds, then tap Submit once.`;
+    }
+    return 'Too many attempts. Please wait a few minutes, then tap Submit once.';
+  }
+  if (/empty or unexpected response/i.test(raw)) {
+    return raw + ' Do not tap Submit repeatedly — wait a few seconds and try once more, or ask reception for help.';
+  }
+  return raw || 'Something went wrong. Please try again.';
+}
+
+function resetSubmitButton() {
+  clearTimeout(retryTimer);
+  submitBtn.disabled = false;
+  submitBtn.classList.remove('loading');
+  submitBtn.innerHTML = SUBMIT_LABEL;
+  busy = false;
+}
+
+function scheduleSubmitCooldown(ms, toastMessage) {
+  clearTimeout(retryTimer);
+  submitBtn.disabled = true;
+  submitBtn.classList.remove('loading');
+  if (toastMessage) showToast(toastMessage, true);
+  const end = Date.now() + Math.max(0, ms);
+  const tick = () => {
+    const left = Math.ceil((end - Date.now()) / 1000);
+    if (left <= 0) {
+      resetSubmitButton();
+      return;
+    }
+    submitBtn.innerHTML = `Wait ${left}s before retry…`;
+    retryTimer = setTimeout(tick, 1000);
+  };
+  tick();
+}
+
+async function readWebhookResponse(res) {
+  const text = await res.text().catch(() => '');
+  if (!text.trim()) return { data: {}, text };
+  let data;
+  try {
+    data = JSON.parse(text);
+    if (typeof data === 'string') {
+      try { data = JSON.parse(data); } catch (_) { data = {}; }
+    }
+  } catch (_) {
+    data = {};
+  }
+  return { data, text };
+}
 
 form.addEventListener('submit', async function (e) {
   e.preventDefault();
@@ -916,24 +979,23 @@ form.addEventListener('submit', async function (e) {
       signal: ctrl.signal,
     });
 
+    const { data, text } = await readWebhookResponse(res);
+
     if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      let errorMessage = '';
-      try {
-        const errorData = JSON.parse(text);
-        errorMessage = Array.isArray(errorData.errors) && errorData.errors.length
-          ? errorData.errors.join(', ')
-          : (errorData.message || '');
-      } catch (_) {
-        errorMessage = text;
-      }
-      throw new Error(errorMessage || `HTTP ${res.status}`);
+      const detail = Array.isArray(data.errors) && data.errors.length
+        ? data.errors.join(', ')
+        : (data.message || (text ? text.slice(0, 220) : ''));
+      throw new Error(detail || `HTTP ${res.status}`);
     }
 
-    let data = {};
-    try { data = await res.json(); } catch (_) { /* n8n may return empty body */ }
     if (data.status !== 'success') {
-      throw new Error(data.message || 'The intake server returned an empty or unexpected response.');
+      const detail = (Array.isArray(data.errors) && data.errors.length && data.errors.join(', '))
+        || data.message
+        || (text && text.length < 400 ? text : '');
+      throw new Error(
+        detail
+        || 'The intake server returned an empty or unexpected response. If you already checked in today, ask reception to find your queue entry — otherwise retry in a moment.'
+      );
     }
 
     /* ── Success ── */
@@ -946,22 +1008,18 @@ form.addEventListener('submit', async function (e) {
 
   } catch (err) {
     console.error('Submission error:', err);
-    const message = err && err.name === 'AbortError'
+    const rawMessage = err && err.name === 'AbortError'
       ? 'The request timed out. Please check your connection and try again.'
       : err instanceof TypeError && /fetch/i.test(err.message)
         ? 'Unable to reach the intake server from this browser. Check HTTPS, DNS, and CORS for the webhook host.'
         : (err.message || 'Something went wrong. Please try again.');
-    showToast(message, true);
-    submitBtn.disabled = false;
-    submitBtn.classList.remove('loading');
-    submitBtn.innerHTML = `
-      <svg width="18" height="18" fill="none" viewBox="0 0 20 20" aria-hidden="true">
-        <path d="M10 2l7 8-7 8" stroke="#fff" stroke-width="2"
-              stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M3 10h14" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
-      </svg>
-      Submit Details`;
-    busy = false;
+    const message = formatSubmitError(rawMessage);
+    const rateLimitMs = parseRateLimitWaitMs(rawMessage);
+    if (rateLimitMs > 0) {
+      scheduleSubmitCooldown(rateLimitMs, message);
+      return;
+    }
+    scheduleSubmitCooldown(5000, message);
   } finally {
     clearTimeout(timeoutId);
   }

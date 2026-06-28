@@ -1,0 +1,20 @@
+{
+  "hospital_name": "Swastik Hospital",
+  "clinic_id": "3b882e47-09e6-44fa-a94d-7d1c4ae18aa0",
+  "visit_date": "2026-06-28",
+  "visits_seeded": 7,
+  "doctors": [
+    {
+      "name": "Dr. Vikram Swastik",
+      "username": "swastik.vikram",
+      "password": "Swastik123"
+    },
+    {
+      "name": "Dr. Ananya Reddy",
+      "username": "swastik.ananya",
+      "password": "Swastik123"
+    }
+  ],
+  "dashboard_url": "https://vaitalcare-doctor.vercel.app",
+  "created_at": "2026-06-28T12:05:08.550Z"
+}
