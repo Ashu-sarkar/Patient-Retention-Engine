@@ -24,6 +24,10 @@ function includes(haystack, needle, label) {
 
 includes(dashboard, 'function minFollowUpDate()', 'dashboard follow-up minimum helper');
 includes(dashboard, 'id="analytics-link"', 'doctor dashboard analytics nav link');
+assert(
+  dashboard.indexOf("const $ = id => document.getElementById(id);") < dashboard.indexOf("$('analytics-link')"),
+  'dashboard $ helper must be defined before analytics-link setup',
+);
 includes(dashboard, 'DEFAULT_DOCTOR_ANALYTICS_URL', 'doctor dashboard analytics URL config');
 includes(dashboard, 'doctorAnalyticsUrl', 'doctor dashboard reads analytics URL from config');
 includes(dashboard, ".eq('visit_date', $('visit-date').value || todayISO())", 'queue query filters by selected visit date');

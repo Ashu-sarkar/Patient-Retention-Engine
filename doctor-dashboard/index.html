@@ -1027,6 +1027,7 @@
       };
     }
 
+    const $ = id => document.getElementById(id);
     const RUNTIME_CONFIG = readRuntimeConfig();
     const SUPABASE_URL = RUNTIME_CONFIG.supabaseUrl;
     const SUPABASE_ANON_KEY = RUNTIME_CONFIG.supabaseAnonKey;
@@ -1041,7 +1042,6 @@
     const sb = HAS_SUPABASE_CONFIG
       ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
       : null;
-    const $ = id => document.getElementById(id);
     const state = {
       session: null,
       profile: null,
