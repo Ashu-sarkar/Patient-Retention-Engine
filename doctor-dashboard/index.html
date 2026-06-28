@@ -757,6 +757,12 @@
           <input id="search" type="search" placeholder="Name, phone, patient code" />
         </div>
         <div class="btn-row">
+          <a id="analytics-link" class="btn" href="#" target="_blank" rel="noopener noreferrer">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M4 19V5M4 19h16M8 17V9M12 17V7M16 17v-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            Analytics
+          </a>
           <button id="refresh" class="btn primary" type="button">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -984,6 +990,7 @@
   <script>
     const DEFAULT_SUPABASE_URL = 'https://crsdccqseuhnimoxxeky.supabase.co';
     const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNyc2RjY3FzZXVobmltb3h4ZWt5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMjc1NzQsImV4cCI6MjA5MTkwMzU3NH0.3iz7x2JQj3qn6KI8JS3tjxV9vaBsN-mL6xDTvmJMDxA';
+    const DEFAULT_DOCTOR_ANALYTICS_URL = 'https://vaitalcare-doctor-analytics.vercel.app';
     const PRESCRIPTION_DELIVERY_FUNCTION = 'prescription-delivery';
     const ADMIN_PREVIEW_USERNAME = 'admin.preview';
     const AUTH_USERNAME_EMAIL_DOMAIN = 'auth.vaitalcare.local';
@@ -1012,12 +1019,18 @@
           globalConfig.supabaseAnonKey ||
           readStored('vaitalcare.supabaseAnonKey') ||
           DEFAULT_SUPABASE_ANON_KEY,
+        doctorAnalyticsUrl:
+          globalConfig.doctorAnalyticsUrl ||
+          readStored('vaitalcare.doctorAnalyticsUrl') ||
+          DEFAULT_DOCTOR_ANALYTICS_URL,
       };
     }
 
     const RUNTIME_CONFIG = readRuntimeConfig();
     const SUPABASE_URL = RUNTIME_CONFIG.supabaseUrl;
     const SUPABASE_ANON_KEY = RUNTIME_CONFIG.supabaseAnonKey;
+    const DOCTOR_ANALYTICS_URL = RUNTIME_CONFIG.doctorAnalyticsUrl;
+    if ($('analytics-link')) $('analytics-link').href = DOCTOR_ANALYTICS_URL;
     const HAS_SUPABASE_CONFIG = Boolean(
       window.supabase?.createClient &&
       SUPABASE_URL.startsWith('https://') &&

@@ -23,6 +23,9 @@ function includes(haystack, needle, label) {
 }
 
 includes(dashboard, 'function minFollowUpDate()', 'dashboard follow-up minimum helper');
+includes(dashboard, 'id="analytics-link"', 'doctor dashboard analytics nav link');
+includes(dashboard, 'DEFAULT_DOCTOR_ANALYTICS_URL', 'doctor dashboard analytics URL config');
+includes(dashboard, 'doctorAnalyticsUrl', 'doctor dashboard reads analytics URL from config');
 includes(dashboard, ".eq('visit_date', $('visit-date').value || todayISO())", 'queue query filters by selected visit date');
 includes(dashboard, "$('visit-date').addEventListener('change', loadVisits)", 'visit date change refetches queue');
 includes(dashboard, 'const visitNext = state.selected?.visit_date ? addDaysISO(state.selected.visit_date, 1) : today;', 'visit+today minimum calculation');

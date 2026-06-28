@@ -33,6 +33,9 @@
     "bootstrap:platform-admin": "node scripts/bootstrap-platform-admin.js",
     "seed:demo-clinic": "node scripts/seed-demo-clinic.mjs",
     "test:demo-clinic": "node tests/demo-clinic-intake.test.mjs",
+    "test:doctor-analytics": "node tests/doctor-analytics-static.test.js",
+    "test:doctor-analytics:integration": "node tests/doctor-analytics-integration.test.js",
+    "refresh:analytics-rollup": "node scripts/refresh-clinic-analytics-rollup.js",
     "setup:dev-tools": "bash scripts/setup-dev-tools.sh",
     "test:playbook": "node production-test-playbook/verify.js",
     "smoke": "node tests/run-tests.js"
