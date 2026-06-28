@@ -90,19 +90,35 @@ function readEnvMap(filePath) {
   return map;
 }
 
+function railwayBin() {
+  try {
+    execSync('command -v railway', { stdio: 'pipe', shell: true });
+    return 'railway';
+  } catch {
+    return 'npx @railway/cli';
+  }
+}
+
 function pushRailway(entries) {
+  const bin = railwayBin();
   if (!process.env.RAILWAY_TOKEN && !process.env.RAILWAY_API_TOKEN) {
     try {
-      execSync('railway whoami', { stdio: 'pipe' });
+      execSync(`${bin} whoami`, { stdio: 'pipe', shell: true });
     } catch {
       console.warn('⚠️  Railway CLI not logged in — wrote build/railway-twilio-content.env for manual import');
+      console.warn('   Run: railway login && railway link -p Vaitalcare');
       return false;
     }
   }
-  const args = Object.entries(entries)
-    .map(([k, v]) => `${k}=${v}`)
-    .join(' ');
-  execSync(`railway variables --set ${args}`, { stdio: 'inherit', cwd: repoRoot });
+  const pairs = Object.entries(entries);
+  for (const [key, value] of pairs) {
+    execSync(`${bin} variable set ${key}=${value} --skip-deploys`, {
+      stdio: 'inherit',
+      cwd: repoRoot,
+      shell: true,
+    });
+  }
+  console.log(`   Set ${pairs.length} variable(s); redeploy n8n on Railway when ready.`);
   return true;
 }
 

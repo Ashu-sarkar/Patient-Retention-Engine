@@ -30,6 +30,8 @@
     "sync:twilio-content": "node scripts/sync-twilio-content-env.js",
     "sync:twilio-content:railway": "node scripts/sync-twilio-content-env.js --railway",
     "test:twilio-content": "node tests/twilio-content-sids.test.js",
+    "test:wa-templates-static": "node tests/wa-templates-static.test.js",
+    "test:wa-templates-e2e": "node tests/run-wa-templates-e2e.js",
     "bootstrap:platform-admin": "node scripts/bootstrap-platform-admin.js",
     "seed:demo-clinic": "node scripts/seed-demo-clinic.mjs",
     "diagnose:doctor-login": "node scripts/doctor-login-diagnose.mjs",
