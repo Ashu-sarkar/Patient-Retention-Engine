@@ -32,6 +32,7 @@
     "test:twilio-content": "node tests/twilio-content-sids.test.js",
     "bootstrap:platform-admin": "node scripts/bootstrap-platform-admin.js",
     "seed:demo-clinic": "node scripts/seed-demo-clinic.mjs",
+    "diagnose:doctor-login": "node scripts/doctor-login-diagnose.mjs",
     "test:demo-clinic": "node tests/demo-clinic-intake.test.mjs",
     "test:doctor-analytics": "node tests/doctor-analytics-static.test.js",
     "test:doctor-analytics:integration": "node tests/doctor-analytics-integration.test.js",

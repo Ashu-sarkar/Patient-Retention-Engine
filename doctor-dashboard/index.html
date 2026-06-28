@@ -715,6 +715,7 @@
         <div class="login-actions">
           <button id="login-submit" class="btn primary" type="submit">Sign In</button>
         </div>
+        <p id="login-alert" class="hidden" style="margin-top:12px;padding:10px 12px;border-radius:10px;background:var(--rose-2);color:var(--rose);font-size:13px;line-height:1.45"></p>
       </form>
     </div>
   </section>
@@ -1110,6 +1111,31 @@
       return `${clean}@${AUTH_USERNAME_EMAIL_DOMAIN}`;
     }
 
+    function showLoginAlert(message) {
+      const el = $('login-alert');
+      if (!message) {
+        el.classList.add('hidden');
+        el.textContent = '';
+        return;
+      }
+      el.textContent = message;
+      el.classList.remove('hidden');
+    }
+
+    function formatAuthError(error) {
+      const msg = String(error?.message || error || 'Sign in failed.');
+      if (/invalid login credentials|invalid email or password/i.test(msg)) {
+        return 'Invalid username or password. Use the dashboard username (not your email). If this clinic was just onboarded, confirm the password from onboarding or reset it in Supabase Auth.';
+      }
+      if (/email not confirmed/i.test(msg)) {
+        return 'This account is not confirmed yet. Ask your clinic admin to re-run hospital onboarding or reset the user in Supabase Auth.';
+      }
+      if (/network|fetch|failed to fetch/i.test(msg)) {
+        return 'Network error reaching Supabase. Check your internet connection and that the dashboard Supabase URL is configured correctly.';
+      }
+      return msg;
+    }
+
     function isPreviewMode() {
       return state.demo || state.adminPreview;
     }
@@ -1237,9 +1263,16 @@
           await enterAdminPreviewApp(username);
           return;
         }
-        if (!isValidUsername(username)) return showToast('Enter a valid username.', true);
-        if (!password || password.length < 8) return showToast('Enter your dashboard password.', true);
+        if (!isValidUsername(username)) {
+          showLoginAlert('Username must be 3–80 characters: lowercase letters, numbers, dots, dashes, or underscores.');
+          return showToast('Enter a valid username.', true);
+        }
+        if (!password || password.length < 8) {
+          showLoginAlert('Password must be at least 8 characters.');
+          return showToast('Enter your dashboard password.', true);
+        }
         if (!sb) return showConfigFallback();
+        showLoginAlert('');
         const button = $('login-submit');
         setButtonBusy(button, true, 'Signing in...');
         const { data, error } = await sb.auth.signInWithPassword({
@@ -1247,8 +1280,22 @@
           password,
         });
         setButtonBusy(button, false);
-        if (error) return showToast(error.message, true);
-        await enterApp(data.session);
+        if (error) {
+          const friendly = formatAuthError(error);
+          showLoginAlert(friendly);
+          return showToast(friendly, true);
+        }
+        try {
+          await enterApp(data.session);
+        } catch (profileErr) {
+          await sb.auth.signOut().catch(() => {});
+          state.session = null;
+          $('login-screen').classList.remove('hidden');
+          $('app').classList.add('hidden');
+          const friendly = formatAuthError(profileErr);
+          showLoginAlert(friendly || 'Signed in, but your doctor profile could not be loaded. Run npm run preflight on the backend, then try again.');
+          showToast('Doctor profile could not be loaded.', true);
+        }
       });
       $('sign-out').addEventListener('click', async () => {
         if (!sb) return location.reload();
@@ -1303,6 +1350,7 @@
       $('login-screen').classList.add('hidden');
       $('app').classList.remove('hidden');
       hideBanner();
+      showLoginAlert('');
       await loadProfile();
       await loadVisits();
       subscribeToQueueChanges();
@@ -1425,12 +1473,13 @@
         error = fallback.error;
       }
       if (error) {
+        const detail = error.message || 'Doctor profile lookup failed.';
         showBanner(
           'Doctor profile not found',
           'This username is not linked to a doctor profile or hospital onboarding row. Check the registered dashboard account, then try again.',
           { error: true, action: () => location.reload() }
         );
-        throw error;
+        throw new Error(formatAuthError({ message: detail }));
       }
       if (Array.isArray(data)) data = data[0] || null;
       if (!data) {
