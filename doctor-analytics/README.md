@@ -53,3 +53,22 @@ Migration file: `schemas/migration-doctor-analytics.sql`
 ## Deploy
 
 Static Vercel deploy from `doctor-analytics/` (see `vercel.json`).
+
+### Vercel
+
+Create a Vercel project (e.g. `vaitalcare-doctor-analytics`) with **Root Directory** set to `doctor-analytics`. Add these environment variables in Project Settings → Environment Variables:
+
+```bash
+VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
+VITE_DOCTOR_DASHBOARD_URL=https://vaitalcare-doctor.vercel.app
+```
+
+Then deploy:
+
+```bash
+cd doctor-analytics
+npx vercel --prod
+```
+
+Assign the production domain `vaitalcare-doctor-analytics.vercel.app` in Vercel → Project → Settings → Domains.
