@@ -838,8 +838,14 @@ async function verifyAnalyticsData(clinicId) {
 }
 
 async function refreshAnalyticsRollups(days = HISTORY_DAYS) {
+  if (process.env.SWASTIK_SKIP_ROLLUP === '1' || process.env.SWASTIK_SKIP_ROLLUP === 'true') {
+    ok('Skipped clinic_daily_analytics refresh (dashboard charts read patient_visits directly)');
+    return;
+  }
+  // Refresh one day per week — enough for rollup table; full daily refresh is ~15 min via REST.
+  const step = Number(process.env.SWASTIK_ROLLUP_STEP || 7);
   let refreshed = 0;
-  for (let offset = days; offset >= 0; offset -= 1) {
+  for (let offset = days; offset >= 0; offset -= step) {
     const metricDate = daysAgoISO(offset);
     const res = await sbFetch('/rest/v1/rpc/refresh_clinic_daily_analytics', {
       method: 'POST',
@@ -847,7 +853,36 @@ async function refreshAnalyticsRollups(days = HISTORY_DAYS) {
     });
     if (res.ok) refreshed += 1;
   }
-  ok(`Refreshed clinic_daily_analytics for ${refreshed} day(s)`);
+  ok(`Refreshed clinic_daily_analytics for ${refreshed} sampled day(s)`);
+}
+
+async function backfillVisitDoctorProfiles(clinicId, profiles) {
+  const profileByName = Object.fromEntries(profiles.map(p => [p.doctor_name, p.id]));
+  let patched = 0;
+  let offset = 0;
+  const pageSize = 500;
+
+  while (true) {
+    const res = await sbFetch(
+      `/rest/v1/patient_visits?clinic_id=eq.${clinicId}&doctor_profile_id=is.null&select=id,doctor_name&limit=${pageSize}&offset=${offset}`,
+    );
+    const rows = Array.isArray(res.json) ? res.json : [];
+    if (!rows.length) break;
+
+    for (const visit of rows) {
+      const doctorProfileId = profileByName[visit.doctor_name];
+      if (!doctorProfileId) continue;
+      const patch = await sbFetch(`/rest/v1/patient_visits?id=eq.${visit.id}`, {
+        method: 'PATCH',
+        body: { doctor_profile_id: doctorProfileId },
+      });
+      if (patch.ok) patched += 1;
+    }
+    if (rows.length < pageSize) break;
+    offset += pageSize;
+  }
+
+  if (patched > 0) ok(`Backfilled doctor_profile_id on ${patched} visit(s)`);
 }
 
 async function seedFullDemo(clinicId, profiles) {
@@ -904,7 +939,11 @@ async function seedFullDemo(clinicId, profiles) {
       visitHistory.set(patient.id, priorVisits);
 
       if (visitStatus === 'completed' && visitDate < today) {
+        const pediatricChronic = doctorName === 'Dr. Ananya Reddy'
+          && priorVisits.length > 0
+          && rand() < chronicBoost * 0.9;
         const treatAsChronic = isChronicComplaint(complaint)
+          || pediatricChronic
           || (priorVisits.length > 0 && rand() < chronicBoost);
         if (!treatAsChronic) continue;
 
@@ -924,7 +963,9 @@ async function seedFullDemo(clinicId, profiles) {
               ? 'Type 2 diabetes — HbA1c stable at 7.1%'
               : complaint.includes('pressure') || complaint.includes('Pressure')
                 ? 'Hypertension — BP 128/82 on medication'
-                : 'Responding well to treatment',
+                : doctorName === 'Dr. Ananya Reddy'
+                  ? 'Pediatric follow-up — improving on treatment'
+                  : 'Responding well to treatment',
           });
           prescriptionCount += 1;
 
@@ -1035,6 +1076,7 @@ async function seedFullDemo(clinicId, profiles) {
   }
 
   await refreshAnalyticsRollups(HISTORY_DAYS);
+  await backfillVisitDoctorProfiles(clinicId, profiles);
 
   const retentionPct = followUpScheduled
     ? Math.round((followUpReturned / followUpScheduled) * 1000) / 10
