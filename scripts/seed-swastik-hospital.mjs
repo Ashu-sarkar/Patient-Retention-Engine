@@ -47,8 +47,10 @@ const FULL_DEMO = process.env.SWASTIK_FULL_DEMO === '1' || process.env.SWASTIK_F
 const HISTORY_DAYS = Number(process.env.SWASTIK_HISTORY_DAYS || 365);
 /** Realistic monthly OPD volume for a 2-doctor urban clinic (oldest → newest month). */
 const MONTHLY_VISIT_TARGETS = [34, 37, 39, 36, 44, 47, 45, 51, 53, 56, 59, 62];
-/** Target follow-up return rate shown in retention KPI (~68–74% reads well in demos). */
+/** Target follow-up return rate at full adoption (~72%). */
 const RETENTION_RETURN_RATE = 0.72;
+/** Month-by-month retention curve — clinic adoption story (oldest → newest). */
+const MONTHLY_RETENTION_TARGETS = [0.54, 0.57, 0.59, 0.61, 0.63, 0.65, 0.67, 0.69, 0.71, 0.73, 0.75, 0.77];
 
 const DOCTORS = [
   {
@@ -283,7 +285,7 @@ async function sbFetch(endpoint, { method = 'GET', body, prefer } = {}) {
 
 async function getExistingBoarding() {
   const res = await sbFetch(
-    `/rest/v1/hospital_boarding?hospital_name=eq.${encodeURIComponent(HOSPITAL_NAME)}&select=clinic_id,doctor_name,doctor_registration_number&order=created_at.asc`,
+    `/rest/v1/hospital_boarding?hospital_name=eq.${encodeURIComponent(HOSPITAL_NAME)}&select=clinic_id,doctor_name,doctor_registration_number,auth_user_id,login_username&order=created_at.asc`,
   );
   if (!res.ok) fail(`Could not query hospital_boarding: ${JSON.stringify(res.json)}`);
   return Array.isArray(res.json) ? res.json : [];
@@ -378,10 +380,65 @@ async function seedHospitalDirect() {
 
 async function getDoctorProfiles(clinicId) {
   const res = await sbFetch(
-    `/rest/v1/doctor_profiles?clinic_id=eq.${clinicId}&select=id,doctor_name,login_username,clinic_name,clinic_id`,
+    `/rest/v1/doctor_profiles?clinic_id=eq.${clinicId}&select=id,doctor_name,login_username,clinic_name,clinic_id,user_id,is_clinic_admin`,
   );
   if (!res.ok) fail(`doctor_profiles query failed: ${JSON.stringify(res.json)}`);
   return Array.isArray(res.json) ? res.json : [];
+}
+
+async function upsertClinicMembership(clinicId, userId, doctorProfileId, role) {
+  const existing = await sbFetch(
+    `/rest/v1/clinic_memberships?clinic_id=eq.${clinicId}&user_id=eq.${userId}&role=eq.${encodeURIComponent(role)}&select=id&limit=1`,
+  );
+  if (Array.isArray(existing.json) && existing.json.length > 0) {
+    await sbFetch(`/rest/v1/clinic_memberships?id=eq.${existing.json[0].id}`, {
+      method: 'PATCH',
+      body: { doctor_profile_id: doctorProfileId, status: 'active' },
+    });
+    return;
+  }
+  await sbFetch('/rest/v1/clinic_memberships', {
+    method: 'POST',
+    body: {
+      clinic_id: clinicId,
+      user_id: userId,
+      doctor_profile_id: doctorProfileId,
+      role,
+      status: 'active',
+    },
+  });
+}
+
+/** Analytics RPCs require active clinic_memberships — WF12 does not always backfill them. */
+async function ensureClinicMemberships(clinicId, profiles, boardingRows) {
+  const profileByUser = Object.fromEntries(
+    profiles.filter(p => p.user_id).map(p => [p.user_id, p]),
+  );
+  let synced = 0;
+
+  for (const row of boardingRows) {
+    const userId = row.auth_user_id;
+    if (!userId) continue;
+    const profile = profileByUser[userId] || profiles.find(p => p.login_username === row.login_username);
+    if (!profile?.id) continue;
+    await upsertClinicMembership(clinicId, userId, profile.id, 'doctor');
+    synced += 1;
+    if (profile.is_clinic_admin || profile.login_username === 'swastik.vikram') {
+      await upsertClinicMembership(clinicId, userId, profile.id, 'clinic_admin');
+    }
+  }
+
+  for (const profile of profiles) {
+    if (!profile.user_id || profileByUser[profile.user_id]) continue;
+    await upsertClinicMembership(clinicId, profile.user_id, profile.id, 'doctor');
+    synced += 1;
+    if (profile.is_clinic_admin) {
+      await upsertClinicMembership(clinicId, profile.user_id, profile.id, 'clinic_admin');
+    }
+  }
+
+  if (synced > 0) ok(`Synced ${synced} doctor clinic_membership(s) for analytics access`);
+  else console.warn('⚠️  No clinic_memberships synced — boarding rows may lack auth_user_id');
 }
 
 async function ensureDoctorProfilesFromBoarding(clinicId) {
@@ -744,6 +801,42 @@ async function seedMessageLog(clinicId, patient, messageType, scheduledDate) {
   });
 }
 
+async function verifyAnalyticsData(clinicId) {
+  const visitsRes = await fetch(`${SUPABASE_URL}/rest/v1/patient_visits?clinic_id=eq.${clinicId}&select=id`, {
+    headers: {
+      apikey: SERVICE_KEY,
+      Authorization: `Bearer ${SERVICE_KEY}`,
+      Prefer: 'count=exact',
+    },
+  });
+  const visitRange = visitsRes.headers.get('content-range') || '0';
+  const visitTotal = Number(visitRange.split('/')[1] || 0);
+
+  const membershipsRes = await sbFetch(
+    `/rest/v1/clinic_memberships?clinic_id=eq.${clinicId}&status=eq.active&select=id,role,user_id`,
+  );
+  const memberships = Array.isArray(membershipsRes.json) ? membershipsRes.json : [];
+
+  const rollupRes = await fetch(`${SUPABASE_URL}/rest/v1/clinic_daily_analytics?clinic_id=eq.${clinicId}&select=metric_date`, {
+    headers: {
+      apikey: SERVICE_KEY,
+      Authorization: `Bearer ${SERVICE_KEY}`,
+      Prefer: 'count=exact',
+    },
+  });
+  const rollupRange = rollupRes.headers.get('content-range') || '0';
+  const rollupTotal = Number(rollupRange.split('/')[1] || 0);
+
+  ok(`Analytics readiness: ${visitTotal} visits · ${rollupTotal} daily rollup rows · ${memberships.length} active membership(s)`);
+  if (visitTotal < 50) {
+    console.warn('⚠️  Low visit count — run npm run seed:swastik-demo for full 12-month history');
+  }
+  if (memberships.length === 0) {
+    console.warn('⚠️  No clinic_memberships — doctors will see empty analytics until memberships exist');
+  }
+  return { visitTotal, rollupTotal, memberships: memberships.length };
+}
+
 async function refreshAnalyticsRollups(days = HISTORY_DAYS) {
   let refreshed = 0;
   for (let offset = days; offset >= 0; offset -= 1) {
@@ -783,6 +876,8 @@ async function seedFullDemo(clinicId, profiles) {
     const ym = months[m];
     const target = MONTHLY_VISIT_TARGETS[m] || 40;
     const visitDates = spreadVisitsAcrossMonth(ym, target, rand);
+    const monthRetention = MONTHLY_RETENTION_TARGETS[m] ?? RETENTION_RETURN_RATE;
+    const chronicBoost = 0.42 + (m / Math.max(months.length - 1, 1)) * 0.22;
 
     for (const visitDate of visitDates) {
       const row = pool[patientCursor % pool.length];
@@ -808,11 +903,15 @@ async function seedFullDemo(clinicId, profiles) {
       priorVisits.push({ visitDate, visitId, complaint, doctorName, doctorProfileId });
       visitHistory.set(patient.id, priorVisits);
 
-      if (visitStatus === 'completed' && isChronicComplaint(complaint) && visitDate < today) {
+      if (visitStatus === 'completed' && visitDate < today) {
+        const treatAsChronic = isChronicComplaint(complaint)
+          || (priorVisits.length > 0 && rand() < chronicBoost);
+        if (!treatAsChronic) continue;
+
         const followUpDate = addDaysISO(visitDate, 14 + Math.floor(rand() * 7));
         if (followUpDate <= today) {
           followUpScheduled += 1;
-          const returned = rand() < RETENTION_RETURN_RATE;
+          const returned = rand() < monthRetention;
           const returnDate = returned
             ? addDaysISO(followUpDate, 2 + Math.floor(rand() * 9))
             : null;
@@ -979,8 +1078,8 @@ function saveManifest({ clinicId, profiles, visitCount, stats = {} }) {
     analytics_url: process.env.DOCTOR_ANALYTICS_URL || 'https://vaitalcare-doctor-analytics.vercel.app',
     demo_tips: FULL_DEMO ? [
       'Doctor dashboard: sign in as swastik.vikram — today\'s queue is pre-filled.',
-      'Analytics: set Custom range to last 12 months (or last 6) for monthly visit + retention charts.',
-      `Modeled chronic-care retention: ~${stats.retentionPct || 72}% of scheduled follow-ups returned within 2 weeks.`,
+      'Analytics: open with Last 6 months or Last 12 months — visits grow month-on-month, retention improves over time.',
+      `Modeled chronic-care retention: ~${stats.retentionPct || 72}% overall; early months ~54%, recent months ~77%.`,
       'Compare Dr. Vikram vs Dr. Ananya using the doctor filter — pediatric vs general medicine mix.',
     ] : ['Today\'s queue only — run npm run seed:swastik-demo for full analytics history.'],
     created_at: new Date().toISOString(),
@@ -1023,7 +1122,10 @@ async function main() {
         method: 'PATCH',
         body: { is_clinic_admin: true },
       });
+      vikram.is_clinic_admin = true;
     }
+    profiles = await getDoctorProfiles(clinicId);
+    await ensureClinicMemberships(clinicId, profiles, boardingRows);
   }
 
   await cleanupPriorSeed(clinicId);
@@ -1048,6 +1150,8 @@ async function main() {
   const manifestPath = saveManifest({ clinicId, profiles, visitCount, stats });
   ok(`Manifest saved to ${manifestPath}`);
 
+  await verifyAnalyticsData(clinicId);
+
   console.log('\n── Doctor dashboard logins ──');
   console.log(`   Dashboard : ${process.env.DOCTOR_DASHBOARD_URL || 'https://vaitalcare-doctor.vercel.app'}`);
   console.log(`   Analytics : ${process.env.DOCTOR_ANALYTICS_URL || 'https://vaitalcare-doctor-analytics.vercel.app'}`);
@@ -1060,8 +1164,8 @@ async function main() {
   if (FULL_DEMO) {
     console.log('\n── Demo walkthrough ──');
     console.log('   1. Doctor dashboard → today\'s queue, issue a prescription');
-    console.log('   2. Analytics → Custom range: 12 months ago → today (or 6 months)');
-    console.log('   3. Point to monthly visits growth, ~72% retention, overdue follow-ups list');
+    console.log('   2. Analytics → Last 6 months or Last 12 months preset');
+    console.log('   3. Point to monthly visits growth, rising retention curve, overdue follow-ups list');
   }
 
   console.log(`\n[seed-swastik-hospital] Done.${FULL_DEMO ? ' Open analytics for retention charts.' : ''}\n`);
