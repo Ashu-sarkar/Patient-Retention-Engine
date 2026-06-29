@@ -5,7 +5,7 @@ import type { AnalyticsFilter, DatePreset, PatientTypeFilter } from '@/types/ana
 import type { DoctorProfile } from '@/types/analytics';
 
 export function useAnalyticsFilters(profile: DoctorProfile | null) {
-  const [preset, setPreset] = useState<DatePreset>('this_month');
+  const [preset, setPreset] = useState<DatePreset>('last_180');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
   const [doctorProfileId, setDoctorProfileId] = useState<string | null>(null);

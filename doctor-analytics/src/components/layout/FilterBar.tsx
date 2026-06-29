@@ -60,7 +60,7 @@ export function FilterBar({
       <div className="flex flex-wrap items-end gap-3">
         <Field label="Date range">
           <select className="input min-w-[160px]" value={preset} onChange={(e) => setPreset(e.target.value as DatePreset)}>
-            {(['today', 'this_week', 'this_month', 'last_30', 'last_90', 'custom'] as DatePreset[]).map((p) => (
+            {(['today', 'this_week', 'this_month', 'last_30', 'last_90', 'last_180', 'last_365', 'custom'] as DatePreset[]).map((p) => (
               <option key={p} value={p}>
                 {presetLabel(p)}
               </option>

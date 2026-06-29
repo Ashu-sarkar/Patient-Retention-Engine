@@ -1,0 +1,12 @@
+{
+  "hospital_name": "Swastik Hospital",
+  "clinic_id": "3b882e47-09e6-44fa-a94d-7d1c4ae18aa0",
+  "patient_id": "94373fbf-3134-4663-a1a2-5a65e682332a",
+  "patient_code": "SWASTIKQ8ZN-PAT-0008",
+  "phone": "+919685722570",
+  "prescription_id": "7910b88c-035a-44bd-bde0-1e9af18795e4",
+  "pdf_signed_url": "https://crsdccqseuhnimoxxeky.supabase.co/storage/v1/object/sign/prescriptions/3b882e47-09e6-44fa-a94d-7d1c4ae18aa0%2Feba9e202-cddf-4b00-aa46-553fe23d6d92%2F7910b88c-035a-44bd-bde0-1e9af18795e4.pdf?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9lOTQ5ZjlhNy1mYzY2LTQ4MmYtYmU3MC1lZjdhYjFhNzNhNzkiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJwcmVzY3JpcHRpb25zLzNiODgyZTQ3LTA5ZTYtNDRmYS1hOTRkLTdkMWM0YWUxOGFhMCUyRmViYTllMjAyLWNkZGYtNGIwMC1hYTQ2LTU1M2ZlMjNkNmQ5MiUyRjc5MTBiODhjLTAzNWEtNDRiZC1iZGUwLTFlOWFmMTg3OTVlNC5wZGYiLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzgyNjYxOTk4LCJleHAiOjE3ODMyNjY3OTh9.WHQqPgh-LdDi7Olcr7gjb2LpktXznIxvV4dPLAsgB_o",
+  "pdf_short_link": "https://crsdccqseuhnimoxxeky.supabase.co/functions/v1/prescription-pdf?id=7910b88c-035a-44bd-bde0-1e9af18795e4&c=3b882e47-09e6-44fa-a94d-7d1c4ae18aa0&exp=1783266799&t=1be2a9a15ff978fc905f3df4f868e701",
+  "twilio_message_sid": "MMca875a6d7a29292067e5404cccfee8cf",
+  "created_at": "2026-06-28T15:53:21.564Z"
+}

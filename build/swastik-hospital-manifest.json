@@ -1,8 +1,17 @@
 {
   "hospital_name": "Swastik Hospital",
   "clinic_id": "3b882e47-09e6-44fa-a94d-7d1c4ae18aa0",
-  "visit_date": "2026-06-28",
-  "visits_seeded": 7,
+  "visit_date": "2026-06-29",
+  "mode": "full_demo",
+  "visits_seeded": 707,
+  "patients_seeded": 61,
+  "prescriptions_seeded": 195,
+  "message_logs_seeded": 184,
+  "history_days": 365,
+  "months_covered": 12,
+  "modeled_retention_pct": 71.7,
+  "follow_ups_scheduled": 191,
+  "follow_ups_returned": 137,
   "doctors": [
     {
       "name": "Dr. Vikram Swastik",
@@ -16,5 +25,12 @@
     }
   ],
   "dashboard_url": "https://vaitalcare-doctor.vercel.app",
-  "created_at": "2026-06-28T12:05:08.550Z"
+  "analytics_url": "https://vaitalcare-doctor-analytics.vercel.app",
+  "demo_tips": [
+    "Doctor dashboard: sign in as swastik.vikram — today's queue is pre-filled.",
+    "Analytics: set Custom range to last 12 months (or last 6) for monthly visit + retention charts.",
+    "Modeled chronic-care retention: ~71.7% of scheduled follow-ups returned within 2 weeks.",
+    "Compare Dr. Vikram vs Dr. Ananya using the doctor filter — pediatric vs general medicine mix."
+  ],
+  "created_at": "2026-06-29T14:32:37.091Z"
 }

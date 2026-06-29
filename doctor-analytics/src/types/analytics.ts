@@ -6,6 +6,8 @@ export type DatePreset =
   | 'this_month'
   | 'last_30'
   | 'last_90'
+  | 'last_180'
+  | 'last_365'
   | 'custom';
 
 export interface AnalyticsFilter {

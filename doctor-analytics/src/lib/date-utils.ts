@@ -24,6 +24,10 @@ export function resolveDateRange(preset: DatePreset, customFrom?: string, custom
       return { fromDate: format(subDays(today, 29), 'yyyy-MM-dd'), toDate: todayISO() };
     case 'last_90':
       return { fromDate: format(subDays(today, 89), 'yyyy-MM-dd'), toDate: todayISO() };
+    case 'last_180':
+      return { fromDate: format(subDays(today, 179), 'yyyy-MM-dd'), toDate: todayISO() };
+    case 'last_365':
+      return { fromDate: format(subDays(today, 364), 'yyyy-MM-dd'), toDate: todayISO() };
     case 'custom':
       return {
         fromDate: customFrom || format(startOfMonth(today), 'yyyy-MM-dd'),
@@ -72,6 +76,10 @@ export function presetLabel(preset: DatePreset): string {
       return 'Last 30 days';
     case 'last_90':
       return 'Last 90 days';
+    case 'last_180':
+      return 'Last 6 months';
+    case 'last_365':
+      return 'Last 12 months';
     case 'custom':
       return 'Custom range';
     default:

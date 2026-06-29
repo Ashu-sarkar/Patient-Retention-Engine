@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 /**
- * Seed Swastik Hospital with dummy patients + today's queue for the doctor dashboard.
+ * Seed Swastik Hospital for product demos.
  *
- * Usage:
- *   node scripts/seed-swastik-hospital.mjs
+ * Quick mode (today's queue only):
  *   npm run seed:swastik-hospital
  *
- * Outputs dashboard login credentials and visit counts.
+ * Full demo (6-month history, follow-ups, retention analytics):
+ *   npm run seed:swastik-demo
+ *
+ * Outputs dashboard + analytics login credentials and manifest in build/.
  */
 
 import fs from 'fs';
@@ -41,6 +43,12 @@ const WEBHOOK_BASE = (env.WEBHOOK_URL || 'https://vaitalcare-production.up.railw
 const HOSPITAL_NAME = process.env.SWASTIK_HOSPITAL || 'Swastik Hospital';
 const FACILITY_TYPE = 'General Hospital';
 const SEED_TAG = 'Swastik demo seed';
+const FULL_DEMO = process.env.SWASTIK_FULL_DEMO === '1' || process.env.SWASTIK_FULL_DEMO === 'true';
+const HISTORY_DAYS = Number(process.env.SWASTIK_HISTORY_DAYS || 365);
+/** Realistic monthly OPD volume for a 2-doctor urban clinic (oldest → newest month). */
+const MONTHLY_VISIT_TARGETS = [34, 37, 39, 36, 44, 47, 45, 51, 53, 56, 59, 62];
+/** Target follow-up return rate shown in retention KPI (~68–74% reads well in demos). */
+const RETENTION_RETURN_RATE = 0.72;
 
 const DOCTORS = [
   {
@@ -145,6 +153,115 @@ function ok(msg) {
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
+
+function addDaysISO(isoDate, offset) {
+  const d = new Date(`${isoDate}T12:00:00`);
+  d.setDate(d.getDate() + offset);
+  return d.toISOString().slice(0, 10);
+}
+
+function daysAgoISO(offset) {
+  return addDaysISO(todayISO(), -offset);
+}
+
+function isoAt(isoDate, hour = 10) {
+  return new Date(`${isoDate}T${String(hour).padStart(2, '0')}:30:00+05:30`).toISOString();
+}
+
+const DEMO_NAMES = [
+  { name: 'Ramesh Kumar', sex: 'Male', dob: '1982-04-15' },
+  { name: 'Sunita Devi', sex: 'Female', dob: '1990-08-22' },
+  { name: 'Arjun Patel', sex: 'Male', dob: '1975-11-03' },
+  { name: 'Meera Nair', sex: 'Female', dob: '1988-01-09' },
+  { name: 'Kavitha Rao', sex: 'Female', dob: '1995-06-30' },
+  { name: 'Suresh Babu', sex: 'Male', dob: '2019-12-05' },
+  { name: 'Priya Sharma', sex: 'Female', dob: '1992-03-18' },
+  { name: 'Vikram Singh', sex: 'Male', dob: '1968-07-11' },
+  { name: 'Lakshmi Iyer', sex: 'Female', dob: '1985-02-28' },
+  { name: 'Rajesh Gupta', sex: 'Male', dob: '1979-09-14' },
+  { name: 'Anita Desai', sex: 'Female', dob: '1993-12-01' },
+  { name: 'Mohammed Farooq', sex: 'Male', dob: '1980-05-20' },
+  { name: 'Deepa Menon', sex: 'Female', dob: '1987-10-08' },
+  { name: 'Karthik Reddy', sex: 'Male', dob: '1998-03-25' },
+  { name: 'Pooja Agarwal', sex: 'Female', dob: '1991-06-17' },
+  { name: 'Sanjay Verma', sex: 'Male', dob: '1972-01-30' },
+  { name: 'Nisha Thomas', sex: 'Female', dob: '1984-11-12' },
+  { name: 'Harish Joshi', sex: 'Male', dob: '1965-08-05' },
+  { name: 'Divya Krishnan', sex: 'Female', dob: '1996-04-09' },
+  { name: 'Imran Khan', sex: 'Male', dob: '1989-07-22' },
+  { name: 'Shalini Bose', sex: 'Female', dob: '1994-09-03' },
+  { name: 'Gopal Naidu', sex: 'Male', dob: '1958-12-19' },
+  { name: 'Rekha Pillai', sex: 'Female', dob: '1983-03-07' },
+  { name: 'Amit Choudhury', sex: 'Male', dob: '1997-02-14' },
+  { name: 'Fatima Sheikh', sex: 'Female', dob: '1990-10-27' },
+  { name: 'Manoj Tiwari', sex: 'Male', dob: '1977-06-16' },
+  { name: 'Sneha Kapoor', sex: 'Female', dob: '2001-01-08' },
+  { name: 'Pradeep Malhotra', sex: 'Male', dob: '1963-05-02' },
+  { name: 'Uma Hegde', sex: 'Female', dob: '1986-08-30' },
+  { name: 'Rahul Saxena', sex: 'Male', dob: '1999-11-21' },
+  { name: 'Geeta Murthy', sex: 'Female', dob: '1970-04-04' },
+  { name: 'Naveen Kulkarni', sex: 'Male', dob: '1981-12-25' },
+  { name: 'Padma Srinivasan', sex: 'Female', dob: '1974-07-18' },
+  { name: 'Chetan Mehta', sex: 'Male', dob: '1988-02-03' },
+  { name: 'Lalitha Gowda', sex: 'Female', dob: '1969-11-29' },
+  { name: 'Bharat Shah', sex: 'Male', dob: '1976-05-14' },
+  { name: 'Anjali Mishra', sex: 'Female', dob: '1993-08-07' },
+  { name: 'Venkat Subramanian', sex: 'Male', dob: '1961-03-22' },
+  { name: 'Swati Banerjee', sex: 'Female', dob: '1987-12-11' },
+  { name: 'Rohit Deshmukh', sex: 'Male', dob: '1994-06-25' },
+  { name: 'Kiran Bhat', sex: 'Female', dob: '1980-09-30' },
+  { name: 'Murali Iyengar', sex: 'Male', dob: '1959-01-17' },
+  { name: 'Tanvi Shah', sex: 'Female', dob: '2002-04-08' },
+  { name: 'Aditya Khanna', sex: 'Male', dob: '1991-10-19' },
+  { name: 'Revathi Nambiar', sex: 'Female', dob: '1985-07-04' },
+  { name: 'Ganesh Prabhu', sex: 'Male', dob: '1973-02-28' },
+  { name: 'Ishita Dutta', sex: 'Female', dob: '1998-11-15' },
+  { name: 'Yusuf Ahmed', sex: 'Male', dob: '1984-08-21' },
+  { name: 'Chitra Venkatesh', sex: 'Female', dob: '1971-05-09' },
+  { name: 'Nitin Oberoi', sex: 'Male', dob: '1989-03-12' },
+  { name: 'Sowmya Raghavan', sex: 'Female', dob: '1996-12-02' },
+  { name: 'Harsh Vardhan', sex: 'Male', dob: '1967-06-26' },
+  { name: 'Madhuri Kulkarni', sex: 'Female', dob: '1982-01-31' },
+  { name: 'Prakash Shetty', sex: 'Male', dob: '1955-09-14' },
+  { name: 'Neha Chawla', sex: 'Female', dob: '1999-07-23' },
+  { name: 'Siddharth Rao', sex: 'Male', dob: '1992-04-17' },
+  { name: 'Vandana Joshi', sex: 'Female', dob: '1978-10-05' },
+  { name: 'Ashok Reddy', sex: 'Male', dob: '1964-08-28' },
+  { name: 'Pallavi Sinha', sex: 'Female', dob: '1990-02-14' },
+  { name: 'Kunal Agarwal', sex: 'Male', dob: '1986-11-30' },
+  { name: 'Bhavana Hegde', sex: 'Female', dob: '1997-05-07' },
+];
+
+const CHRONIC_COMPLAINTS = new Set([
+  'Blood pressure follow-up',
+  'Diabetes review',
+  'Thyroid review',
+  'Migraine follow-up',
+  'Follow-up for blood pressure medicines',
+  'Joint pain — arthritis review',
+  'Asthma inhaler review',
+  'Cholesterol review',
+]);
+
+const COMPLAINTS = [
+  'Fever and body ache',
+  'Persistent cough',
+  'Blood pressure follow-up',
+  'Diabetes review',
+  'Skin rash',
+  'Child vaccination',
+  'Routine antenatal check-up',
+  'Joint pain',
+  'Seasonal allergies',
+  'Digestive discomfort',
+  'Migraine follow-up',
+  'Thyroid review',
+  'Joint pain — arthritis review',
+  'Asthma inhaler review',
+  'Cholesterol review',
+  'Child vaccination — 12 months',
+  'Postpartum check-up',
+];
 
 async function sbFetch(endpoint, { method = 'GET', body, prefer } = {}) {
   const headers = {
@@ -326,10 +443,17 @@ async function cleanupPriorSeed(clinicId) {
   );
   const patients = Array.isArray(patientsRes.json) ? patientsRes.json : [];
   for (const row of patients) {
+    await sbFetch(`/rest/v1/message_logs?patient_id=eq.${row.id}`, { method: 'DELETE' });
+    const rxRes = await sbFetch(`/rest/v1/prescriptions?patient_id=eq.${row.id}&select=id`);
+    const rxRows = Array.isArray(rxRes.json) ? rxRes.json : [];
+    for (const rx of rxRows) {
+      await sbFetch(`/rest/v1/prescription_medicines?prescription_id=eq.${rx.id}`, { method: 'DELETE' });
+      await sbFetch(`/rest/v1/prescriptions?id=eq.${rx.id}`, { method: 'DELETE' });
+    }
     await sbFetch(`/rest/v1/patient_visits?patient_id=eq.${row.id}`, { method: 'DELETE' });
     await sbFetch(`/rest/v1/patients?id=eq.${row.id}`, { method: 'DELETE' });
   }
-  if (patients.length) ok(`Removed ${patients.length} prior demo patient(s)`);
+  if (patients.length) ok(`Removed ${patients.length} prior demo patient(s) and related records`);
 }
 
 async function upsertPatient(clinicId, row) {
@@ -380,8 +504,7 @@ async function upsertPatient(clinicId, row) {
   return { id: patient.id, patient_code: patient.patient_code, phone: phoneE164 };
 }
 
-async function createVisit(clinicId, patient, row, doctorProfileId) {
-  const visitDate = todayISO();
+async function createVisit(clinicId, patient, row, doctorProfileId, visitDate = todayISO()) {
   const existing = await sbFetch(
     `/rest/v1/patient_visits?patient_id=eq.${patient.id}&visit_date=eq.${visitDate}&visit_status=not.in.(cancelled,no_show)&select=id&limit=1`,
   );
@@ -417,14 +540,14 @@ async function createVisit(clinicId, patient, row, doctorProfileId) {
     known_allergies: row.known_allergies || null,
     vitals_notes: row.vitals_notes || null,
     staff_notes: SEED_TAG,
-    checked_in_at: new Date().toISOString(),
+    checked_in_at: isoAt(visitDate, row.visit_status === 'waiting' ? 9 : 11),
   };
   if (row.visit_status === 'in_consultation') {
-    body.consultation_started_at = new Date().toISOString();
+    body.consultation_started_at = isoAt(visitDate, 11);
   }
   if (row.visit_status === 'completed') {
-    body.consultation_started_at = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-    body.completed_at = new Date().toISOString();
+    body.consultation_started_at = isoAt(visitDate, 10);
+    body.completed_at = isoAt(visitDate, 10);
   }
 
   const ins = await sbFetch('/rest/v1/patient_visits', {
@@ -432,7 +555,7 @@ async function createVisit(clinicId, patient, row, doctorProfileId) {
     prefer: 'return=representation',
     body,
   });
-  if (!ins.ok) fail(`visit insert failed for ${row.name}: ${JSON.stringify(ins.json)}`);
+  if (!ins.ok) fail(`visit insert failed for ${row.name} on ${visitDate}: ${JSON.stringify(ins.json)}`);
   const visit = Array.isArray(ins.json) ? ins.json[0] : ins.json;
   return visit.id;
 }
@@ -451,20 +574,415 @@ async function seedDummyQueue(clinicId, profiles) {
   return created;
 }
 
-function saveManifest({ clinicId, profiles, visitCount }) {
+function seededRand(seed) {
+  let state = seed >>> 0;
+  return () => {
+    state = (Math.imul(1664525, state) + 1013904223) >>> 0;
+    return state / 4294967296;
+  };
+}
+
+function monthKey(isoDate) {
+  return isoDate.slice(0, 7);
+}
+
+function listMonthStarts(monthCount = 12) {
+  const today = new Date();
+  const anchor = new Date(today.getFullYear(), today.getMonth(), 1);
+  const months = [];
+  for (let i = monthCount - 1; i >= 0; i -= 1) {
+    const d = new Date(anchor);
+    d.setMonth(d.getMonth() - i);
+    months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  }
+  return months;
+}
+
+function weekdaysInMonth(ym, maxDate = todayISO()) {
+  const [year, month] = ym.split('-').map(Number);
+  const days = [];
+  for (let day = 1; day <= 31; day += 1) {
+    const iso = `${ym}-${String(day).padStart(2, '0')}`;
+    const dt = new Date(`${iso}T12:00:00`);
+    if (dt.getFullYear() !== year || dt.getMonth() + 1 !== month) break;
+    if (dt.getDay() === 0) continue;
+    if (iso > maxDate) continue;
+    days.push(iso);
+  }
+  return days;
+}
+
+function spreadVisitsAcrossMonth(ym, count, rand) {
+  const weekdays = weekdaysInMonth(ym);
+  if (!weekdays.length || count <= 0) return [];
+  const slots = [];
+  for (let i = 0; i < count; i += 1) {
+    slots.push(weekdays[Math.floor(rand() * weekdays.length)]);
+  }
+  slots.sort();
+  return slots;
+}
+
+function buildPatientPool() {
+  return DEMO_NAMES.map((person, index) => {
+    const queueMatch = DUMMY_QUEUE.find(q => q.name === person.name);
+    const isPediatric = queueMatch?.doctor_name === 'Dr. Ananya Reddy' || index % 4 === 0;
+    const doctorName = queueMatch?.doctor_name || (isPediatric ? 'Dr. Ananya Reddy' : 'Dr. Vikram Swastik');
+    return {
+      ...person,
+      index,
+      phone: queueMatch?.phone || `98102${String(1000 + index).padStart(4, '0')}`,
+      doctor_name: doctorName,
+      chief_complaint: queueMatch?.chief_complaint || COMPLAINTS[index % COMPLAINTS.length],
+      visit_status: queueMatch?.visit_status || 'completed',
+      symptoms_duration: queueMatch?.symptoms_duration || null,
+      current_medicines: queueMatch?.current_medicines || null,
+      known_allergies: queueMatch?.known_allergies || null,
+      vitals_notes: queueMatch?.vitals_notes || null,
+      in_today_queue: Boolean(queueMatch),
+    };
+  });
+}
+
+function pickComplaint(rand, doctorName, visitIndex) {
+  if (doctorName === 'Dr. Ananya Reddy') {
+    const pediatric = [
+      'Child vaccination — 12 months',
+      'Mild fever in toddler',
+      'Child vaccination due — 18 months',
+      'Routine antenatal check-up',
+      'Seasonal allergies',
+    ];
+    return pediatric[Math.floor(rand() * pediatric.length)];
+  }
+  if (visitIndex > 0 && rand() < 0.58) {
+    const chronic = [...CHRONIC_COMPLAINTS];
+    return chronic[Math.floor(rand() * chronic.length)];
+  }
+  const acute = [
+    'Fever and body ache for 2 days',
+    'Persistent cough and sore throat',
+    'Skin rash on arms',
+    'Digestive discomfort',
+    'Seasonal allergies',
+    'Upper respiratory infection',
+  ];
+  return acute[Math.floor(rand() * acute.length)];
+}
+
+function isChronicComplaint(complaint) {
+  return CHRONIC_COMPLAINTS.has(complaint)
+    || /follow-up|review|diabetes|pressure|thyroid|arthritis|asthma|cholesterol/i.test(complaint);
+}
+
+async function patchPatient(clinicId, patientId, patch) {
+  await sbFetch(`/rest/v1/patients?id=eq.${patientId}`, {
+    method: 'PATCH',
+    body: { clinic_id: clinicId, ...patch },
+  });
+}
+
+async function seedPrescription(clinicId, patient, visitId, doctorProfileId, doctorName, opts = {}) {
+  const followUpDate = opts.followUpDate || addDaysISO(todayISO(), 14);
+  const issuedAt = opts.issuedAt || new Date().toISOString();
+  const ins = await sbFetch('/rest/v1/prescriptions', {
+    method: 'POST',
+    prefer: 'return=representation',
+    body: {
+      clinic_id: clinicId,
+      patient_id: patient.id,
+      ...(visitId ? { visit_id: visitId } : {}),
+      doctor_profile_id: doctorProfileId,
+      status: 'issued',
+      diagnosis: opts.diagnosis || 'Stable on current treatment — continue medicines',
+      clinical_remarks: opts.chief_complaint || patient.chief_complaint || 'Routine review',
+      advice: 'Take medicines on time. Walk 30 minutes daily. Return if symptoms worsen.',
+      follow_up_required: 'Yes',
+      follow_up_date: followUpDate,
+      issued_at: issuedAt,
+      delivery_status: 'sent',
+      pdf_url: 'https://example.com/swastik-demo-rx.pdf',
+      doctor_snapshot: { name: doctorName },
+      clinic_snapshot: { name: HOSPITAL_NAME },
+    },
+  });
+  if (!ins.ok) return null;
+  const rx = Array.isArray(ins.json) ? ins.json[0] : ins.json;
+  await sbFetch('/rest/v1/prescription_medicines', {
+    method: 'POST',
+    body: [{
+      prescription_id: rx.id,
+      clinic_id: clinicId,
+      medicine_name: 'Paracetamol 500mg',
+      dosage: '1 tablet',
+      frequency: 'TDS',
+      timing: 'After meals',
+      duration: '5 days',
+      sort_order: 1,
+    }],
+  });
+  return rx.id;
+}
+
+async function seedMessageLog(clinicId, patient, messageType, scheduledDate) {
+  await sbFetch('/rest/v1/message_logs', {
+    method: 'POST',
+    body: {
+      clinic_id: clinicId,
+      patient_id: patient.id,
+      patient_name: patient.name,
+      phone: patient.phone,
+      workflow_name: 'swastik-demo-seed',
+      message_type: messageType,
+      message_sent: `Demo ${messageType} for ${patient.name}`,
+      sent_at: isoAt(scheduledDate, 9),
+      scheduled_date: scheduledDate,
+      delivery_status: 'sent',
+      provider_message_id: `DEMO${String(Math.random()).slice(2, 14)}`,
+      twilio_message_sid: `DEMO${String(Math.random()).slice(2, 14)}`,
+    },
+  });
+}
+
+async function refreshAnalyticsRollups(days = HISTORY_DAYS) {
+  let refreshed = 0;
+  for (let offset = days; offset >= 0; offset -= 1) {
+    const metricDate = daysAgoISO(offset);
+    const res = await sbFetch('/rest/v1/rpc/refresh_clinic_daily_analytics', {
+      method: 'POST',
+      body: { p_metric_date: metricDate },
+    });
+    if (res.ok) refreshed += 1;
+  }
+  ok(`Refreshed clinic_daily_analytics for ${refreshed} day(s)`);
+}
+
+async function seedFullDemo(clinicId, profiles) {
+  const profileByName = Object.fromEntries(profiles.map(p => [p.doctor_name, p.id]));
+  const pool = buildPatientPool();
+  const rand = seededRand(0x53415354); // "SAST"
+  const today = todayISO();
+  const patientDb = new Map();
+  const visitHistory = new Map();
+  let visitCount = 0;
+  let prescriptionCount = 0;
+  let messageCount = 0;
+  let followUpScheduled = 0;
+  let followUpReturned = 0;
+
+  for (const row of pool) {
+    const patient = await upsertPatient(clinicId, row);
+    patientDb.set(row.index, { ...row, ...patient });
+    visitHistory.set(patient.id, []);
+  }
+
+  const months = listMonthStarts(MONTHLY_VISIT_TARGETS.length);
+  let patientCursor = 0;
+
+  for (let m = 0; m < months.length; m += 1) {
+    const ym = months[m];
+    const target = MONTHLY_VISIT_TARGETS[m] || 40;
+    const visitDates = spreadVisitsAcrossMonth(ym, target, rand);
+
+    for (const visitDate of visitDates) {
+      const row = pool[patientCursor % pool.length];
+      patientCursor += 1;
+      const patient = patientDb.get(row.index);
+      const priorVisits = visitHistory.get(patient.id) || [];
+      const doctorName = row.doctor_name;
+      const doctorProfileId = profileByName[doctorName] || null;
+      const complaint = pickComplaint(rand, doctorName, priorVisits.length);
+      const isToday = visitDate === today;
+      const visitStatus = isToday && row.in_today_queue
+        ? row.visit_status
+        : (rand() < 0.93 ? 'completed' : 'in_consultation');
+
+      const visitId = await createVisit(
+        clinicId,
+        patient,
+        { ...row, chief_complaint: complaint, visit_status: visitStatus },
+        doctorProfileId,
+        visitDate,
+      );
+      visitCount += 1;
+      priorVisits.push({ visitDate, visitId, complaint, doctorName, doctorProfileId });
+      visitHistory.set(patient.id, priorVisits);
+
+      if (visitStatus === 'completed' && isChronicComplaint(complaint) && visitDate < today) {
+        const followUpDate = addDaysISO(visitDate, 14 + Math.floor(rand() * 7));
+        if (followUpDate <= today) {
+          followUpScheduled += 1;
+          const returned = rand() < RETENTION_RETURN_RATE;
+          const returnDate = returned
+            ? addDaysISO(followUpDate, 2 + Math.floor(rand() * 9))
+            : null;
+
+          await seedPrescription(clinicId, patient, visitId, doctorProfileId, doctorName, {
+            followUpDate,
+            issuedAt: isoAt(visitDate, 11),
+            chief_complaint: complaint,
+            diagnosis: complaint.includes('Diabetes')
+              ? 'Type 2 diabetes — HbA1c stable at 7.1%'
+              : complaint.includes('pressure') || complaint.includes('Pressure')
+                ? 'Hypertension — BP 128/82 on medication'
+                : 'Responding well to treatment',
+          });
+          prescriptionCount += 1;
+
+          if (returned && returnDate && returnDate <= today) {
+            followUpReturned += 1;
+            await createVisit(
+              clinicId,
+              patient,
+              {
+                ...row,
+                chief_complaint: `${complaint} — follow-up visit`,
+                visit_status: 'completed',
+              },
+              doctorProfileId,
+              returnDate,
+            );
+            visitCount += 1;
+            await patchPatient(clinicId, patient.id, {
+              follow_up_required: 'Yes',
+              follow_up_date: followUpDate,
+              status: 'completed',
+              doctor_name: doctorName,
+            });
+            await seedMessageLog(
+              clinicId,
+              { ...patient, phone: `+91${row.phone}` },
+              'follow_up_reminder',
+              addDaysISO(followUpDate, -1),
+            );
+            messageCount += 1;
+          } else if (!returned) {
+            await patchPatient(clinicId, patient.id, {
+              follow_up_required: 'Yes',
+              follow_up_date: followUpDate,
+              status: 'missed',
+              doctor_name: doctorName,
+            });
+            await seedMessageLog(
+              clinicId,
+              { ...patient, phone: `+91${row.phone}` },
+              'follow_up_reminder',
+              addDaysISO(followUpDate, -2),
+            );
+            messageCount += 1;
+          }
+        }
+      }
+    }
+  }
+
+  // Today's live queue — ensure all 7 reception patients are present with realistic statuses
+  for (const row of pool.filter(p => p.in_today_queue)) {
+    const patient = patientDb.get(row.index);
+    const doctorProfileId = profileByName[row.doctor_name] || null;
+    const existing = await sbFetch(
+      `/rest/v1/patient_visits?patient_id=eq.${patient.id}&visit_date=eq.${today}&visit_status=not.in.(cancelled,no_show)&select=id&limit=1`,
+    );
+    if (!Array.isArray(existing.json) || existing.json.length === 0) {
+      await createVisit(clinicId, patient, row, doctorProfileId, today);
+      visitCount += 1;
+    } else {
+      await sbFetch(`/rest/v1/patient_visits?id=eq.${existing.json[0].id}`, {
+        method: 'PATCH',
+        body: {
+          visit_status: row.visit_status,
+          chief_complaint: row.chief_complaint,
+          doctor_name: row.doctor_name,
+        },
+      });
+    }
+  }
+
+  // Active pipeline: due today, upcoming, and a handful overdue (believable for a busy clinic)
+  const pipelinePatients = pool.filter(p => !p.in_today_queue).slice(0, 18);
+  for (let i = 0; i < pipelinePatients.length; i += 1) {
+    const row = pipelinePatients[i];
+    const patient = patientDb.get(row.index);
+    const doctorProfileId = profileByName[row.doctor_name] || null;
+    if (i < 4) {
+      await patchPatient(clinicId, patient.id, {
+        follow_up_required: 'Yes',
+        follow_up_date: today,
+        status: 'pending',
+        doctor_name: row.doctor_name,
+      });
+    } else if (i < 10) {
+      await patchPatient(clinicId, patient.id, {
+        follow_up_required: 'Yes',
+        follow_up_date: addDaysISO(today, 4 + (i % 12)),
+        status: 'pending',
+        doctor_name: row.doctor_name,
+      });
+    } else if (i < 14) {
+      const overdueDate = daysAgoISO(5 + (i % 9));
+      await patchPatient(clinicId, patient.id, {
+        follow_up_required: 'Yes',
+        follow_up_date: overdueDate,
+        status: 'missed',
+        doctor_name: row.doctor_name,
+      });
+      await seedPrescription(clinicId, patient, null, doctorProfileId, row.doctor_name, {
+        followUpDate: overdueDate,
+        issuedAt: isoAt(daysAgoISO(20 + i), 10),
+        chief_complaint: 'Blood pressure follow-up',
+      }).catch(() => {});
+      prescriptionCount += 1;
+    }
+  }
+
+  await refreshAnalyticsRollups(HISTORY_DAYS);
+
+  const retentionPct = followUpScheduled
+    ? Math.round((followUpReturned / followUpScheduled) * 1000) / 10
+    : 0;
+
+  return {
+    patients: pool.length,
+    visitCount,
+    prescriptionCount,
+    messageCount,
+    followUpScheduled,
+    followUpReturned,
+    retentionPct,
+    monthsCovered: months.length,
+  };
+}
+
+function saveManifest({ clinicId, profiles, visitCount, stats = {} }) {
   const buildDir = path.join(repoRoot, 'build');
   fs.mkdirSync(buildDir, { recursive: true });
   const manifest = {
     hospital_name: HOSPITAL_NAME,
     clinic_id: clinicId,
     visit_date: todayISO(),
+    mode: FULL_DEMO ? 'full_demo' : 'today_queue',
     visits_seeded: visitCount,
+    patients_seeded: stats.patients || DUMMY_QUEUE.length,
+    prescriptions_seeded: stats.prescriptionCount || 0,
+    message_logs_seeded: stats.messageCount || 0,
+    history_days: FULL_DEMO ? HISTORY_DAYS : 0,
+    months_covered: stats.monthsCovered || 0,
+    modeled_retention_pct: stats.retentionPct || null,
+    follow_ups_scheduled: stats.followUpScheduled || 0,
+    follow_ups_returned: stats.followUpReturned || 0,
     doctors: DOCTORS.map(d => ({
       name: d.doctor_name,
       username: d.login_username,
       password: d.password,
     })),
     dashboard_url: process.env.DOCTOR_DASHBOARD_URL || 'https://vaitalcare-doctor.vercel.app',
+    analytics_url: process.env.DOCTOR_ANALYTICS_URL || 'https://vaitalcare-doctor-analytics.vercel.app',
+    demo_tips: FULL_DEMO ? [
+      'Doctor dashboard: sign in as swastik.vikram — today\'s queue is pre-filled.',
+      'Analytics: set Custom range to last 12 months (or last 6) for monthly visit + retention charts.',
+      `Modeled chronic-care retention: ~${stats.retentionPct || 72}% of scheduled follow-ups returned within 2 weeks.`,
+      'Compare Dr. Vikram vs Dr. Ananya using the doctor filter — pediatric vs general medicine mix.',
+    ] : ['Today\'s queue only — run npm run seed:swastik-demo for full analytics history.'],
     created_at: new Date().toISOString(),
   };
   const manifestPath = path.join(buildDir, 'swastik-hospital-manifest.json');
@@ -477,7 +995,7 @@ async function main() {
     fail('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY required in .env');
   }
 
-  console.log(`\n── Swastik Hospital dummy data seed ──\n`);
+  console.log(`\n── Swastik Hospital ${FULL_DEMO ? 'full demo' : 'queue'} seed ──\n`);
 
   let boardingRows = await getExistingBoarding();
   if (boardingRows.length >= DOCTORS.length) {
@@ -499,29 +1017,54 @@ async function main() {
     console.warn('⚠️  No doctor_profiles yet — visits will seed without doctor_profile_id');
   } else {
     ok(`${profiles.length} doctor profile(s) ready`);
+    const vikram = profiles.find(p => p.login_username === 'swastik.vikram');
+    if (vikram?.id) {
+      await sbFetch(`/rest/v1/doctor_profiles?id=eq.${vikram.id}`, {
+        method: 'PATCH',
+        body: { is_clinic_admin: true },
+      });
+    }
   }
 
   await cleanupPriorSeed(clinicId);
-  const visitCount = await seedDummyQueue(clinicId, profiles);
-  ok(`Seeded ${visitCount} dummy queue visits for ${todayISO()}`);
 
-  const waiting = DUMMY_QUEUE.filter(r => r.visit_status === 'waiting').length;
-  const consult = DUMMY_QUEUE.filter(r => r.visit_status === 'in_consultation').length;
-  const done = DUMMY_QUEUE.filter(r => r.visit_status === 'completed').length;
-  console.log(`   Queue mix: ${waiting} waiting · ${consult} in consultation · ${done} completed`);
+  let visitCount;
+  let stats = {};
+  if (FULL_DEMO) {
+    stats = await seedFullDemo(clinicId, profiles);
+    visitCount = stats.visitCount;
+    ok(`Seeded ${stats.patients} patients · ${visitCount} visits over ${stats.monthsCovered} months · ${stats.prescriptionCount} prescriptions`);
+    console.log(`   Retention story: ${stats.followUpReturned}/${stats.followUpScheduled} chronic follow-ups returned (~${stats.retentionPct}%)`);
+    console.log(`   Message trail: ${stats.messageCount} WhatsApp reminders logged`);
+  } else {
+    visitCount = await seedDummyQueue(clinicId, profiles);
+    ok(`Seeded ${visitCount} dummy queue visits for ${todayISO()}`);
+    const waiting = DUMMY_QUEUE.filter(r => r.visit_status === 'waiting').length;
+    const consult = DUMMY_QUEUE.filter(r => r.visit_status === 'in_consultation').length;
+    const done = DUMMY_QUEUE.filter(r => r.visit_status === 'completed').length;
+    console.log(`   Queue mix: ${waiting} waiting · ${consult} in consultation · ${done} completed`);
+  }
 
-  const manifestPath = saveManifest({ clinicId, profiles, visitCount });
+  const manifestPath = saveManifest({ clinicId, profiles, visitCount, stats });
   ok(`Manifest saved to ${manifestPath}`);
 
   console.log('\n── Doctor dashboard logins ──');
-  console.log(`   URL: ${process.env.DOCTOR_DASHBOARD_URL || 'https://vaitalcare-doctor.vercel.app'}`);
+  console.log(`   Dashboard : ${process.env.DOCTOR_DASHBOARD_URL || 'https://vaitalcare-doctor.vercel.app'}`);
+  console.log(`   Analytics : ${process.env.DOCTOR_ANALYTICS_URL || 'https://vaitalcare-doctor-analytics.vercel.app'}`);
   for (const d of DOCTORS) {
     console.log(`   ${d.doctor_name}`);
     console.log(`     username: ${d.login_username}`);
     console.log(`     password: ${d.password}`);
   }
 
-  console.log('\n[seed-swastik-hospital] Done. Sign in and pick today\'s date in the queue.\n');
+  if (FULL_DEMO) {
+    console.log('\n── Demo walkthrough ──');
+    console.log('   1. Doctor dashboard → today\'s queue, issue a prescription');
+    console.log('   2. Analytics → Custom range: 12 months ago → today (or 6 months)');
+    console.log('   3. Point to monthly visits growth, ~72% retention, overdue follow-ups list');
+  }
+
+  console.log(`\n[seed-swastik-hospital] Done.${FULL_DEMO ? ' Open analytics for retention charts.' : ''}\n`);
 }
 
 main().catch(err => {
