@@ -39,7 +39,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT p.* FROM public.patients p WHERE p.clinic_id IS NOT NULL AND COALESCE(p.is_demo, FALSE) = FALSE AND p.status NOT IN ('inactive','completed') AND p.reactivation_sent = FALSE AND (p.last_message_sent IS NULL OR p.last_message_sent < NOW() - INTERVAL '30 days') AND NOT EXISTS (SELECT 1 FROM public.message_logs ml WHERE ml.clinic_id = p.clinic_id AND ml.patient_id = p.id AND ml.message_type = 'reactivation' AND ml.scheduled_date = CURRENT_DATE)",
+        "query": "SELECT p.* FROM public.patients p WHERE p.clinic_id IS NOT NULL AND COALESCE(p.is_demo, FALSE) = FALSE AND COALESCE(p.admin_provisioned, FALSE) = FALSE AND p.status NOT IN ('inactive','completed') AND p.reactivation_sent = FALSE AND (p.last_message_sent IS NULL OR p.last_message_sent < NOW() - INTERVAL '30 days') AND NOT EXISTS (SELECT 1 FROM public.message_logs ml WHERE ml.clinic_id = p.clinic_id AND ml.patient_id = p.id AND ml.message_type = 'reactivation' AND ml.scheduled_date = CURRENT_DATE)",
         "options": {}
       },
       "id": "55555555-5555-5555-5555-000000000003",

@@ -39,7 +39,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT p.* FROM public.patients p WHERE p.clinic_id IS NOT NULL AND COALESCE(p.is_demo, FALSE) = FALSE AND p.status = 'pending' AND p.follow_up_date = CURRENT_DATE AND NOT EXISTS (SELECT 1 FROM public.message_logs ml WHERE ml.clinic_id = p.clinic_id AND ml.patient_id = p.id AND ml.message_type = 'same_day_reminder' AND ml.scheduled_date = p.follow_up_date)",
+        "query": "SELECT p.* FROM public.patients p WHERE p.clinic_id IS NOT NULL AND COALESCE(p.is_demo, FALSE) = FALSE AND COALESCE(p.admin_provisioned, FALSE) = FALSE AND p.status = 'pending' AND p.follow_up_date = CURRENT_DATE AND NOT EXISTS (SELECT 1 FROM public.message_logs ml WHERE ml.clinic_id = p.clinic_id AND ml.patient_id = p.id AND ml.message_type = 'same_day_reminder' AND ml.scheduled_date = p.follow_up_date)",
         "options": {}
       },
       "id": "22222222-2222-2222-2222-000000000003",

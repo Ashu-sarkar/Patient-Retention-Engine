@@ -8,6 +8,7 @@ const assert = require('assert');
 const root = path.join(__dirname, '..');
 const admin = fs.readFileSync(path.join(root, 'admin-console', 'index.html'), 'utf8');
 const migration = fs.readFileSync(path.join(root, 'schemas', 'migration-admin-console.sql'), 'utf8');
+const provisioningMigration = fs.readFileSync(path.join(root, 'schemas', 'migration-admin-provisioning.sql'), 'utf8');
 const patientForm = fs.readFileSync(path.join(root, 'patient-form', 'index.html'), 'utf8');
 const hospitalForm = fs.readFileSync(path.join(root, 'hospital-form', 'index.html'), 'utf8');
 const hospitalWorkflow = fs.readFileSync(path.join(root, 'workflows', 'workflow-12-hospital-boarding.json'), 'utf8');
@@ -42,6 +43,11 @@ includes(admin, "rpc('admin_list_intake_tokens'", 'token listing wired to RPC');
 includes(admin, "rpc('admin_set_token_status'", 'token disable/enable wired to RPC');
 includes(admin, "rpc('admin_seed_dummy_patients'", 'demo seed wired to RPC');
 includes(admin, "rpc('admin_clear_dummy_patients'", 'demo clear wired to RPC');
+includes(admin, "rpc('admin_add_patient_to_clinic'", 'test patient provisioning wired to RPC');
+includes(admin, 'admin-add-doctor-form', 'test doctor form present');
+includes(admin, 'admin-add-patient-form', 'test patient form present');
+includes(admin, 'webhookUrl(', 'admin uses webhook helper for WF15/WF7');
+includes(admin, 'admin_provisioned', 'admin surfaces provisioned tagging');
 includes(admin, '/#/i/${token}', 'QR encodes hash-fragment intake token URL');
 includes(admin, "const DEFAULT_PATIENT_FORM_BASE_URL = 'https://vaitalcare-patient.vercel.app'", 'admin defaults QR base URL to production patient form');
 includes(admin, './vendor/qrcode.min.js', 'vendored offline QR library is referenced');
@@ -81,6 +87,23 @@ includes(migration, "'draft'", 'demo prescriptions stay draft so cleanup can del
 includes(migration, 'platform admin reads patients', 'platform-admin read RLS for patients');
 includes(migration, 'FOR SELECT TO authenticated', 'platform-admin policies are read-only');
 
+includes(provisioningMigration, 'admin_provisioned', 'admin provisioning migration tags records');
+includes(provisioningMigration, 'FUNCTION public.admin_add_patient_to_clinic', 'admin_add_patient_to_clinic RPC');
+includes(provisioningMigration, 'FUNCTION public.admin_provision_doctor_to_clinic', 'admin_provision_doctor_to_clinic RPC');
+includes(provisioningMigration, 'FUNCTION public.user_is_platform_admin', 'user_is_platform_admin helper');
+
+const wf15 = fs.readFileSync(path.join(root, 'workflows', 'workflow-15-admin-add-doctor.json'), 'utf8');
+const wf15Json = JSON.parse(wf15);
+includes(wf15, 'admin-add-doctor', 'WF15 exposes admin add doctor webhook');
+includes(wf15, 'admin_provision_doctor_to_clinic', 'WF15 calls provision RPC');
+includes(wf15, 'current_user_is_platform_admin', 'WF15 verifies platform admin session');
+assert(wf15Json.nodes.some(n => n.name === 'Create Doctor Auth User'), 'WF15 creates auth user server-side');
+assert(!/get_or_create_clinic_id/.test(wf15), 'WF15 must not create clinics');
+
+const adminVercel = fs.readFileSync(path.join(root, 'admin-console', 'vercel.json'), 'utf8');
+includes(adminVercel, '/api/admin-add-doctor', 'admin console proxies WF15 webhook');
+includes(adminVercel, '/api/new-patient-intake', 'admin console proxies WF7 webhook');
+
 assert(pkg.scripts['bootstrap:platform-admin'] === 'node scripts/bootstrap-platform-admin.js', 'package exposes platform admin bootstrap command');
 assert(!pkg.scripts['sync:doctor-otp-secrets'], 'package must not expose stale doctor OTP setup');
 includes(bootstrapScript, '/auth/v1/admin/users', 'bootstrap creates Supabase Auth admin users');
@@ -108,6 +131,7 @@ for (const [file, label] of [
 ]) {
   const wf = fs.readFileSync(path.join(root, 'workflows', file), 'utf8');
   includes(wf, 'COALESCE(p.is_demo, FALSE) = FALSE', `${label} excludes demo patients from messaging`);
+  includes(wf, 'COALESCE(p.admin_provisioned, FALSE) = FALSE', `${label} excludes admin-provisioned test patients`);
 }
 
 // ── Patient form is token-only (no public clinic directory dropdown) ─────────

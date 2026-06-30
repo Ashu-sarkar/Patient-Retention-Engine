@@ -1,0 +1,310 @@
+{
+  "name": "WF15 — Admin Add Doctor (Testing)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## WF15 — Admin Add Doctor (Testing)\n\n**Trigger:** POST webhook from `admin-console/index.html` only.\n**Path:** `/webhook/admin-add-doctor`\n\n**Purpose:** Platform admins can add a doctor to an **existing** clinic for testing. Does not modify WF12 / hospital-form onboarding.\n\n**Flow:**\n1. Verify caller is platform admin via Supabase session JWT\n2. Validate doctor fields (mirrors hospital-form per-doctor block)\n3. Create Supabase Auth user (password never stored in public tables)\n4. Call `admin_provision_doctor_to_clinic` RPC (boarding + doctor_profiles + clinic_memberships, `admin_provisioned = true`)\n5. Optionally send `hospital_onboarding` WhatsApp when `send_whatsapp=true`\n6. Respond 200 with doctor metadata\n\n**Credentials:** Postgres → Supabase DB; Auth Code node needs `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`; optional Twilio for WhatsApp.\n\n**Activation:** Import separately from WF12. Does not replace hospital boarding.",
+        "height": 420,
+        "width": 420
+      },
+      "id": "15151515-1515-1515-1515-000000000001",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-240, 160]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "admin-add-doctor",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "15151515-1515-1515-1515-000000000002",
+      "name": "Webhook — Admin Add Doctor",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 320],
+      "webhookId": "admin-add-doctor-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Verify platform-admin session and validate doctor fields for an existing clinic.\nconst raw = $input.first().json;\nconst body = raw.body || raw;\nconst headers = raw.headers || {};\nconst header = name => headers[name] || headers[name.toLowerCase()] || headers[name.toUpperCase()] || '';\nconst authHeader = String(header('authorization') || '');\nconst accessToken = authHeader.replace(/^Bearer\\s+/i, '').trim();\nconst supabaseUrl = String($env.SUPABASE_URL || '').replace(/\\/+$/, '');\nconst anonKey = String($env.SUPABASE_ANON_KEY || '');\nconst errors = [];\n\nconst clean = (value, max = 1000) => String(value || '').trim().slice(0, max);\nconst normalizeUsername = value => clean(value, 80).toLowerCase();\nconst usernameToInternalEmail = username => normalizeUsername(username) + '@auth.vaitalcare.local';\nconst isUrl = value => /^https:\\/\\//i.test(value);\n\nconst clinicId = clean(body.clinic_id, 80);\nconst doctorName = clean(body.doctor_name, 150);\nconst doctorQualification = clean(body.doctor_qualification, 200) || null;\nconst doctorExpertise = clean(body.doctor_expertise, 500);\nconst doctorRegistration = clean(body.doctor_registration_number, 120);\nconst doctorPhone = clean(body.doctor_phone, 20).replace(/\\s+/g, '') || null;\nconst doctorSignatureUrl = clean(body.doctor_signature_url, 1000) || null;\nconst loginUsername = normalizeUsername(body.login_username);\nconst password = String(body.password || '');\nconst sendWhatsapp = ['true', '1', 'yes', 'on'].includes(String(body.send_whatsapp || '').toLowerCase());\n\nif (!supabaseUrl || !anonKey) errors.push('SUPABASE_URL and SUPABASE_ANON_KEY are required');\nif (!accessToken) errors.push('authorization: platform admin session token is required');\nif (!clinicId || !/^[0-9a-f-]{36}$/i.test(clinicId)) errors.push('clinic_id: valid UUID is required');\nif (!doctorName || doctorName.length < 2) errors.push('doctor_name: required, minimum 2 characters');\nif (doctorQualification && doctorQualification.length < 2) errors.push('doctor_qualification: minimum 2 characters when provided');\nif (!doctorExpertise || doctorExpertise.length < 2) errors.push('doctor_expertise: required, minimum 2 characters');\nif (!doctorRegistration || doctorRegistration.length < 2) errors.push('doctor_registration_number: required, minimum 2 characters');\nif (doctorPhone && !/^\\+?[1-9]\\d{6,14}$/.test(doctorPhone)) errors.push('doctor_phone: must be a valid phone number');\nif (doctorSignatureUrl && !isUrl(doctorSignatureUrl)) errors.push('doctor_signature_url: must be an HTTPS URL');\nif (!/^[a-z0-9._-]{3,80}$/.test(loginUsername)) errors.push('login_username: required, use lowercase letters, numbers, dot, underscore, or hyphen');\nif (!password || password.length < 8) errors.push('password: required, minimum 8 characters');\n\nif (errors.length > 0) return [{ json: { _valid: false, _errors: errors } }];\n\nasync function httpJson(method, url, { headers = {}, body } = {}) {\n  const opts = { method, url, headers, json: true, returnFullResponse: true, ignoreHttpStatusErrors: true };\n  if (body !== undefined) opts.body = body;\n  return this.helpers.httpRequest(opts);\n}\n\nlet adminUserId = '';\ntry {\n  const userRes = await httpJson.call(this, 'GET', supabaseUrl + '/auth/v1/user', {\n    headers: { apikey: anonKey, Authorization: 'Bearer ' + accessToken },\n  });\n  adminUserId = String((userRes.body || {}).id || '');\n  if (!adminUserId) errors.push('authorization: invalid or expired session');\n\n  if (!errors.length) {\n    const adminRes = await httpJson.call(this, 'POST', supabaseUrl + '/rest/v1/rpc/current_user_is_platform_admin', {\n      headers: { apikey: anonKey, Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },\n      body: {},\n    });\n    if (adminRes.statusCode >= 400 || adminRes.body !== true) {\n      errors.push('authorization: caller is not a platform administrator');\n    }\n  }\n} catch (err) {\n  errors.push('authorization: could not verify admin session — ' + String(err.message || err));\n}\n\nif (errors.length > 0) return [{ json: { _valid: false, _errors: errors } }];\n\nreturn [{\n  json: {\n    _valid: true,\n    _errors: [],\n    admin_user_id: adminUserId,\n    clinic_id: clinicId,\n    doctor_name: doctorName,\n    doctor_qualification: doctorQualification,\n    doctor_expertise: doctorExpertise,\n    doctor_registration_number: doctorRegistration,\n    doctor_phone: doctorPhone,\n    doctor_signature_url: doctorSignatureUrl,\n    login_username: loginUsername,\n    auth_email: usernameToInternalEmail(loginUsername),\n    _password: password,\n    send_whatsapp: sendWhatsapp,\n  }\n}];"
+      },
+      "id": "15151515-1515-1515-1515-000000000003",
+      "name": "Verify Admin and Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 320]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [{
+            "id": "cond-valid",
+            "leftValue": "={{ $json._valid }}",
+            "rightValue": true,
+            "operator": { "type": "boolean", "operation": "true" }
+          }],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "15151515-1515-1515-1515-000000000004",
+      "name": "Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 320]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Create Supabase Auth user for the new test doctor.\ntry {\n  const supabaseUrl = String($env.SUPABASE_URL || '').replace(/\\/+$/, '');\n  const serviceRoleKey = String($env.SUPABASE_SERVICE_ROLE_KEY || '');\n  if (!supabaseUrl || !serviceRoleKey) {\n    return [{ json: { _auth_failed: true, _errors: ['SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required for doctor account creation'] } }];\n  }\n\n  async function httpJson(method, url, { headers = {}, body } = {}) {\n    const opts = { method, url, headers, json: true, returnFullResponse: true, ignoreHttpStatusErrors: true };\n    if (body !== undefined) opts.body = body;\n    return this.helpers.httpRequest(opts);\n  }\n\n  const data = $input.first().json;\n  const password = data._password;\n  if (!password) {\n    return [{ json: { _auth_failed: true, _errors: ['Password missing for ' + data.login_username] } }];\n  }\n\n  const payload = {\n    email: data.auth_email,\n    password,\n    email_confirm: true,\n    user_metadata: {\n      login_username: data.login_username,\n      role: 'doctor',\n      doctor_name: data.doctor_name,\n      admin_provisioned: true,\n    },\n  };\n\n  const response = await httpJson.call(this, 'POST', supabaseUrl + '/auth/v1/admin/users', {\n    headers: {\n      apikey: serviceRoleKey,\n      Authorization: 'Bearer ' + serviceRoleKey,\n      'Content-Type': 'application/json',\n    },\n    body: payload,\n  });\n\n  let authUser = response.body || {};\n  const duplicate = response.statusCode === 422 || /already|registered|exists/i.test(JSON.stringify(authUser));\n  if (response.statusCode >= 400 && !duplicate) {\n    const detail = authUser.msg || authUser.message || authUser.error_description || JSON.stringify(authUser).slice(0, 240);\n    return [{ json: { _auth_failed: true, _errors: ['Could not create dashboard account for username ' + data.login_username + ': ' + detail] } }];\n  }\n\n  if (duplicate) {\n    return [{ json: { _auth_failed: true, _errors: ['login_username: already in use'] } }];\n  }\n\n  if (!authUser.id) {\n    return [{ json: { _auth_failed: true, _errors: ['Dashboard account created but auth user id missing for ' + data.login_username] } }];\n  }\n\n  const { _password, ...safeData } = data;\n  return [{ json: { ...safeData, auth_user_id: authUser.id } }];\n} catch (err) {\n  return [{ json: { _auth_failed: true, _errors: [String(err.message || err)] } }];\n}"
+      },
+      "id": "15151515-1515-1515-1515-000000000005",
+      "name": "Create Doctor Auth User",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [{
+            "id": "cond-auth-fail",
+            "leftValue": "={{ $json._auth_failed }}",
+            "rightValue": true,
+            "operator": { "type": "boolean", "operation": "true" }
+          }],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "15151515-1515-1515-1515-000000000006",
+      "name": "Auth Failed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT public.admin_provision_doctor_to_clinic(\n  '{{ $json.admin_user_id }}'::uuid,\n  '{{ $json.clinic_id }}'::uuid,\n  '{{ $json.auth_user_id }}'::uuid,\n  '{{ $json.doctor_name.replace(/'/g, \"''\") }}',\n  '{{ $json.doctor_expertise.replace(/'/g, \"''\") }}',\n  '{{ $json.doctor_registration_number.replace(/'/g, \"''\") }}',\n  '{{ $json.login_username.replace(/'/g, \"''\") }}',\n  {{ $json.doctor_qualification ? \"'\" + $json.doctor_qualification.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n  {{ $json.doctor_phone ? \"'\" + $json.doctor_phone.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n  {{ $json.doctor_signature_url ? \"'\" + $json.doctor_signature_url.replace(/'/g, \"''\") + \"'\" : 'NULL' }}\n) AS result;",
+        "options": {}
+      },
+      "id": "15151515-1515-1515-1515-000000000007",
+      "name": "Provision Doctor Records",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1340, 120],
+      "credentials": {
+        "postgres": { "id": "REPLACE_SUPABASE_POSTGRES", "name": "Supabase (Postgres)" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const row = $input.first().json;\nconst provision = row.result || {};\nconst prev = $('Create Doctor Auth User').first().json;\nreturn [{\n  json: {\n    ...prev,\n    provision,\n    boarding_id: provision.boarding_id,\n    doctor_profile_id: provision.doctor_profile_id,\n  }\n}];"
+      },
+      "id": "15151515-1515-1515-1515-000000000008",
+      "name": "Merge Provision Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 120]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [{
+            "id": "cond-send-wa",
+            "leftValue": "={{ $json.send_whatsapp }}",
+            "rightValue": true,
+            "operator": { "type": "boolean", "operation": "true" }
+          }],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "15151515-1515-1515-1515-000000000009",
+      "name": "Send WhatsApp?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1780, 120]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT hb.hospital_name, hb.facility_type, hb.city, hb.contact_phone, hb.doctor_phone\nFROM public.hospital_boarding hb\nWHERE hb.id = '{{ $json.boarding_id }}'::uuid\nLIMIT 1;",
+        "options": {}
+      },
+      "id": "15151515-1515-1515-1515-000000000010",
+      "name": "Load Boarding Contact",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [2000, 40],
+      "credentials": {
+        "postgres": { "id": "REPLACE_SUPABASE_POSTGRES", "name": "Supabase (Postgres)" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const row = $('Merge Provision Result').first().json;\nconst boarding = $input.first().json || {};\nconst tz = $env.TIMEZONE || 'Asia/Kolkata';\nconst scheduledDate = new Date().toLocaleDateString('en-CA', { timeZone: tz });\nconst contentSid = $env.TWILIO_CONTENT_HOSPITAL_ONBOARDING || '';\n\nfunction toE164(raw) {\n  const p = String(raw || '').trim().replace(/\\s+/g, '');\n  if (!p) return '';\n  if (/^\\+[1-9]\\d{6,14}$/.test(p)) return p;\n  if (/^[0-9]{10}$/.test(p)) return '+91' + p;\n  if (/^[1-9]\\d{6,14}$/.test(p)) return '+' + p;\n  return '';\n}\n\nconst hospital = String(boarding.hospital_name || '').trim();\nconst facility = String(boarding.facility_type || '').trim();\nconst doctor = String(row.doctor_name || '').trim();\nconst city = String(boarding.city || '').trim();\nconst contentVars = JSON.stringify({ '1': hospital, '2': facility, '3': doctor, '4': city });\nconst messageBody = 'Hi ' + hospital + ', your onboarding for ' + facility + ' is complete. We have registered ' + doctor + ' as a dashboard user and ' + city + ' as the facility location.';\n\nconst targets = [\n  { role: 'clinic', phone: toE164(boarding.contact_phone) },\n  { role: 'doctor', phone: toE164(boarding.doctor_phone || row.doctor_phone) },\n];\nconst seen = new Set();\nconst out = [];\nfor (const t of targets) {\n  if (!t.phone || seen.has(t.phone)) continue;\n  seen.add(t.phone);\n  out.push({\n    json: {\n      _skip: false,\n      _recipient_role: t.role,\n      _phone: t.phone,\n      _to_phone: 'whatsapp:' + t.phone,\n      _clinic_id: row.clinic_id,\n      _hospital_name: hospital,\n      _doctor_name: doctor,\n      _message_type: 'hospital_onboarding',\n      _scheduled_date: scheduledDate,\n      _content_sid: contentSid,\n      _content_variables: contentVars,\n      _message_body: messageBody,\n      provision: row.provision,\n      login_username: row.login_username,\n      doctor_name: row.doctor_name,\n    },\n  });\n}\nif (out.length === 0) {\n  return [{ json: { _skip_wa: true, provision: row.provision, login_username: row.login_username, doctor_name: row.doctor_name, clinic_id: row.clinic_id } }];\n}\nreturn out;"
+      },
+      "id": "15151515-1515-1515-1515-000000000011",
+      "name": "Build Onboarding Messages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2220, 40]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [{
+            "id": "cond-skip-wa",
+            "leftValue": "={{ $json._skip_wa }}",
+            "rightValue": true,
+            "operator": { "type": "boolean", "operation": "true" }
+          }],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "15151515-1515-1515-1515-000000000012",
+      "name": "Skip WA?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2440, 40]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.twilio.com/2010-04-01/Accounts/' + $env.TWILIO_ACCOUNT_SID + '/Messages.json' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "From", "value": "={{ $env.TWILIO_WHATSAPP_FROM }}" },
+            { "name": "To", "value": "={{ $json._to_phone }}" },
+            { "name": "ContentSid", "value": "={{ $json._content_sid }}" },
+            { "name": "ContentVariables", "value": "={{ $json._content_variables }}" },
+            { "name": "StatusCallback", "value": "={{ $env.TWILIO_STATUS_CALLBACK_URL || \"\" }}" }
+          ]
+        },
+        "options": { "retry": { "maxTries": 2, "waitBetweenTries": 15000 } }
+      },
+      "id": "15151515-1515-1515-1515-000000000013",
+      "name": "Send Onboarding WA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2660, -40],
+      "credentials": {
+        "httpBasicAuth": { "id": "REPLACE_TWILIO_BASIC_AUTH", "name": "Twilio Basic Auth" }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: 'success', message: 'Doctor provisioned for testing', doctor_name: $('Merge Provision Result').first().json.doctor_name, login_username: $('Merge Provision Result').first().json.login_username, clinic_id: $('Merge Provision Result').first().json.clinic_id, boarding_id: $('Merge Provision Result').first().json.boarding_id, doctor_profile_id: $('Merge Provision Result').first().json.doctor_profile_id, admin_provisioned: true } }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "15151515-1515-1515-1515-000000000014",
+      "name": "Respond 200 OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2880, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: 'error', message: 'Validation failed', errors: $('Verify Admin and Validate').first().json._errors } }}",
+        "options": { "responseCode": 400 }
+      },
+      "id": "15151515-1515-1515-1515-000000000015",
+      "name": "Respond 400 Invalid",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [900, 440]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: 'error', message: 'Doctor provisioning failed', errors: $json._errors || ['Doctor account setup failed'] } }}",
+        "options": { "responseCode": 400 }
+      },
+      "id": "15151515-1515-1515-1515-000000000016",
+      "name": "Respond 400 Provision Failed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1340, 320]
+    }
+  ],
+  "connections": {
+    "Webhook — Admin Add Doctor": {
+      "main": [[{ "node": "Verify Admin and Validate", "type": "main", "index": 0 }]]
+    },
+    "Verify Admin and Validate": {
+      "main": [[{ "node": "Valid?", "type": "main", "index": 0 }]]
+    },
+    "Valid?": {
+      "main": [
+        [{ "node": "Create Doctor Auth User", "type": "main", "index": 0 }],
+        [{ "node": "Respond 400 Invalid", "type": "main", "index": 0 }]
+      ]
+    },
+    "Create Doctor Auth User": {
+      "main": [[{ "node": "Auth Failed?", "type": "main", "index": 0 }]]
+    },
+    "Auth Failed?": {
+      "main": [
+        [{ "node": "Respond 400 Provision Failed", "type": "main", "index": 0 }],
+        [{ "node": "Provision Doctor Records", "type": "main", "index": 0 }]
+      ]
+    },
+    "Provision Doctor Records": {
+      "main": [[{ "node": "Merge Provision Result", "type": "main", "index": 0 }]]
+    },
+    "Merge Provision Result": {
+      "main": [[{ "node": "Send WhatsApp?", "type": "main", "index": 0 }]]
+    },
+    "Send WhatsApp?": {
+      "main": [
+        [{ "node": "Load Boarding Contact", "type": "main", "index": 0 }],
+        [{ "node": "Respond 200 OK", "type": "main", "index": 0 }]
+      ]
+    },
+    "Load Boarding Contact": {
+      "main": [[{ "node": "Build Onboarding Messages", "type": "main", "index": 0 }]]
+    },
+    "Build Onboarding Messages": {
+      "main": [[{ "node": "Skip WA?", "type": "main", "index": 0 }]]
+    },
+    "Skip WA?": {
+      "main": [
+        [{ "node": "Respond 200 OK", "type": "main", "index": 0 }],
+        [{ "node": "Send Onboarding WA", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send Onboarding WA": {
+      "main": [[{ "node": "Respond 200 OK", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "workflow-8-error-handler"
+  },
+  "staticData": null,
+  "tags": [{ "id": "wf15-tag", "name": "admin" }],
+  "triggerCount": 1,
+  "updatedAt": "2026-06-30T00:00:00.000Z",
+  "versionId": "wf15-v1-admin-add-doctor",
+  "id": "wf15-admin-add-doctor",
+  "meta": { "templateCredsSetupCompleted": false }
+}

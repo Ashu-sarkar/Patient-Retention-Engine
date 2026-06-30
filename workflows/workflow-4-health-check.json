@@ -39,7 +39,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT p.* FROM public.patients p WHERE p.clinic_id IS NOT NULL AND COALESCE(p.is_demo, FALSE) = FALSE AND p.health_check_sent = FALSE AND p.status <> 'inactive' AND p.visit_date BETWEEN CURRENT_DATE - INTERVAL '3 days' AND CURRENT_DATE - INTERVAL '2 days' AND NOT EXISTS (SELECT 1 FROM public.message_logs ml WHERE ml.clinic_id = p.clinic_id AND ml.patient_id = p.id AND ml.message_type = 'health_check' AND ml.scheduled_date = CURRENT_DATE)",
+        "query": "SELECT p.* FROM public.patients p WHERE p.clinic_id IS NOT NULL AND COALESCE(p.is_demo, FALSE) = FALSE AND COALESCE(p.admin_provisioned, FALSE) = FALSE AND p.health_check_sent = FALSE AND p.status <> 'inactive' AND p.visit_date BETWEEN CURRENT_DATE - INTERVAL '3 days' AND CURRENT_DATE - INTERVAL '2 days' AND NOT EXISTS (SELECT 1 FROM public.message_logs ml WHERE ml.clinic_id = p.clinic_id AND ml.patient_id = p.id AND ml.message_type = 'health_check' AND ml.scheduled_date = CURRENT_DATE)",
         "options": {}
       },
       "id": "44444444-4444-4444-4444-000000000003",

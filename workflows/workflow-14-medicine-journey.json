@@ -21,7 +21,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT s.*, p.name AS patient_name, p.phone, p.doctor_name, p.clinic_name FROM public.medicine_reminder_schedule s JOIN public.patients p ON p.id = s.patient_id WHERE s.scheduled_date = CURRENT_DATE AND s.status = 'pending' AND COALESCE(p.is_demo, FALSE) = FALSE",
+        "query": "SELECT s.*, p.name AS patient_name, p.phone, p.doctor_name, p.clinic_name FROM public.medicine_reminder_schedule s JOIN public.patients p ON p.id = s.patient_id WHERE s.scheduled_date = CURRENT_DATE AND s.status = 'pending' AND COALESCE(p.is_demo, FALSE) = FALSE AND COALESCE(p.admin_provisioned, FALSE) = FALSE",
         "options": {}
       },
       "id": "14141414-1414-1414-1414-000000000003",

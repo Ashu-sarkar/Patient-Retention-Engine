@@ -146,6 +146,10 @@
     .pill.info { background: rgba(148,163,184,.18); color: var(--muted); }
     .refresh-meta { font-size: 11px; color: var(--muted); margin-left: auto; }
     .section-title { font-size: 13px; margin: 16px 0 8px; font-weight: 600; }
+    .provision-box { border: 1px dashed var(--border); border-radius: 10px; padding: 14px; margin-top: 14px; background: var(--surface-2); }
+    .provision-box summary { cursor: pointer; font-weight: 600; font-size: 13px; margin-bottom: 10px; }
+    .check-row { display: flex; align-items: center; gap: 8px; margin: 10px 0 14px; font-size: 13px; color: var(--muted); }
+    .check-row input { width: 16px; height: 16px; }
     @media (max-width: 820px) { .split { grid-template-columns: 1fr; } .issue-item { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -392,6 +396,8 @@
 const DEFAULT_SUPABASE_URL = 'https://crsdccqseuhnimoxxeky.supabase.co';
 const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNyc2RjY3FzZXVobmltb3h4ZWt5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMjc1NzQsImV4cCI6MjA5MTkwMzU3NH0.3iz7x2JQj3qn6KI8JS3tjxV9vaBsN-mL6xDTvmJMDxA';
 const DEFAULT_PATIENT_FORM_BASE_URL = 'https://vaitalcare-patient.vercel.app';
+const DEFAULT_N8N_WEBHOOK_BASE = '';
+const ADMIN_PROVISION_NOTE = 'Test provisioning only — does not replace QR intake or hospital onboarding.';
 
 const $ = id => document.getElementById(id);
 const readStored = k => { try { return localStorage.getItem(k) || ''; } catch (_) { return ''; } };
@@ -406,7 +412,18 @@ function runtimeConfig() {
     patientFormBaseUrl:
       params.get('patientFormBaseUrl') || g.patientFormBaseUrl ||
       readStored('vaitalcare.patientFormBaseUrl') || DEFAULT_PATIENT_FORM_BASE_URL,
+    webhookBaseUrl:
+      params.get('webhookBaseUrl') || g.webhookBaseUrl ||
+      readStored('vaitalcare.webhookBaseUrl') || DEFAULT_N8N_WEBHOOK_BASE,
   };
+}
+
+function webhookUrl(path) {
+  const base = String(CFG.webhookBaseUrl || '').replace(/\/+$/, '');
+  const cleanPath = String(path || '').replace(/^\/+/, '');
+  if (!base) return `/api/${cleanPath}`;
+  if (cleanPath.startsWith('webhook/')) return `${base}/${cleanPath}`;
+  return `${base}/webhook/${cleanPath}`;
 }
 
 const CFG = runtimeConfig();
@@ -642,6 +659,8 @@ $('reload-issues').addEventListener('click', loadIssues);
 function fmtDateTime(v) { return v ? new Date(v).toLocaleString() : '—'; }
 function fmtDate(v) { return v ? new Date(v).toLocaleDateString() : '—'; }
 function dateInputValue(v) { return v ? new Date(v).toLocaleDateString('en-CA') : ''; }
+function todayInputValue() { return new Date().toLocaleDateString('en-CA'); }
+function normalizePhone10(raw) { return String(raw || '').trim().replace(/\s+/g, '').replace(/^\+91/, ''); }
 
 async function loadClinics() {
   try {
@@ -737,12 +756,15 @@ async function showClinicDetail(clinicId) {
     const msgFailures = Array.isArray(d.recent_message_failures) ? d.recent_message_failures : [];
     const docRows = doctors.length ? doctors.map(doc => `
       <tr>
-        <td><strong>${esc(doc.doctor_name)}</strong></td>
+        <td><strong>${esc(doc.doctor_name)}</strong>${doc.admin_provisioned ? ' <span class="pill warn">test</span>' : ''}</td>
         <td>${esc(doc.doctor_expertise || doc.doctor_qualification || '—')}</td>
         <td>${esc(doc.doctor_registration_number || '—')}</td>
         <td>${doc.doctor_phone ? esc(doc.doctor_phone) : '<span class="pill expired">missing</span>'}</td>
         <td>${doc.has_logged_in ? '<span class="pill active">active</span>' : '<span class="pill disabled">not signed in</span>'}</td>
       </tr>`).join('') : '<tr><td colspan="5" class="muted">No doctor records.</td></tr>';
+    const doctorOptions = doctors.length
+      ? doctors.map(doc => `<option value="${esc(doc.doctor_name)}">${esc(doc.doctor_name)}</option>`).join('')
+      : '<option value="">No doctors — add one below first</option>';
     $('clinic-detail-body').innerHTML = `
       ${renderHealthIssues(healthIssues, 'No issues detected for this clinic.')}
       <div class="stat-row">
@@ -839,6 +861,46 @@ async function showClinicDetail(clinicId) {
         <thead><tr><th>Name</th><th>Expertise</th><th>Reg #</th><th>WhatsApp</th><th>Login</th></tr></thead>
         <tbody>${docRows}</tbody>
       </table>
+      <div class="alert warn" style="margin-top:16px">${esc(ADMIN_PROVISION_NOTE)} Records are tagged <strong>admin_provisioned</strong> and excluded from retention messaging unless you explicitly opt in below.</div>
+      <details class="provision-box" id="provision-doctor-box">
+        <summary>Add test doctor to this clinic</summary>
+        <form id="admin-add-doctor-form" data-clinic="${esc(clinicId)}">
+          <div class="grid2">
+            <div class="field"><label>Doctor name</label><input id="prov-doctor-name" required minlength="2" placeholder="Dr. Ananya Rao" /></div>
+            <div class="field"><label>Expertise</label><input id="prov-doctor-expertise" required minlength="2" placeholder="General Medicine" /></div>
+            <div class="field"><label>Registration number</label><input id="prov-doctor-reg" required minlength="2" placeholder="KA-MED-001" /></div>
+            <div class="field"><label>Qualification (optional)</label><input id="prov-doctor-qual" placeholder="MBBS, MD" /></div>
+            <div class="field"><label>Doctor WhatsApp (optional)</label><input id="prov-doctor-phone" inputmode="tel" placeholder="10-digit or +91…" /></div>
+            <div class="field"><label>Signature URL (optional)</label><input id="prov-doctor-signature" type="url" placeholder="https://…" /></div>
+            <div class="field"><label>Dashboard username</label><input id="prov-doctor-username" required pattern="[a-z0-9._-]{3,80}" placeholder="clinic.ananya" /></div>
+            <div class="field"><label>Temporary password</label><input id="prov-doctor-password" type="password" required minlength="8" autocomplete="new-password" placeholder="Min 8 characters" /></div>
+          </div>
+          <label class="check-row"><input type="checkbox" id="prov-doctor-whatsapp" /> Send onboarding WhatsApp (off by default for testing)</label>
+          <button class="btn btn-sm" type="submit" id="prov-doctor-submit">Add test doctor</button>
+        </form>
+      </details>
+      <details class="provision-box" id="provision-patient-box">
+        <summary>Add test patient to this clinic</summary>
+        <form id="admin-add-patient-form" data-clinic="${esc(clinicId)}">
+          <div class="grid2">
+            <div class="field"><label>Patient name</label><input id="prov-patient-name" required minlength="2" placeholder="Full name" /></div>
+            <div class="field"><label>Mobile (10 digits)</label><input id="prov-patient-phone" required inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="No +91 prefix" /></div>
+            <div class="field"><label>Doctor</label><select id="prov-patient-doctor" required>${doctorOptions}</select></div>
+            <div class="field"><label>Visit date</label><input id="prov-patient-visit-date" type="date" required value="${esc(todayInputValue())}" max="${esc(todayInputValue())}" /></div>
+            <div class="field"><label>Date of birth (optional)</label><input id="prov-patient-dob" type="date" max="${esc(todayInputValue())}" /></div>
+            <div class="field"><label>Sex (optional)</label>
+              <select id="prov-patient-sex">
+                <option value="">—</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+          </div>
+          <label class="check-row"><input type="checkbox" id="prov-patient-whatsapp" /> Send welcome WhatsApp via WF7 (off by default for testing)</label>
+          <button class="btn btn-sm" type="submit" id="prov-patient-submit">Add test patient</button>
+        </form>
+      </details>
       ${recentErrors.length ? `<h2 class="section-title">Recent workflow issues</h2>
       <table><thead><tr><th>Time</th><th>Level</th><th>Workflow</th><th>Message</th></tr></thead>
       <tbody>${recentErrors.map(e => `<tr><td>${fmtDateTime(e.timestamp)}</td><td><span class="pill ${pillClass(e.log_level)}">${esc(e.log_level)}</span></td><td>${esc(e.workflow_name || '—')}</td><td>${esc(e.message || '—')}</td></tr>`).join('')}</tbody></table>` : ''}
@@ -878,6 +940,120 @@ async function saveClinicAdminSettings(e) {
   }
 }
 
+async function submitAddDoctor(e) {
+  e.preventDefault();
+  const clinicId = $('clinic-detail-card').dataset.clinic;
+  const btn = $('prov-doctor-submit');
+  const username = normalizeUsername($('prov-doctor-username').value);
+  if (!isValidUsername(username)) return toast('Enter a valid dashboard username.', true);
+  if (!confirm('Add this test doctor to the clinic? This creates a real dashboard login.')) return;
+
+  btn.disabled = true;
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session?.access_token) throw new Error('Session expired — sign in again.');
+
+    const body = new URLSearchParams({
+      clinic_id: clinicId,
+      doctor_name: $('prov-doctor-name').value.trim(),
+      doctor_expertise: $('prov-doctor-expertise').value.trim(),
+      doctor_registration_number: $('prov-doctor-reg').value.trim(),
+      doctor_qualification: $('prov-doctor-qual').value.trim(),
+      doctor_phone: $('prov-doctor-phone').value.trim(),
+      doctor_signature_url: $('prov-doctor-signature').value.trim(),
+      login_username: username,
+      password: $('prov-doctor-password').value,
+      send_whatsapp: $('prov-doctor-whatsapp').checked ? 'true' : 'false',
+    });
+
+    const res = await fetch(webhookUrl('admin-add-doctor'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: body.toString(),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json.status !== 'success') {
+      const msg = Array.isArray(json.errors) ? json.errors.join('; ') : (json.message || 'Doctor provisioning failed');
+      throw new Error(msg);
+    }
+    toast(`Test doctor added: ${json.login_username}`);
+    e.target.reset();
+    await Promise.all([loadClinics(), loadOverview()]);
+    await showClinicDetail(clinicId);
+    const box = $('provision-doctor-box');
+    if (box) box.open = false;
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function submitAddPatient(e) {
+  e.preventDefault();
+  const clinicId = $('clinic-detail-card').dataset.clinic;
+  const btn = $('prov-patient-submit');
+  const phone = normalizePhone10($('prov-patient-phone').value);
+  if (!/^[0-9]{10}$/.test(phone)) return toast('Mobile must be exactly 10 digits (no +91).', true);
+  if (!confirm('Add this test patient to the clinic queue?')) return;
+
+  btn.disabled = true;
+  try {
+    const result = await rpc('admin_add_patient_to_clinic', {
+      p_clinic_id: clinicId,
+      p_patient_name: $('prov-patient-name').value.trim(),
+      p_phone_number: phone,
+      p_doctor_name: $('prov-patient-doctor').value,
+      p_visit_date: $('prov-patient-visit-date').value,
+      p_dob: $('prov-patient-dob').value || null,
+      p_sex: $('prov-patient-sex').value || null,
+    });
+
+    if ($('prov-patient-whatsapp').checked && result?.patient_code) {
+      try {
+        const clinic = state.clinics.find(c => c.clinic_id === clinicId);
+        const detail = state.clinicDetailsCache[clinicId];
+        const clinicName = detail?.contact?.hospital_name || clinic?.name || '';
+        await fetch(webhookUrl('new-patient-intake'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            patient_code: result.patient_code,
+            clinic_id: clinicId,
+            patient_id: result.patient_id,
+            name: $('prov-patient-name').value.trim(),
+            phone: '+91' + phone,
+            clinic_name: clinicName,
+            doctor_name: $('prov-patient-doctor').value,
+            visit_date: $('prov-patient-visit-date').value,
+            admin_provisioned: true,
+          }),
+        });
+      } catch (_) {
+        toast('Patient added, but welcome WhatsApp could not be triggered.', true);
+        await Promise.all([loadClinics(), loadOverview()]);
+        await showClinicDetail(clinicId);
+        return;
+      }
+    }
+
+    toast(`Test patient added: ${result?.patient_code || 'OK'}`);
+    e.target.reset();
+    $('prov-patient-visit-date').value = todayInputValue();
+    await Promise.all([loadClinics(), loadOverview()]);
+    await showClinicDetail(clinicId);
+    const box = $('provision-patient-box');
+    if (box) box.open = false;
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function fillClinicSelects() {
   const opts = '<option value="">Select clinic…</option>' +
     state.clinics.map(c => `<option value="${esc(c.clinic_id)}">${esc(c.name)} (${esc(c.code)})</option>`).join('');
@@ -908,7 +1084,10 @@ document.querySelectorAll('#clinics-filters .chip').forEach(chip => {
   });
 });
 $('clinic-detail-card').addEventListener('submit', e => {
-  if (e.target && e.target.id === 'clinic-admin-settings-form') saveClinicAdminSettings(e);
+  if (!e.target) return;
+  if (e.target.id === 'clinic-admin-settings-form') saveClinicAdminSettings(e);
+  else if (e.target.id === 'admin-add-doctor-form') submitAddDoctor(e);
+  else if (e.target.id === 'admin-add-patient-form') submitAddPatient(e);
 });
 $('clinic-detail-close').addEventListener('click', () => $('clinic-detail-card').classList.add('hidden'));
 $('clinic-detail-qr').addEventListener('click', () => {

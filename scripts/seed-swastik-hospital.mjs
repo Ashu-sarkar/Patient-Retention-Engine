@@ -5,8 +5,14 @@
  * Quick mode (today's queue only):
  *   npm run seed:swastik-hospital
  *
- * Full demo (6-month history, follow-ups, retention analytics):
- *   npm run seed:swastik-demo
+ * Full demo (90-day history, follow-ups, retention analytics):
+ *   npm run seed:swastik-demo-90
+ *
+ * Pinned today's queue only (restores 7 demo patients, no historical wipe):
+ *   npm run seed:swastik-queue
+ *
+ * Wipe Swastik historical demo data and rebuild (queue patients always kept):
+ *   npm run seed:swastik-reset
  *
  * Outputs dashboard + analytics login credentials and manifest in build/.
  */
@@ -43,6 +49,10 @@ const WEBHOOK_BASE = (env.WEBHOOK_URL || 'https://vaitalcare-production.up.railw
 const HOSPITAL_NAME = process.env.SWASTIK_HOSPITAL || 'Swastik Hospital';
 const FACILITY_TYPE = 'General Hospital';
 const SEED_TAG = 'Swastik demo seed';
+/** Pinned reception queue — never deleted on re-seed; always restored to DUMMY_QUEUE. */
+const SEED_QUEUE_TAG = 'Swastik demo queue — pinned';
+const FORCE_RESET = process.env.SWASTIK_FORCE_RESET === '1' || process.env.SWASTIK_FORCE_RESET === 'true';
+const QUEUE_ONLY = process.env.SWASTIK_QUEUE_ONLY === '1' || process.env.SWASTIK_QUEUE_ONLY === 'true';
 const FULL_DEMO = process.env.SWASTIK_FULL_DEMO === '1' || process.env.SWASTIK_FULL_DEMO === 'true';
 const HISTORY_DAYS = Number(process.env.SWASTIK_HISTORY_DAYS || 365);
 /** Realistic monthly OPD volume for a 2-doctor urban clinic (oldest → newest month). */
@@ -142,6 +152,8 @@ const DUMMY_QUEUE = [
     visit_status: 'in_consultation',
   },
 ];
+
+const QUEUE_PHONES_E164 = new Set(DUMMY_QUEUE.map((r) => `+91${r.phone}`));
 
 function fail(msg) {
   console.error(`❌ ${msg}`);
@@ -495,11 +507,18 @@ async function nextPatientCode(clinicId) {
 }
 
 async function cleanupPriorSeed(clinicId) {
+  if (!FORCE_RESET) {
+    ok('Historical cleanup skipped — Swastik demo data persists (set SWASTIK_FORCE_RESET=1 to wipe and rebuild)');
+    return;
+  }
+  // Swastik clinic only; never touch pinned queue patients or other clinics.
   const patientsRes = await sbFetch(
-    `/rest/v1/patients?clinic_id=eq.${clinicId}&notes=eq.${encodeURIComponent(SEED_TAG)}&select=id`,
+    `/rest/v1/patients?clinic_id=eq.${clinicId}&notes=eq.${encodeURIComponent(SEED_TAG)}&select=id,phone`,
   );
   const patients = Array.isArray(patientsRes.json) ? patientsRes.json : [];
+  let removed = 0;
   for (const row of patients) {
+    if (QUEUE_PHONES_E164.has(row.phone)) continue;
     await sbFetch(`/rest/v1/message_logs?patient_id=eq.${row.id}`, { method: 'DELETE' });
     const rxRes = await sbFetch(`/rest/v1/prescriptions?patient_id=eq.${row.id}&select=id`);
     const rxRows = Array.isArray(rxRes.json) ? rxRes.json : [];
@@ -509,12 +528,14 @@ async function cleanupPriorSeed(clinicId) {
     }
     await sbFetch(`/rest/v1/patient_visits?patient_id=eq.${row.id}`, { method: 'DELETE' });
     await sbFetch(`/rest/v1/patients?id=eq.${row.id}`, { method: 'DELETE' });
+    removed += 1;
   }
-  if (patients.length) ok(`Removed ${patients.length} prior demo patient(s) and related records`);
+  if (removed) ok(`Removed ${removed} prior historical demo patient(s) for Swastik only (queue patients kept)`);
 }
 
-async function upsertPatient(clinicId, row) {
+async function upsertPatient(clinicId, row, { pinnedQueue = false } = {}) {
   const phoneE164 = `+91${row.phone}`;
+  const notes = pinnedQueue ? SEED_QUEUE_TAG : SEED_TAG;
   const existing = await sbFetch(
     `/rest/v1/patients?clinic_id=eq.${clinicId}&phone=eq.${encodeURIComponent(phoneE164)}&select=id,patient_code&limit=1`,
   );
@@ -530,7 +551,7 @@ async function upsertPatient(clinicId, row) {
         doctor_name: row.doctor_name,
         clinic_name: HOSPITAL_NAME,
         visit_date: todayISO(),
-        notes: SEED_TAG,
+        notes,
       },
     });
     return { id: found.id, patient_code: found.patient_code, phone: phoneE164 };
@@ -553,7 +574,7 @@ async function upsertPatient(clinicId, row) {
       follow_up_required: 'No',
       status: 'pending',
       message_count: 0,
-      notes: SEED_TAG,
+      notes,
     },
   });
   if (!ins.ok) fail(`patient insert failed for ${row.name}: ${JSON.stringify(ins.json)}`);
@@ -561,23 +582,38 @@ async function upsertPatient(clinicId, row) {
   return { id: patient.id, patient_code: patient.patient_code, phone: phoneE164 };
 }
 
-async function createVisit(clinicId, patient, row, doctorProfileId, visitDate = todayISO()) {
+async function createVisit(clinicId, patient, row, doctorProfileId, visitDate = todayISO(), { pinnedQueue = false } = {}) {
+  const staffNotes = pinnedQueue ? SEED_QUEUE_TAG : SEED_TAG;
   const existing = await sbFetch(
     `/rest/v1/patient_visits?patient_id=eq.${patient.id}&visit_date=eq.${visitDate}&visit_status=not.in.(cancelled,no_show)&select=id&limit=1`,
   );
   if (Array.isArray(existing.json) && existing.json.length > 0) {
+    const patchBody = {
+      visit_status: row.visit_status,
+      chief_complaint: row.chief_complaint,
+      symptoms_duration: row.symptoms_duration || null,
+      current_medicines: row.current_medicines || null,
+      known_allergies: row.known_allergies || null,
+      vitals_notes: row.vitals_notes || null,
+      doctor_name: row.doctor_name,
+      clinic_name: HOSPITAL_NAME,
+      doctor_profile_id: doctorProfileId || null,
+      staff_notes: staffNotes,
+      checked_in_at: isoAt(visitDate, row.visit_status === 'waiting' ? 9 : 10),
+    };
+    if (row.visit_status === 'in_consultation') {
+      patchBody.consultation_started_at = isoAt(visitDate, 10);
+      patchBody.completed_at = null;
+    } else if (row.visit_status === 'completed') {
+      patchBody.consultation_started_at = isoAt(visitDate, 10);
+      patchBody.completed_at = isoAt(visitDate, 11);
+    } else {
+      patchBody.consultation_started_at = null;
+      patchBody.completed_at = null;
+    }
     await sbFetch(`/rest/v1/patient_visits?id=eq.${existing.json[0].id}`, {
       method: 'PATCH',
-      body: {
-        visit_status: row.visit_status,
-        chief_complaint: row.chief_complaint,
-        symptoms_duration: row.symptoms_duration || null,
-        current_medicines: row.current_medicines || null,
-        known_allergies: row.known_allergies || null,
-        vitals_notes: row.vitals_notes || null,
-        doctor_name: row.doctor_name,
-        clinic_name: HOSPITAL_NAME,
-      },
+      body: patchBody,
     });
     return existing.json[0].id;
   }
@@ -596,15 +632,15 @@ async function createVisit(clinicId, patient, row, doctorProfileId, visitDate = 
     current_medicines: row.current_medicines || null,
     known_allergies: row.known_allergies || null,
     vitals_notes: row.vitals_notes || null,
-    staff_notes: SEED_TAG,
-    checked_in_at: isoAt(visitDate, row.visit_status === 'waiting' ? 9 : 11),
+    staff_notes: staffNotes,
+    checked_in_at: isoAt(visitDate, row.visit_status === 'waiting' ? 9 : 10),
   };
   if (row.visit_status === 'in_consultation') {
-    body.consultation_started_at = isoAt(visitDate, 11);
+    body.consultation_started_at = isoAt(visitDate, 10);
   }
   if (row.visit_status === 'completed') {
     body.consultation_started_at = isoAt(visitDate, 10);
-    body.completed_at = isoAt(visitDate, 10);
+    body.completed_at = isoAt(visitDate, 11);
   }
 
   const ins = await sbFetch('/rest/v1/patient_visits', {
@@ -617,18 +653,48 @@ async function createVisit(clinicId, patient, row, doctorProfileId, visitDate = 
   return visit.id;
 }
 
-async function seedDummyQueue(clinicId, profiles) {
+/** Canonical demo reception queue — same 7 patients every time; only Swastik clinic. */
+async function ensurePinnedTodayQueue(clinicId, profiles) {
   const profileByName = Object.fromEntries(profiles.map(p => [p.doctor_name, p.id]));
-  let created = 0;
+  const today = todayISO();
 
   for (const row of DUMMY_QUEUE) {
-    const patient = await upsertPatient(clinicId, row);
+    const patient = await upsertPatient(clinicId, row, { pinnedQueue: true });
     const doctorProfileId = profileByName[row.doctor_name] || null;
-    await createVisit(clinicId, patient, row, doctorProfileId);
-    created++;
+
+    const allToday = await sbFetch(
+      `/rest/v1/patient_visits?patient_id=eq.${patient.id}&visit_date=eq.${today}&visit_status=not.in.(cancelled,no_show)&select=id&order=checked_in_at.asc`,
+    );
+    const visits = Array.isArray(allToday.json) ? allToday.json : [];
+
+    const keepId = await createVisit(clinicId, patient, row, doctorProfileId, today, { pinnedQueue: true });
+
+    for (const visit of visits) {
+      if (visit.id !== keepId) {
+        await sbFetch(`/rest/v1/patient_visits?id=eq.${visit.id}`, { method: 'DELETE' });
+      }
+    }
+
+    await sbFetch(`/rest/v1/patients?id=eq.${patient.id}`, {
+      method: 'PATCH',
+      body: {
+        follow_up_required: 'No',
+        status: 'pending',
+        visit_date: today,
+        notes: SEED_QUEUE_TAG,
+      },
+    });
   }
 
-  return created;
+  const waiting = DUMMY_QUEUE.filter(r => r.visit_status === 'waiting').length;
+  const consult = DUMMY_QUEUE.filter(r => r.visit_status === 'in_consultation').length;
+  const done = DUMMY_QUEUE.filter(r => r.visit_status === 'completed').length;
+  ok(`Pinned today's queue (${DUMMY_QUEUE.length} patients): ${waiting} waiting · ${consult} in consultation · ${done} completed`);
+  return DUMMY_QUEUE.length;
+}
+
+async function seedDummyQueue(clinicId, profiles) {
+  return ensurePinnedTodayQueue(clinicId, profiles);
 }
 
 function seededRand(seed) {
@@ -641,6 +707,10 @@ function seededRand(seed) {
 
 function monthKey(isoDate) {
   return isoDate.slice(0, 7);
+}
+
+function demoMonthCount() {
+  return Math.min(MONTHLY_VISIT_TARGETS.length, Math.max(3, Math.ceil(HISTORY_DAYS / 30)));
 }
 
 function listMonthStarts(monthCount = 12) {
@@ -899,24 +969,28 @@ async function seedFullDemo(clinicId, profiles) {
   let followUpReturned = 0;
 
   for (const row of pool) {
-    const patient = await upsertPatient(clinicId, row);
+    const patient = await upsertPatient(clinicId, row, { pinnedQueue: row.in_today_queue });
     patientDb.set(row.index, { ...row, ...patient });
     visitHistory.set(patient.id, []);
   }
 
-  const months = listMonthStarts(MONTHLY_VISIT_TARGETS.length);
+  const monthCount = demoMonthCount();
+  const months = listMonthStarts(monthCount);
+  const visitTargets = MONTHLY_VISIT_TARGETS.slice(-monthCount);
+  const retentionTargets = MONTHLY_RETENTION_TARGETS.slice(-monthCount);
   let patientCursor = 0;
 
   for (let m = 0; m < months.length; m += 1) {
     const ym = months[m];
-    const target = MONTHLY_VISIT_TARGETS[m] || 40;
+    const target = visitTargets[m] || 40;
     const visitDates = spreadVisitsAcrossMonth(ym, target, rand);
-    const monthRetention = MONTHLY_RETENTION_TARGETS[m] ?? RETENTION_RETURN_RATE;
+    const monthRetention = retentionTargets[m] ?? RETENTION_RETURN_RATE;
     const chronicBoost = 0.42 + (m / Math.max(months.length - 1, 1)) * 0.22;
 
     for (const visitDate of visitDates) {
       const row = pool[patientCursor % pool.length];
       patientCursor += 1;
+      if (row.in_today_queue && visitDate === today) continue;
       const patient = patientDb.get(row.index);
       const priorVisits = visitHistory.get(patient.id) || [];
       const doctorName = row.doctor_name;
@@ -1016,27 +1090,7 @@ async function seedFullDemo(clinicId, profiles) {
     }
   }
 
-  // Today's live queue — ensure all 7 reception patients are present with realistic statuses
-  for (const row of pool.filter(p => p.in_today_queue)) {
-    const patient = patientDb.get(row.index);
-    const doctorProfileId = profileByName[row.doctor_name] || null;
-    const existing = await sbFetch(
-      `/rest/v1/patient_visits?patient_id=eq.${patient.id}&visit_date=eq.${today}&visit_status=not.in.(cancelled,no_show)&select=id&limit=1`,
-    );
-    if (!Array.isArray(existing.json) || existing.json.length === 0) {
-      await createVisit(clinicId, patient, row, doctorProfileId, today);
-      visitCount += 1;
-    } else {
-      await sbFetch(`/rest/v1/patient_visits?id=eq.${existing.json[0].id}`, {
-        method: 'PATCH',
-        body: {
-          visit_status: row.visit_status,
-          chief_complaint: row.chief_complaint,
-          doctor_name: row.doctor_name,
-        },
-      });
-    }
-  }
+  await ensurePinnedTodayQueue(clinicId, profiles);
 
   // Active pipeline: due today, upcoming, and a handful overdue (believable for a busy clinic)
   const pipelinePatients = pool.filter(p => !p.in_today_queue).slice(0, 18);
@@ -1174,7 +1228,10 @@ async function main() {
 
   let visitCount;
   let stats = {};
-  if (FULL_DEMO) {
+  if (QUEUE_ONLY) {
+    visitCount = await ensurePinnedTodayQueue(clinicId, profiles);
+    ok('Queue-only mode — historical analytics data left unchanged');
+  } else if (FULL_DEMO) {
     stats = await seedFullDemo(clinicId, profiles);
     visitCount = stats.visitCount;
     ok(`Seeded ${stats.patients} patients · ${visitCount} visits over ${stats.monthsCovered} months · ${stats.prescriptionCount} prescriptions`);

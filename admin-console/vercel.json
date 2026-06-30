@@ -1,5 +1,15 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    {
+      "source": "/api/admin-add-doctor",
+      "destination": "https://vaitalcare-production.up.railway.app/webhook/admin-add-doctor"
+    },
+    {
+      "source": "/api/new-patient-intake",
+      "destination": "https://vaitalcare-production.up.railway.app/webhook/new-patient-intake"
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",

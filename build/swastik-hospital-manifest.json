@@ -1,17 +1,17 @@
 {
   "hospital_name": "Swastik Hospital",
   "clinic_id": "3b882e47-09e6-44fa-a94d-7d1c4ae18aa0",
-  "visit_date": "2026-06-29",
-  "mode": "full_demo",
-  "visits_seeded": 786,
-  "patients_seeded": 61,
-  "prescriptions_seeded": 342,
-  "message_logs_seeded": 331,
-  "history_days": 365,
-  "months_covered": 12,
-  "modeled_retention_pct": 63.9,
-  "follow_ups_scheduled": 338,
-  "follow_ups_returned": 216,
+  "visit_date": "2026-06-30",
+  "mode": "today_queue",
+  "visits_seeded": 7,
+  "patients_seeded": 7,
+  "prescriptions_seeded": 0,
+  "message_logs_seeded": 0,
+  "history_days": 0,
+  "months_covered": 0,
+  "modeled_retention_pct": null,
+  "follow_ups_scheduled": 0,
+  "follow_ups_returned": 0,
   "doctors": [
     {
       "name": "Dr. Vikram Swastik",
@@ -27,10 +27,7 @@
   "dashboard_url": "https://vaitalcare-doctor.vercel.app",
   "analytics_url": "https://vaitalcare-doctor-analytics.vercel.app",
   "demo_tips": [
-    "Doctor dashboard: sign in as swastik.vikram — today's queue is pre-filled.",
-    "Analytics: open with Last 6 months or Last 12 months — visits grow month-on-month, retention improves over time.",
-    "Modeled chronic-care retention: ~63.9% overall; early months ~54%, recent months ~77%.",
-    "Compare Dr. Vikram vs Dr. Ananya using the doctor filter — pediatric vs general medicine mix."
+    "Today's queue only — run npm run seed:swastik-demo for full analytics history."
   ],
-  "created_at": "2026-06-29T15:04:21.105Z"
+  "created_at": "2026-06-30T14:27:35.857Z"
 }

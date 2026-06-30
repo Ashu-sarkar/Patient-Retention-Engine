@@ -39,7 +39,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT p.* FROM public.patients p WHERE p.clinic_id IS NOT NULL AND COALESCE(p.is_demo, FALSE) = FALSE AND p.follow_up_date < CURRENT_DATE AND p.status NOT IN ('completed','inactive')",
+        "query": "SELECT p.* FROM public.patients p WHERE p.clinic_id IS NOT NULL AND COALESCE(p.is_demo, FALSE) = FALSE AND COALESCE(p.admin_provisioned, FALSE) = FALSE AND p.follow_up_date < CURRENT_DATE AND p.status NOT IN ('completed','inactive')",
         "options": {}
       },
       "id": "33333333-3333-3333-3333-000000000003",
