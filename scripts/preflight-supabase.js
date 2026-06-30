@@ -235,6 +235,7 @@ async function main() {
     path.join(repoRoot, 'schemas', 'migration-admin-console.sql'),
     path.join(repoRoot, 'schemas', 'migration-prescription-access-fix.sql'),
     path.join(repoRoot, 'schemas', 'migration-doctor-analytics.sql'),
+    path.join(repoRoot, 'schemas', 'migration-admin-provisioning.sql'),
   ];
   for (const sqlFile of sqlFiles) {
     if (!fs.existsSync(sqlFile)) die(`Missing ${sqlFile}`);

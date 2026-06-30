@@ -676,23 +676,41 @@ DECLARE
 BEGIN
   IF TG_TABLE_NAME = 'patient_visits' THEN
     SELECT clinic_id INTO parent_clinic FROM public.patients WHERE id = NEW.patient_id;
-    IF parent_clinic IS NULL OR parent_clinic <> NEW.clinic_id THEN
+    IF parent_clinic IS NULL THEN
+      RAISE EXCEPTION 'patient_visits.patient_id is invalid';
+    END IF;
+    IF NEW.clinic_id IS NULL THEN
+      NEW.clinic_id := parent_clinic;
+    ELSIF parent_clinic <> NEW.clinic_id THEN
       RAISE EXCEPTION 'patient_visits.clinic_id must match patients.clinic_id';
     END IF;
   ELSIF TG_TABLE_NAME = 'prescriptions' THEN
     SELECT clinic_id INTO parent_clinic FROM public.patients WHERE id = NEW.patient_id;
-    IF parent_clinic IS NULL OR parent_clinic <> NEW.clinic_id THEN
+    IF parent_clinic IS NULL THEN
+      RAISE EXCEPTION 'prescriptions.patient_id is invalid';
+    END IF;
+    IF NEW.clinic_id IS NULL THEN
+      NEW.clinic_id := parent_clinic;
+    ELSIF parent_clinic <> NEW.clinic_id THEN
       RAISE EXCEPTION 'prescriptions.clinic_id must match patients.clinic_id';
     END IF;
     IF NEW.visit_id IS NOT NULL THEN
       SELECT clinic_id INTO parent_clinic FROM public.patient_visits WHERE id = NEW.visit_id;
-      IF parent_clinic IS NULL OR parent_clinic <> NEW.clinic_id THEN
+      IF parent_clinic IS NULL THEN
+        RAISE EXCEPTION 'prescriptions.visit_id is invalid';
+      END IF;
+      IF NEW.clinic_id IS DISTINCT FROM parent_clinic THEN
         RAISE EXCEPTION 'prescriptions.clinic_id must match patient_visits.clinic_id';
       END IF;
     END IF;
   ELSIF TG_TABLE_NAME = 'prescription_medicines' THEN
     SELECT clinic_id INTO parent_clinic FROM public.prescriptions WHERE id = NEW.prescription_id;
-    IF parent_clinic IS NULL OR parent_clinic <> NEW.clinic_id THEN
+    IF parent_clinic IS NULL THEN
+      RAISE EXCEPTION 'prescription_medicines.prescription_id is invalid';
+    END IF;
+    IF NEW.clinic_id IS NULL THEN
+      NEW.clinic_id := parent_clinic;
+    ELSIF parent_clinic <> NEW.clinic_id THEN
       RAISE EXCEPTION 'prescription_medicines.clinic_id must match prescriptions.clinic_id';
     END IF;
   END IF;

@@ -92,7 +92,9 @@ includes(provisioningMigration, 'admin_provisioned', 'admin provisioning migrati
 includes(provisioningMigration, 'FUNCTION public.admin_add_patient_to_clinic', 'admin_add_patient_to_clinic RPC');
 includes(provisioningMigration, 'FUNCTION public.admin_provision_doctor_to_clinic', 'admin_provision_doctor_to_clinic RPC');
 includes(provisioningMigration, 'FUNCTION public.user_is_platform_admin', 'user_is_platform_admin helper');
-includes(provisioningMigration, 'IF NEW.clinic_id IS NULL THEN', 'enforce_clinic_consistency auto-populates clinic_id');
+
+const multitenantMigration = fs.readFileSync(path.join(root, 'schemas', 'migration-v0-multitenant.sql'), 'utf8');
+includes(multitenantMigration, 'IF NEW.clinic_id IS NULL THEN', 'multitenant enforce_clinic_consistency auto-populates clinic_id');
 
 const wf15 = fs.readFileSync(path.join(root, 'workflows', 'workflow-15-admin-add-doctor.json'), 'utf8');
 const wf15Json = JSON.parse(wf15);
