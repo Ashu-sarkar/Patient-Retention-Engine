@@ -83,6 +83,7 @@ includes(migration, 'FUNCTION public.admin_seed_dummy_patients', 'admin_seed_dum
 includes(migration, 'FUNCTION public.admin_clear_dummy_patients', 'admin_clear_dummy_patients RPC');
 includes(migration, "RAISE EXCEPTION 'not authorized to seed demo patients'", 'seeding is admin-gated');
 includes(migration, "'+999'", 'demo phones use the unassigned +999 country code');
+includes(migration, 'prescription_id, clinic_id, medicine_name', 'demo seed sets clinic_id on prescription medicines');
 includes(migration, "'draft'", 'demo prescriptions stay draft so cleanup can delete them');
 includes(migration, 'platform admin reads patients', 'platform-admin read RLS for patients');
 includes(migration, 'FOR SELECT TO authenticated', 'platform-admin policies are read-only');
@@ -91,6 +92,7 @@ includes(provisioningMigration, 'admin_provisioned', 'admin provisioning migrati
 includes(provisioningMigration, 'FUNCTION public.admin_add_patient_to_clinic', 'admin_add_patient_to_clinic RPC');
 includes(provisioningMigration, 'FUNCTION public.admin_provision_doctor_to_clinic', 'admin_provision_doctor_to_clinic RPC');
 includes(provisioningMigration, 'FUNCTION public.user_is_platform_admin', 'user_is_platform_admin helper');
+includes(provisioningMigration, 'IF NEW.clinic_id IS NULL THEN', 'enforce_clinic_consistency auto-populates clinic_id');
 
 const wf15 = fs.readFileSync(path.join(root, 'workflows', 'workflow-15-admin-add-doctor.json'), 'utf8');
 const wf15Json = JSON.parse(wf15);

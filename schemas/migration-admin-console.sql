@@ -1058,10 +1058,10 @@ BEGIN
       RETURNING id INTO v_rx_id;
 
       INSERT INTO public.prescription_medicines
-        (prescription_id, medicine_name, dosage, frequency, timing, duration, instructions, sort_order)
+        (prescription_id, clinic_id, medicine_name, dosage, frequency, timing, duration, instructions, sort_order)
       VALUES
-        (v_rx_id, 'Paracetamol 500mg', '1 tablet', 'Twice daily', 'After food', '3 days', 'For fever', 1),
-        (v_rx_id, 'Cetirizine 10mg', '1 tablet', 'Once daily', 'At night', '5 days', 'For allergy', 2);
+        (v_rx_id, p_clinic_id, 'Paracetamol 500mg', '1 tablet', 'Twice daily', 'After food', '3 days', 'For fever', 1),
+        (v_rx_id, p_clinic_id, 'Cetirizine 10mg', '1 tablet', 'Once daily', 'At night', '5 days', 'For allergy', 2);
     END IF;
 
     v_seeded := v_seeded + 1;
